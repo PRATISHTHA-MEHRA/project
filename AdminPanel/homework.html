@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homework · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-primary" onclick="addHw()">${App.svg('plus')}Assign Homework</button>`;
+  const c=App.layout('homework','Homework',[`<span>Assessment</span>`,'Homework'],head);
+  c.innerHTML=`<div id="tbl"></div>`;
+  App.table('tbl',{
+    rows:DB.homework, searchKeys:['id','batch','subject','teacher','title'], searchPlaceholder:'Search homework…', pageSize:9, dateFilter:true,
+    filters:[{label:'Batch',key:'batch',options:[...new Set(DB.homework.map(h=>h.batch))]},{label:'Status',key:'status',options:['Active','Closed','Overdue']}],
+    columns:[
+      {key:'title',label:'Homework',render:r=>`<div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.subject}</div>`},
+      {key:'batch',label:'Batch',render:r=>App.whoCell(r.teacher,r.batch)},
+      {key:'due',label:'Due Date'},
+      {key:'submitted',label:'Submitted',num:true,render:r=>`<span style="color:var(--green)">${r.submitted}</span>`},
+      {key:'pending',label:'Pending',num:true,render:r=>`<span style="color:var(--red)">${r.pending}</span>`},
+      {key:'prog',label:'Progress',render:r=>`<div class="pct-cell"><div class="progress"><span style="width:${Math.round(r.submitted/(r.submitted+r.pending)*100)}%"></span></div><span class="num">${Math.round(r.submitted/(r.submitted+r.pending)*100)}%</span></div>`},
+      {key:'status',label:'Status',render:r=>App.badge(r.status)}
+    ],
+    actions:r=>`${App.actBtn('eye','View',`onclick="viewHw('${r.id}')"`)}${App.actBtn('edit','Edit',`onclick="App.toast('Edit homework','info')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="delHw('${r.id}')"`)}`
+  });
+  const find=id=>DB.homework.find(h=>h.id===id);
+  window.viewHw=id=>{ const h=find(id);
+    App.modal({size:'lg',title:h.title,sub:`${h.id} · ${h.batch}`,
+      body:`<div class="dl cols-3"><div class="it"><div class="k">Subject</div><div class="v">${h.subject}</div></div>
+        <div class="it"><div class="k">Teacher</div><div class="v">${h.teacher}</div></div><div class="it"><div class="k">Due Date</div><div class="v">${h.due}</div></div>
+        <div class="it"><div class="k">Submitted</div><div class="v num">${h.submitted}</div></div><div class="it"><div class="k">Pending</div><div class="v num">${h.pending}</div></div>
+        <div class="it"><div class="k">Status</div><div class="v">${App.badge(h.status)}</div></div></div>
+      <div class="sec-title">Description</div><p style="color:var(--ink-2)">${h.desc}</p>
+      <div class="sec-title">Attachment</div><div class="chips"><span class="chip">${App.svg('material')} worksheet_${h.id}.pdf</span></div>
+      <div class="sec-title">Submission Status</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Student</th><th>Status</th><th>Checked</th></tr></thead>
+      <tbody>${DB.students.filter(s=>s.batch===h.batch).slice(0,6).map((s,i)=>`<tr><td>${App.whoCell(s.name)}</td><td>${App.badge(i<4?'Completed':'Pending')}</td><td>${i<3?App.svg('check'):'—'}</td></tr>`).join('')}</tbody></table></div>`,
+      foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Homework marked checked','ok')">Mark Checked</button>` }); };
+  window.delHw=id=>{ const h=find(id); App.confirmModal(`Delete homework <b>${h.title}</b>?`,()=>{DB.homework.splice(DB.homework.indexOf(h),1);location.reload();},{danger:true,yes:'Delete'}); };
+  window.addHw=()=>App.modal({size:'lg',title:'Assign Homework',
+    body:`<div class="form-grid">
+      <div><label>Batch</label><select>${DB.batches.map(b=>`<option>${b.name}</option>`).join('')}</select></div>
+      <div><label>Subject</label><input value="Mathematics"></div>
+      <div><label>Teacher</label><select>${DB.teachers.map(t=>`<option>${t.name}</option>`).join('')}</select></div>
+      <div><label>Due Date</label><input type="date" value="2026-06-15"></div>
+      <div class="full"><label>Title</label><input placeholder="e.g. Practice Set 4"></div>
+      <div class="full"><label>Description</label><textarea rows="3"></textarea></div>
+      <div class="full"><label>Attachment</label><input type="file"></div></div>`,
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Homework assigned & students notified','ok')">Assign</button>`});
+}
+</script>
+</body></html>

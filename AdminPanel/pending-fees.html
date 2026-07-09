@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pending Fees · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-amber" onclick="App.toast('Bulk WhatsApp reminders queued for 24 parents','ok')">${App.svg('whatsapp')}Bulk Reminder</button>`;
+  const c=App.layout('pending-fees','Pending Fees',[`<span>Finance</span>`,'Pending Fees'],head);
+  const totalDue=DB.pending.reduce((a,p)=>a+p.due,0);
+  const overdue=DB.pending.filter(p=>p.overdue>30).length;
+  c.innerHTML=`<div class="kpi-grid">
+    <div class="kpi"><div class="top"><span class="label">Total Outstanding</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(totalDue)}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Students with Dues</span><span class="ic b-amber">${App.svg('students')}</span></div><div class="val">${DB.pending.length}</div></div>
+    <div class="kpi"><div class="top"><span class="label">30+ Days Overdue</span><span class="ic b-red">${App.svg('clock')}</span></div><div class="val">${overdue}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Promised to Pay</span><span class="ic b-blue">${App.svg('calendar')}</span></div><div class="val">${DB.pending.filter(p=>p.promise!=='—').length}</div></div>
+  </div><div id="tbl"></div>`;
+
+  App.table('tbl',{
+    rows:DB.pending, searchKeys:['id','student','batch','parentMobile'], searchPlaceholder:'Search pending dues…', pageSize:10,
+    filters:[{label:'Fee Type',key:'feeType',options:DB.feeTypes},{label:'Follow-up',key:'follow',options:['Not Contacted','Reminder Sent','Promised','Disputed','Call Back']}],
+    columns:[
+      {key:'student',label:'Student',render:r=>App.whoCell(r.student,r.studentId)},
+      {key:'parentMobile',label:'Parent Mobile'},
+      {key:'batch',label:'Batch',render:r=>`<div>${r.batch}</div><div class="t-sub">${r.feeType.replace(' Fee','')} · ${r.period}</div>`},
+      {key:'due',label:'Due Amount',num:true,render:r=>`<b>${App.money(r.due)}</b>`},
+      {key:'dueDate',label:'Due Date'},
+      {key:'overdue',label:'Overdue',num:true,render:r=>`<span class="badge ${r.overdue>30?'b-red':r.overdue>14?'b-amber':'b-yellow'}"><span class="pip"></span>${r.overdue}d</span>`},
+      {key:'follow',label:'Follow-up',render:r=>App.badge(r.follow==='Promised'?'Interested':r.follow==='Reminder Sent'?'Contacted':'New').replace('Interested',r.follow).replace('Contacted',r.follow).replace('New',r.follow)},
+      {key:'promise',label:'Promise Date'}
+    ],
+    actions:r=>`${App.actBtn('whatsapp','WhatsApp',`onclick="App.toast('WhatsApp reminder sent to '+'${r.student}'.split(' ')[0],'ok')"`)}${App.actBtn('phone','Call Note',`onclick="callNote('${r.id}')"`)}${App.actBtn('eye','View',`onclick="viewP('${r.id}')"`)}${App.actBtn('rupee','Collect',`onclick="App.toast('Opening fee collection…','info')"`)}`
+  });
+  const find=id=>DB.pending.find(p=>p.id===id);
+
+  window.viewP=id=>{ const p=find(id);
+    App.modal({size:'md',title:p.student+' · Pending Dues',sub:p.id,
+      body:`<div class="dl cols-2"><div class="it"><div class="k">Parent Mobile</div><div class="v">${p.parentMobile}</div></div>
+        <div class="it"><div class="k">Batch</div><div class="v">${p.batch}</div></div>
+        <div class="it"><div class="k">Fee Type</div><div class="v">${p.feeType}</div></div><div class="it"><div class="k">Period</div><div class="v">${p.period}</div></div>
+        <div class="it"><div class="k">Due Amount</div><div class="v num">${App.money(p.due)}</div></div><div class="it"><div class="k">Days Overdue</div><div class="v num">${p.overdue} days</div></div>
+        <div class="it"><div class="k">Last Reminder</div><div class="v">${p.lastReminder}</div></div><div class="it"><div class="k">Promise Date</div><div class="v">${p.promise}</div></div></div>
+      <div class="sec-title">Reminder Actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-amber btn-sm" onclick="App.toast('WhatsApp sent','ok')">${App.svg('whatsapp')}WhatsApp</button>
+        <button class="btn btn-light btn-sm" onclick="App.toast('SMS sent','ok')">${App.svg('bell')}Send SMS</button>
+        <button class="btn btn-light btn-sm" onclick="App.toast('Call note added','ok')">${App.svg('phone')}Add Call Note</button>
+        <button class="btn btn-primary btn-sm" onclick="App.toast('Opening collection…','info')">${App.svg('rupee')}Collect Payment</button>
+      </div>`
+    }); };
+
+  window.callNote=id=>{ const p=find(id);
+    App.modal({size:'sm',title:'Add Call Note',sub:p.student,
+      body:`<div class="form-row"><label>Follow-up Status</label><select><option>Reminder Sent</option><option>Promised</option><option>Call Back</option><option>Disputed</option></select></div>
+        <div class="form-row"><label>Promise-to-pay Date</label><input type="date" value="2026-06-15"></div>
+        <div class="form-row"><label>Note</label><textarea rows="3" placeholder="Parent said…"></textarea></div>`,
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Call note saved','ok')">Save Note</button>`
+    }); };
+}
+</script>
+</body></html>

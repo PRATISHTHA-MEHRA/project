@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marks · BrightPath Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+
+<body>
+  <script src="assets/js/admin-data.js"></script>
+  <script src="assets/js/admin-app.js"></script>
+  <script>
+    if (App.guard()) {
+      const API_MARKS = "http://localhost:5001/api/marks";
+      let usingMarksFallback = false;
+      let currentMarks = [];
+
+      // Sanitization utility helpers
+      const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+      const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const asNum = v => Number(v ?? 0) || 0;
+      const unique = values => [...new Set(values.filter(Boolean))];
+
+      function authHeaders(hasBody = false) {
+        const token = localStorage.getItem('JWT_TOKEN') || '';
+        const headers = {};
+        if (hasBody) headers['Content-Type'] = 'application/json';
+        if (token) headers.Authorization = `Bearer ${token}`;
+        return headers;
+      }
+
+      async function marksApiRequest(path = '', options = {}) {
+        const res = await fetch(`${API_MARKS}${path}`, {
+          ...options,
+          headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
+        });
+        const text = await res.text();
+        let data = null;
+        if (text) {
+          try { data = JSON.parse(text); }
+          catch (err) { data = { message: text }; }
+        }
+        if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+        return data;
+      }
+
+      function unwrapMarks(payload) {
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload?.marks)) return payload.marks;
+        if (Array.isArray(payload?.data?.marks)) return payload.data.marks;
+        return [];
+      }
+
+      function mapMark(item = {}) {
+        return {
+          examId: item.examId || item.id || '',
+          exam: item.examName || item.exam || '',
+          batch: item.batch || '',
+          subject: item.subject || '',
+          total: asNum(item.total || 100),
+          studentId: item.studentId || item.student_id || item.student?.id || '',
+          student: item.studentName || item.student_name || (item.student && item.student.name) || item.student || 'Unknown',
+          obtained: asNum(item.obtained ?? item.score ?? 0),
+          remarks: item.remarks || '',
+          rank: item.rank || 0,
+          grade: item.grade || ''
+        };
+      }
+
+      function fallbackMarks() {
+        return (DB.marks || []).slice(0, 50).map(mapMark);
+      }
+
+      function calcPct(m) { return m.total ? Math.round(m.obtained / m.total * 100) : 0; }
+
+      function renderMarksPage(rows) {
+        currentMarks = rows;
+        const totalEntries = rows.length;
+        const avgPct = rows.length ? Math.round(rows.reduce((a, r) => a + calcPct(r), 0) / rows.length) : 0;
+
+        const head = `<button class="btn btn-light" onclick="App.toast('Result sheet exported','ok')">${App.svg('download')}Export</button><button class="btn btn-primary" onclick="addMarks()">${App.svg('plus')}Enter Marks</button>`;
+        const c = App.layout('marks', 'Marks & Results', [`<span>Assessment</span>`, 'Marks'], head);
+        c.innerHTML = `<div class="card mb16"><div class="card-head"><div><h3>Marks Overview</h3><div class="sub">Total entries: ${totalEntries} · Avg %: ${avgPct}%</div></div></div></div><div id="tbl"></div>`;
+
+        App.table('tbl', {
+          rows,
+          searchKeys: ['exam', 'student', 'batch', 'subject'],
+          searchPlaceholder: 'Search marks…',
+          pageSize: 12,
+          filters: [
+            { label: 'Exam', key: 'exam', options: unique(rows.map(m => m.exam)) },
+            { label: 'Batch', key: 'batch', options: unique(rows.map(m => m.batch)) },
+            { label: 'Subject', key: 'subject', options: unique(rows.map(m => m.subject)) }
+          ],
+          columns: [
+            { key: 'student', label: 'Student', render: r => App.whoCell(esc(r.student), esc(r.studentId)) },
+            { key: 'exam', label: 'Test', render: r => `<div>${esc(r.exam)}</div><div class="t-sub">${esc(r.batch)}</div>` },
+            { key: 'subject', label: 'Subject' },
+            { key: 'obtained', label: 'Score', num: true, render: r => `<b>${r.obtained}</b> / ${r.total}` },
+            { key: 'pct', label: '%', num: true, render: r => `<div class="pct-cell"><div class="progress ${r.obtained / r.total < 0.4 ? 'danger' : r.obtained / r.total < 0.6 ? 'warn' : ''}"><span style="width:${Math.round(r.obtained / r.total * 100)}%"></span></div><span class="num">${Math.round(r.obtained / r.total * 100)}%</span></div>` },
+            { key: 'rank', label: 'Rank', num: true, render: r => `#${r.rank || '-'}` },
+            { key: 'grade', label: 'Grade', render: r => `<span class="badge ${r.grade && r.grade.startsWith('A') ? 'b-green' : r.grade && r.grade.startsWith('B') ? 'b-blue' : 'b-amber'}"><span class="pip"></span>${esc(r.grade || '-')}</span>` },
+            { key: 'remarks', label: 'Remark' }
+          ],
+          actions: r => `${App.actBtn('eye', 'View', `onclick="viewMark('${jsStr(r.studentId)}','${jsStr(r.examId)}')"`)}${App.actBtn('edit', 'Edit', "App.toast('Edit marks','info')")}`
+        });
+      }
+
+      async function loadMarks() {
+        try {
+          const payload = await marksApiRequest('');
+          usingMarksFallback = false;
+          renderMarksPage(unwrapMarks(payload).map(mapMark));
+        } catch (err) {
+          console.warn('Marks API unavailable, showing local data:', err);
+          usingMarksFallback = true;
+          renderMarksPage(fallbackMarks());
+          App.toast('Marks API unavailable. Showing local data.', 'info');
+        }
+      }
+
+      window.viewMark = (studentId, examId) => {
+        const m = currentMarks.find(x => String(x.studentId) === String(studentId) && String(x.examId) === String(examId));
+        if (!m) return App.toast('Marks not found', 'err');
+        App.modal({
+          size: 'md', title: esc(m.student) + ' · ' + esc(m.exam), sub: esc(m.batch),
+          body: `<div class="dl cols-2"><div class="it"><div class="k">Subject</div><div class="v">${esc(m.subject)}</div></div>
+<div class="it"><div class="k">Score</div><div class="v num">${m.obtained} / ${m.total}</div></div>
+<div class="it"><div class="k">Percentage</div><div class="v num">${calcPct(m)}%</div></div>
+<div class="it"><div class="k">Rank</div><div class="v num">#${m.rank || '-'}</div></div>
+<div class="it"><div class="k">Grade</div><div class="v">${esc(m.grade || '-')}</div></div></div>
+<div class="sec-title">Remarks</div><p style="color:var(--ink-2)">${esc(m.remarks || '—')}</p>`
+        });
+      };
+
+      window.addMarks = () => {
+        const exam = (DB.exams && DB.exams[0]) || { name: 'Unit Test', batch: 'Default', total: 100, id: 'EX-000', subject: 'General' };
+        const studs = (DB.students || []).filter(s => s.batch === exam.batch).slice(0, 20);
+        
+        App.modal({
+          size: 'lg',
+          title: 'Enter Marks (Bulk)',
+          sub: 'Enter scores for students and submit',
+          body: `<div class="form-grid" style="margin-bottom:16px">
+<div><label>Test Name</label><input id="m_exam" value="${esc(exam.name)} · ${esc(exam.batch)}" disabled></div>
+<div><label>Total Marks</label><input id="m_total" class="num" value="${esc(exam.total)}" disabled></div>
+</div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Student</th><th style="width:120px">Marks</th><th>Remark</th></tr></thead>
+<tbody>${studs.map(s => `<tr data-stu="${esc(s.id)}"><td>${App.whoCell(esc(s.name), esc(s.id))}</td><td><input class="num m-obt" style="width:80px;padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" value="${Math.round((exam.total || 100) * 0.7)}"></td><td><input class="m-remark" style="padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" placeholder="Optional remark"></td></tr>`).join('')}</tbody></table></div>`,
+          foot: `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveMarksBtn">Save & Publish</button>`,
+          onOpen: box => {
+            box.querySelector('#saveMarksBtn').onclick = async () => {
+              const rows = [...box.querySelectorAll('tbody tr')].map(tr => {
+                const id = tr.getAttribute('data-stu');
+                const nameText = tr.querySelector('.who .name') ? tr.querySelector('.who .name').textContent : id;
+                const obtained = asNum(tr.querySelector('.m-obt').value);
+                const remark = tr.querySelector('.m-remark').value.trim();
+                return { studentId: id, studentName: nameText, obtained, remarks: remark };
+              });
+              
+              const payload = {
+                examId: exam.id || `EX-${Date.now()}`,
+                examName: exam.name || 'Exam',
+                batch: exam.batch,
+                subject: exam.subject || 'General',
+                total: asNum(exam.total || 100),
+                scores: rows
+              };
+
+              try {
+                if (usingMarksFallback) {
+                  const created = payload.scores.map(s => ({
+                    examId: payload.examId,
+                    exam: payload.examName,
+                    batch: payload.batch,
+                    subject: payload.subject,
+                    total: payload.total,
+                    studentId: s.studentId,
+                    student: s.studentName,
+                    obtained: s.obtained,
+                    remarks: s.remarks,
+                    grade: '', rank: 0
+                  }));
+                  currentMarks.unshift(...created.map(mapMark));
+                  App.closeModal();
+                  renderMarksPage(currentMarks);
+                  return App.toast('Marks saved locally', 'ok');
+                }
+                await marksApiRequest('/bulk', { method: 'POST', body: JSON.stringify(payload) });
+                App.closeModal();
+                await loadMarks();
+                App.toast('Marks saved & result published', 'ok');
+              } catch (err) {
+                App.toast(err.message || 'Failed to save marks', 'err');
+              }
+            };
+          }
+        });
+      };
+
+      loadMarks();
+    }
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Income & Expense · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-light" onclick="addInc()">${App.svg('plus')}Add Income</button><button class="btn btn-primary" onclick="addExp()">${App.svg('plus')}Add Expense</button>`;
+  const c=App.layout('income-expense','Income & Expense',[`<span>Finance</span>`,'Income & Expense'],head);
+  const totInc=DB.dash.monthlyIncome, totExp=DB.dash.monthlyExpenses, net=totInc-totExp;
+
+  c.innerHTML=`<div class="kpi-grid">
+    <div class="kpi"><div class="top"><span class="label">Total Income</span><span class="ic b-green">${App.svg('trending')}</span></div><div class="val">${App.money(totInc)}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Total Expenses</span><span class="ic b-red">${App.svg('money')}</span></div><div class="val">${App.money(totExp)}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('rupee')}</span></div><div class="val">${App.money(net)}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Profit Margin</span><span class="ic b-amber">${App.svg('reports')}</span></div><div class="val">${Math.round(net/totInc*100)}%</div></div>
+  </div>
+
+  <div class="grid-32 mb16">
+    <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month trend (₹ in '000)</div></div>
+      <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Income</div><div class="lg"><span class="sw bar-amber"></span>Expense</div></div></div>
+      <div class="card-body">${App.barChart(DB.charts.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
+    <div class="card"><div class="card-head"><h3>Profit & Loss (May)</h3></div><div class="card-body">
+      <div class="pl-line plus"><span>Total Fee Collection</span><span class="v">${App.money(842500)}</span></div>
+      <div class="pl-line plus"><span>+ Other Income</span><span class="v">${App.money(125500)}</span></div>
+      <div class="pl-line minus"><span>− Teacher Payments</span><span class="v">${App.money(298000)}</span></div>
+      <div class="pl-line minus"><span>− Staff Salary</span><span class="v">${App.money(95000)}</span></div>
+      <div class="pl-line minus"><span>− Rent</span><span class="v">${App.money(85000)}</span></div>
+      <div class="pl-line minus"><span>− Other Expenses</span><span class="v">${App.money(134000)}</span></div>
+      <div class="pl-line total"><span>= Net Profit</span><span class="v">${App.money(net)}</span></div>
+    </div></div>
+  </div>
+
+  <div class="tabs" id="ieTabs"><div class="tab active" data-t="inc">Income (${DB.income.length})</div><div class="tab" data-t="exp">Expenses (${DB.expense.length})</div></div>
+  <div class="tab-pane active" data-p="inc"><div id="incTbl"></div></div>
+  <div class="tab-pane" data-p="exp"><div id="expTbl"></div></div>`;
+
+  document.querySelectorAll('#ieTabs .tab').forEach(t=>t.onclick=()=>{ document.querySelectorAll('#ieTabs .tab').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active')); t.classList.add('active'); document.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active'); });
+
+  App.table('incTbl',{ rows:DB.income, searchKeys:['id','category','desc'], searchPlaceholder:'Search income…', pageSize:8, dateFilter:true,
+    filters:[{label:'Category',key:'category',options:["Monthly Fees","Quarterly Fees","Semi-Annual Fees","Annual Fees","Admission Fees","Study Material Sales","Test Series Fees","Other Income"]}],
+    columns:[{key:'id',label:'ID',render:r=>`<span class="t-id">${r.id}</span>`},{key:'date',label:'Date'},{key:'category',label:'Category',render:r=>`<span class="chip">${r.category}</span>`},{key:'desc',label:'Description'},{key:'mode',label:'Mode'},{key:'amount',label:'Amount',num:true,render:r=>`<b style="color:var(--green)">${App.money(r.amount)}</b>`}],
+    actions:r=>`${App.actBtn('eye','View',`onclick="App.toast('Income entry ${r.id}','info')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="App.toast('Deleted','ok')"`)}` });
+
+  App.table('expTbl',{ rows:DB.expense, searchKeys:['id','category','desc','vendor'], searchPlaceholder:'Search expenses…', pageSize:8, dateFilter:true,
+    filters:[{label:'Category',key:'category',options:["Rent","Electricity","Internet","Staff Salary","Teacher Salary","Marketing","Stationery","Furniture","Software","Maintenance","Miscellaneous"]}],
+    columns:[{key:'id',label:'ID',render:r=>`<span class="t-id">${r.id}</span>`},{key:'date',label:'Date'},{key:'category',label:'Category',render:r=>`<span class="chip">${r.category}</span>`},{key:'desc',label:'Description'},{key:'vendor',label:'Vendor'},{key:'amount',label:'Amount',num:true,render:r=>`<b style="color:var(--red)">${App.money(r.amount)}</b>`}],
+    actions:r=>`${App.actBtn('edit','Edit',`onclick="App.toast('Edit ${r.id}','info')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="App.toast('Deleted','ok')"`)}` });
+
+  window.addInc=()=>App.modal({size:'md',title:'Add Income',
+    body:`<div class="form-grid"><div><label>Category</label><select>${["Monthly Fees","Admission Fees","Study Material Sales","Test Series Fees","Other Income"].map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div><label>Date</label><input type="date" value="2026-06-07"></div>
+      <div class="full"><label>Description</label><input></div>
+      <div><label>Amount (₹)</label><input class="num" value="0"></div>
+      <div><label>Mode</label><select>${DB.modes.map(m=>`<option>${m}</option>`).join('')}</select></div></div>`,
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Income added','ok')">Save</button>`});
+
+  window.addExp=()=>App.modal({size:'md',title:'Add Expense',
+    body:`<div class="form-grid"><div><label>Category</label><select>${["Rent","Electricity","Internet","Staff Salary","Marketing","Stationery","Maintenance","Miscellaneous"].map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div><label>Date</label><input type="date" value="2026-06-07"></div>
+      <div class="full"><label>Description</label><input></div>
+      <div><label>Vendor</label><input></div>
+      <div><label>Amount (₹)</label><input class="num" value="0"></div>
+      <div><label>Mode</label><select>${DB.modes.map(m=>`<option>${m}</option>`).join('')}</select></div></div>`,
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Expense added','ok')">Save</button>`});
+}
+</script>
+</body></html>

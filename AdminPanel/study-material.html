@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Study Material · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-primary" onclick="addSm()">${App.svg('plus')}Upload Material</button>`;
+  const c=App.layout('study-material','Study Material',[`<span>Assessment</span>`,'Study Material'],head);
+  c.innerHTML=`<div id="tbl"></div>`;
+  App.table('tbl',{
+    rows:DB.studyMaterial, searchKeys:['id','title','course','subject'], searchPlaceholder:'Search material…', pageSize:9,
+    filters:[{label:'Course',key:'course',options:[...new Set(DB.studyMaterial.map(s=>s.course))]},{label:'Type',key:'type',options:['PDF','DOC','Video','Link']}],
+    columns:[
+      {key:'title',label:'Title',render:r=>`<div class="who-cell">${App.svg(r.type==='Video'?'demo':'material').replace('<svg','<svg style="width:18px;height:18px;color:var(--brand)"')}<div><div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.size}</div></div></div>`},
+      {key:'course',label:'Course',render:r=>`<div>${r.course}</div><div class="t-sub">${r.subject}</div>`},
+      {key:'type',label:'Type',render:r=>`<span class="chip">${r.type}</span>`},
+      {key:'uploadedBy',label:'Uploaded By'},
+      {key:'date',label:'Date'},
+      {key:'downloads',label:'Downloads',num:true}
+    ],
+    actions:r=>`${App.actBtn('download','Download',`onclick="App.toast('Downloading ${r.title}','ok')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="App.toast('Deleted','ok')"`)}`
+  });
+  window.addSm=()=>App.modal({size:'md',title:'Upload Study Material',
+    body:`<div class="form-grid">
+      <div class="full"><label>Title</label><input placeholder="e.g. Chapter 4 Notes"></div>
+      <div><label>Course</label><select>${DB.courses.map(c=>`<option>${c.name}</option>`).join('')}</select></div>
+      <div><label>Subject</label><input></div>
+      <div><label>Type</label><select><option>PDF</option><option>DOC</option><option>Video</option><option>Link</option></select></div>
+      <div><label>Uploaded By</label><select>${DB.teachers.map(t=>`<option>${t.name}</option>`).join('')}</select></div>
+      <div class="full"><label>File</label><input type="file"></div></div>`,
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Material uploaded','ok')">Upload</button>`});
+}
+</script>
+</body></html>

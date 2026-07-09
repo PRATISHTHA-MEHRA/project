@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard · BrightPath Admin</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head = `<button class="btn btn-light" onclick="App.toast('Exported dashboard snapshot (PDF)','ok')">${App.svg('download')}Export</button>
+    <button class="btn btn-primary" onclick="location.href='admissions.html'">${App.svg('plus')}New Admission</button>`;
+  const c = App.layout('dashboard','Welcome back, Anand 👋',null,head);
+  const d = DB.dash, ch = DB.charts;
+
+  const kpis = [
+    {l:"Total Students",v:d.totalStudents,ic:"students",col:"b-brand",dl:"+9 this month",dir:"up"},
+    {l:"Active Students",v:d.activeStudents,ic:"check",col:"b-green",dl:`${Math.round(d.activeStudents/d.totalStudents*100)}% of total`,dir:"flat"},
+    {l:"New Admissions (Jun)",v:d.newAdmissions,ic:"admit",col:"b-blue",dl:"+2 vs last month",dir:"up"},
+    {l:"Total Teachers",v:d.totalTeachers,ic:"teacher",col:"b-violet",dl:"1 on leave",dir:"flat"},
+    {l:"Active Batches",v:d.activeBatches,ic:"batch",col:"b-brand",dl:"2 upcoming",dir:"up"},
+    {l:"Today's Classes",v:d.todayClasses,ic:"timetable",col:"b-amber",dl:"2 completed",dir:"flat"},
+    {l:"Monthly Collection",v:App.money(d.monthlyCollection),ic:"rupee",col:"b-green",dl:"+10.6% MoM",dir:"up"},
+    {l:"Pending Fees",v:App.money(d.pendingFees),ic:"pending",col:"b-red",dl:"24 students",dir:"down"},
+    {l:"Teacher Payments Due",v:App.money(d.teacherPaymentsDue),ic:"payment",col:"b-amber",dl:"4 pending",dir:"flat"},
+    {l:"Monthly Income",v:App.money(d.monthlyIncome),ic:"trending",col:"b-green",dl:"+8.9% MoM",dir:"up"},
+    {l:"Monthly Expenses",v:App.money(d.monthlyExpenses),ic:"money",col:"b-slate",dl:"+3.7% MoM",dir:"down"},
+    {l:"Net Profit",v:App.money(d.netProfit),ic:"trending",col:"b-brand",dl:"36.7% margin",dir:"up"},
+  ];
+
+  c.innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
+      ${kpis.map(k=>`<div class="kpi">
+        <div class="top"><span class="label">${k.l}</span><span class="ic ${k.col}">${App.svg(k.ic)}</span></div>
+        <div class="val">${k.v}</div>
+      </div>`).join('')}
+    </div>
+
+    <div class="grid-32 mb16">
+      <div class="card">
+        <div class="card-head"><div><h3>Monthly Collection Trend</h3><div class="sub">Fee collection over the last 6 months (₹ in '000)</div></div>
+          <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Collected</div></div></div>
+        <div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Admission Sources</h3><div class="sub">This academic year</div></div></div>
+        <div class="card-body">${App.donut(ch.admissionSource)}</div>
+      </div>
+    </div>
+
+    <div class="grid-2 mb16">
+      <div class="card">
+        <div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison (₹ in '000)</div></div>
+          <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Income</div><div class="lg"><span class="sw bar-amber"></span>Expense</div></div></div>
+        <div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Pending Fees Trend</h3><div class="sub">Outstanding dues (₹ in '000)</div></div></div>
+        <div class="card-body">${App.barChart(ch.pendingTrend,{color:'bar-red'})}</div>
+      </div>
+    </div>
+
+    <div class="grid-3 mb16">
+      <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
+      <div class="card"><div class="card-head"><h3>Batch-wise Students</h3></div><div class="card-body">${App.hbars(ch.batchCount.slice(0,6),v=>v+' students')}</div></div>
+      <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(ch.teacherPayout.slice(0,6),App.money)}</div></div>
+    </div>
+
+    <div class="grid-32">
+      <div class="card">
+        <div class="card-head"><div><h3>Today's Classes</h3><div class="sub">${DB.today.length} scheduled · ${DB.today.filter(t=>t.status==='Completed').length} completed</div></div>
+          <a class="btn btn-light btn-sm" href="timetable.html">View timetable</a></div>
+        <div class="tbl-host" id="todayTbl"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Quick stats</h3></div></div>
+        <div class="card-body">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Attendance Today</span><b class="num" style="font-size:18px">${d.attendancePct}%</b></div>
+            <div class="progress"><span style="width:${d.attendancePct}%"></span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Pending Enquiries</span><b class="num" style="font-size:18px">${d.pendingEnquiries}</b></div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Fee Collection Rate</span><b class="num" style="font-size:18px">82%</b></div>
+            <div class="progress"><span style="width:82%"></span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Demo Conversion</span><b class="num" style="font-size:18px">61%</b></div>
+            <div class="progress warn"><span style="width:61%"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // today classes table
+  document.getElementById('todayTbl').innerHTML = `<div class="tbl-wrap"><table class="tbl">
+    <thead><tr><th>Batch</th><th>Subject</th><th>Teacher</th><th>Room</th><th>Time</th><th class="num">Students</th><th>Status</th></tr></thead>
+    <tbody>${DB.today.map(t=>`<tr>
+      <td class="t-main">${t.batch}</td><td>${t.subject}</td><td>${t.teacher}</td><td>${t.room}</td>
+      <td class="num">${t.st}</td><td class="num">${t.students}</td><td>${App.badge(t.status)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+</script>
+</body></html>

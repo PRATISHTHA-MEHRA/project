@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Students - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if(App.guard()){
+  const API_BASE = "/students"; 
+  const COURSES_ENDPOINT = "/courses"; 
+  const BATCHES_ENDPOINT = "/batches"; 
+  const statuses = ["Active", "Inactive"];
+  const feeStatuses = ["Paid", "Pending", "Overdue"];
+  let usingFallback = false;
+  let currentStudents = [];
+  let courseList = []; // [{id, name}]
+  let batchList = [];  // [{id, name}]
+
+  const head = `<button class="btn btn-light" onclick="App.toast('Exported student list','ok')">${App.svg('download')}Export</button>
+    <button class="btn btn-primary" onclick="addStudent()">${App.svg('plus')}Add Student</button>`;
+  const c = App.layout('students','Students',['Students'],head);
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const asNum = v => Number(v ?? 0) || 0;
+  const toDateStr = v => {
+    if (!v) return '';
+    if (typeof v === 'string') return v.slice(0,10);
+    try { return new Date(v).toISOString().slice(0,10); } catch { return ''; }
+  };
+  const localStudents = () => (DB.students || []).map(mapStudent);
+  const findLocalStudent = id => (DB.students || []).find(s => String(s.id) === String(id));
+  const findCurrentStudent = id => currentStudents.find(s => String(s.id) === String(id));
+  const unique = values => [...new Set(values.filter(Boolean))];
+
+  
+
+  function unwrapOne(payload){
+    return payload?.data?.student || payload?.data || payload?.student || payload;
+  }
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.students)) return payload.students;
+    if (Array.isArray(payload?.courses)) return payload.courses;
+    if (Array.isArray(payload?.batches)) return payload.batches;
+    if (Array.isArray(payload?.data?.students)) return payload.data.students;
+    return [];
+  }
+
+  
+
+  async function loadDropdownData(){
+    try {
+      const payload = await API.get(COURSES_ENDPOINT);
+      courseList = unwrapList(payload)
+        .map(x => ({
+          id: String(x.id ?? ''),
+          name: x.course_name ?? x.name ?? '',
+          // course_name is NOT unique in this data (e.g. several rows are
+          // all "Mathematics Foundation" with different ids), so surface
+          // course_code too — it's what actually tells them apart.
+          code: x.course_code ?? x.code ?? ''
+        }))
+        .filter(x => x.name);
+    } catch (err) {
+      console.warn('Courses API unavailable, using local course list:', err);
+      courseList = (DB.courses || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '', code: x.id || '' }));
+    }
+    try {
+      const payload = await API.get(BATCHES_ENDPOINT);
+      batchList = unwrapList(payload)
+        .map(x => ({ id: String(x.id ?? x.batch_id ?? ''), name: x.name ?? x.batch_name ?? '' }))
+        .filter(x => x.name);
+    } catch (err) {
+      console.warn('Batches API unavailable, using local batch list:', err);
+      batchList = (DB.batches || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '' }));
+    }
+  }
+
+  
+  function mapStudent(item = {}){
+    const course = item.course ?? item.course_name ?? '';
+    const batch = item.batch ?? item.batch_name ?? '';
+    const courseObj = (DB.courses || []).find(c => c.name === course || c.course_name === course);
+    return {
+      id: String(item.id ?? ''),
+      code: item.code ?? item.student_code ?? '',
+      name: item.name ?? item.student_name ?? 'Unnamed Student',
+      mobile: item.mobile ?? '',
+      parent: item.parent ?? item.parent_name ?? '',
+      parentMobile: item.parentMobile ?? item.parent_mobile ?? '',
+      cls: item.cls ?? item.class_name ?? '',
+      course,
+      courseId: String(item.courseId ?? item.course_id ?? ''),
+      batch,
+      batchId: String(item.batchId ?? item.batch_id ?? ''),
+      feeType: item.feeType ?? item.fee_type ?? '',
+      feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
+      admission: toDateStr(item.admission ?? item.admission_date),
+      status: item.status ?? 'Active',
+      feeStatus: item.feeStatus ?? item.fee_status ?? 'Pending',
+      att: asNum(item.att ?? item.attendance),
+      gender: item.gender ?? '',
+      dob: toDateStr(item.dob),
+      address: item.address ?? '',
+      school: item.school ?? item.school_name ?? ''
+    };
+  }
+
+  function toApiPayload(s){
+    return {
+      name: s.name,
+      mobile: s.mobile,
+      parent: s.parent,
+      parentMobile: s.parentMobile,
+      cls: s.cls,
+      course: s.course,
+      courseId: s.courseId || undefined,
+      batch: s.batch,
+      batchId: s.batchId || undefined,
+      feeType: s.feeType,
+      feeAmt: s.feeAmt,
+      admission: s.admission,
+      status: s.status,
+      feeStatus: s.feeStatus,
+      att: s.att,
+      gender: s.gender,
+      dob: s.dob,
+      school: s.school,
+      address: s.address
+    };
+  }
+
+  function readForm(b){
+    const courseSel = b.querySelector('#f_course');
+    const batchSel = b.querySelector('#f_batch');
+    return {
+      name: b.querySelector('#f_name').value.trim(),
+      mobile: b.querySelector('#f_mobile').value.trim(),
+      parent: b.querySelector('#f_parent').value.trim(),
+      parentMobile: b.querySelector('#f_pmobile').value.trim(),
+      cls: b.querySelector('#f_cls').value.trim(),
+      course: courseSel.value,
+      courseId: courseSel.selectedOptions[0]?.dataset.id || '',
+      batch: batchSel.value,
+      batchId: batchSel.selectedOptions[0]?.dataset.id || '',
+      feeType: b.querySelector('#f_feetype').value,
+      feeAmt: asNum(b.querySelector('#f_feeamt').value),
+      admission: b.querySelector('#f_adm').value,
+      status: b.querySelector('#f_status').value,
+      feeStatus: b.querySelector('#f_fee_status').value,
+      att: asNum(b.querySelector('#f_att').value),
+      gender: b.querySelector('#f_gender').value,
+      dob: b.querySelector('#f_dob').value,
+      school: b.querySelector('#f_school').value.trim(),
+      address: b.querySelector('#f_addr').value.trim()
+    };
+  }
+
+  function renderPage(rows){
+    currentStudents = rows;
+    const total = rows.length;
+    const active = rows.filter(s => s.status === 'Active').length;
+    const due = rows.filter(s => s.feeStatus !== 'Paid').length;
+    const avgAtt = total ? Math.round(rows.reduce((a,s)=>a + asNum(s.att), 0) / total) : 0;
+
+    c.innerHTML = `<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi"><div class="top"><span class="label">Total Students</span><span class="ic b-brand">${App.svg('students')}</span></div><div class="val">${total}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Active</span><span class="ic b-green">${App.svg('check')}</span></div><div class="val">${active}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Fee Due</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${due}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Avg Attendance</span><span class="ic b-amber">${App.svg('attendance')}</span></div><div class="val">${avgAtt}%</div></div>
+    </div><div id="tbl"></div>`;
+
+    App.table('tbl', {
+      rows,
+      searchKeys:['id','code','name','mobile','parent','batch','course','cls'],
+      searchPlaceholder:'Search by name, ID, mobile...',
+      pageSize:10,
+      filters:[
+        {label:'All Classes',key:'cls',options:unique(rows.map(s=>s.cls))},
+        {label:'All Batches',key:'batch',options:unique(rows.map(s=>s.batch))},
+        {label:'Fee Type',key:'feeType',options:unique([...(DB.feeTypes||[]), ...rows.map(s=>s.feeType)])},
+        {label:'Status',key:'status',options:statuses},
+        {label:'Fee Status',key:'feeStatus',options:feeStatuses}
+      ],
+      columns:[
+        {key:'name',label:'Student',render:r=>App.whoCell(esc(r.name),`${esc(r.code || r.id)} - ${esc(r.cls)}`)},
+        {key:'mobile',label:'Mobile',render:r=>`<div>${esc(r.mobile || '-')}</div><div class="t-sub">${esc(r.parent || '-')}</div>`},
+        {key:'batch',label:'Batch',render:r=>`<div class="t-main" style="font-weight:500">${esc(r.batch || '-')}</div><div class="t-sub">${esc(r.course || '-')}</div>`},
+        {key:'feeType',label:'Fee',render:r=>`<div>${esc(String(r.feeType || '-').replace(' Fee',''))}</div><div class="t-sub num">${App.money(r.feeAmt)}</div>`},
+        {key:'att',label:'Attendance',num:true,render:r=>`<div class="pct-cell"><div class="progress ${r.att<75?'danger':r.att<85?'warn':''}"><span style="width:${Math.min(100, r.att)}%"></span></div><span class="num">${r.att}%</span></div>`},
+        {key:'feeStatus',label:'Fee Status',render:r=>App.badge(esc(r.feeStatus || '-'))},
+        {key:'status',label:'Status',render:r=>App.badge(esc(r.status || '-'))}
+      ],
+      actions:r=>`
+        ${App.actBtn('eye','View',`onclick="viewStudent('${jsStr(r.id)}')"`) }
+        ${App.actBtn('rupee','Collect Fee',`onclick="collectFee('${jsStr(r.id)}')"`) }
+        ${App.actBtn('edit','Edit',`onclick="editStudent('${jsStr(r.id)}')"`) }
+        ${App.actBtn('trash','Delete',`class="danger" onclick="delStudent('${jsStr(r.id)}')"`) }`
+    });
+  }
+
+  
+  async function loadStudents(){
+    try {
+      const payload = await API.get(API_BASE); // "/students" -> "http://localhost:5001/api/students"
+      usingFallback = false;
+      renderPage(unwrapList(payload).map(mapStudent));
+    } catch (err) {
+      console.warn('Students API unavailable, showing local data:', err);
+      usingFallback = true;
+      renderPage(localStudents());
+      App.toast('Students API unavailable. Showing local data.', 'info');
+    }
+  }
+
+  async function getStudent(id){
+    if (usingFallback) return mapStudent(findLocalStudent(id));
+    return mapStudent(unwrapOne(await API.get(`${API_BASE}/${encodeURIComponent(id)}`)));
+  }
+
+  
+  async function fetchStudentExtras(id){
+    if (usingFallback) return { fees: [], attendance: [], exams: [] };
+    const results = await Promise.allSettled([
+      API.get(`${API_BASE}/${encodeURIComponent(id)}/fees`),
+      API.get(`${API_BASE}/${encodeURIComponent(id)}/attendance`),
+      API.get(`${API_BASE}/${encodeURIComponent(id)}/exams`)
+    ]);
+    const unwrap = r => r.status === 'fulfilled' ? unwrapList(r.value) : [];
+    return {
+      fees: unwrap(results[0]),
+      attendance: unwrap(results[1]),
+      exams: unwrap(results[2])
+    };
+  }
+
+  function emptyRow(colspan, text){
+    return `<tr><td colspan="${colspan}" class="t-sub" style="text-align:center;padding:16px">${esc(text)}</td></tr>`;
+  }
+
+  function showStudentModal(s, extras){
+    if (!s || !s.id) return App.toast('Student not found', 'err');
+    extras = extras || { fees: [], attendance: [], exams: [] };
+
+    const ledgerRows = extras.fees.length
+      ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date) || '-')}</td></tr>`).join('')
+      : emptyRow(5, 'No payment records available yet.');
+
+    const attendanceRows = extras.attendance.length
+      ? extras.attendance.map(a => `<tr><td>${esc(toDateStr(a.date) || '-')}</td><td>${App.badge(esc(a.status ?? '-'))}</td><td>${esc(a.remarks ?? '-')}</td></tr>`).join('')
+      : emptyRow(3, 'No attendance records available yet.');
+
+    const examRows = extras.exams.length
+      ? extras.exams.map(e => `<tr><td>${esc(e.name ?? e.exam ?? '-')}</td><td class="num">${esc(e.obtained ?? e.score ?? '-')}/${esc(e.total ?? '-')}</td><td>${esc(e.grade ?? '-')}</td><td>${esc(e.remarks ?? '-')}</td></tr>`).join('')
+      : emptyRow(4, 'No performance records available yet.');
+
+    App.modal({ size:'xl', title:esc(s.name), sub:`${esc(s.code || s.id)} - ${esc(s.cls || '-')} - ${esc(s.course || '-')}`,
+      foot:`<button class="btn btn-light" onclick="location.href='student-details.html?id=${encodeURIComponent(s.id)}'">Open full profile</button><button class="btn btn-primary" data-close>Close</button>`,
+      body:`
+      <div class="detail-hero"><div class="av" style="background:var(--brand)">${esc((s.name||'?').split(' ').map(w=>w[0]).join(''))}</div>
+        <div style="flex:1"><h3>${esc(s.name)}</h3><div class="meta">${esc(s.code || s.id)} - Admitted ${esc(s.admission || '-')}</div>
+        <div class="chips" style="margin-top:8px">${App.badge(esc(s.status || '-'))} ${App.badge(esc(s.feeStatus || '-'))} <span class="chip">${esc(s.batch || '-')}</span></div></div></div>
+      <div class="tabs" id="stTabs">
+        <div class="tab active" data-t="p1">Profile</div><div class="tab" data-t="p2">Fees & Ledger</div>
+        <div class="tab" data-t="p3">Attendance</div><div class="tab" data-t="p4">Performance</div></div>
+      <div class="tab-pane active" data-p="p1">
+        <div class="sec-title">Personal Details</div>
+        <div class="dl cols-3"><div class="it"><div class="k">Gender</div><div class="v">${esc(s.gender==='M'?'Male':s.gender==='F'?'Female':'-')}</div></div>
+          <div class="it"><div class="k">Date of Birth</div><div class="v">${esc(s.dob || '-')}</div></div>
+          <div class="it"><div class="k">Mobile</div><div class="v">${esc(s.mobile || '-')}</div></div>
+          <div class="it"><div class="k">School</div><div class="v">${esc(s.school || '-')}</div></div>
+          <div class="it"><div class="k">Class</div><div class="v">${esc(s.cls || '-')}</div></div>
+          <div class="it"><div class="k">Address</div><div class="v">${esc(s.address || '-')}</div></div></div>
+        <div class="sec-title">Parent / Guardian</div>
+        <div class="dl"><div class="it"><div class="k">Parent Name</div><div class="v">${esc(s.parent || '-')}</div></div>
+          <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(s.parentMobile || '-')}</div></div></div>
+        <div class="sec-title">Course & Batch</div>
+        <div class="dl cols-3"><div class="it"><div class="k">Course</div><div class="v">${esc(s.course || '-')}</div></div>
+          <div class="it"><div class="k">Batch</div><div class="v">${esc(s.batch || '-')}</div></div>
+          <div class="it"><div class="k">Admission Date</div><div class="v">${esc(s.admission || '-')}</div></div></div>
+      </div>
+      <div class="tab-pane" data-p="p2">
+        <div class="dl cols-3"><div class="it"><div class="k">Fee Type</div><div class="v">${esc(s.feeType || '-')}</div></div>
+          <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(s.feeAmt)}</div></div>
+          <div class="it"><div class="k">Status</div><div class="v">${App.badge(esc(s.feeStatus || '-'))}</div></div></div>
+        <div class="sec-title">Payment Ledger</div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Receipt</th><th>Period</th><th class="num">Amount</th><th>Mode</th><th>Date</th></tr></thead>
+        <tbody>${ledgerRows}</tbody></table></div>
+        ${s.feeStatus && s.feeStatus!=='Paid'?`<div class="sec-title">Pending Dues</div><div class="pl-line minus"><span>${esc(s.feeType || 'Fee')} - current period</span><span class="v">${App.money(s.feeAmt)}</span></div>`:''}
+      </div>
+      <div class="tab-pane" data-p="p3">
+        <div class="dl cols-3"><div class="it"><div class="k">Overall %</div><div class="v num">${s.att}%</div></div></div>
+        <div class="progress ${s.att<75?'danger':''} mt16" style="height:10px"><span style="width:${Math.min(100, s.att)}%"></span></div>
+        <div class="sec-title">Attendance Records</div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
+        <tbody>${attendanceRows}</tbody></table></div>
+      </div>
+      <div class="tab-pane" data-p="p4">
+        <div class="sec-title">Test Performance</div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Test</th><th class="num">Score</th><th>Grade</th><th>Remark</th></tr></thead>
+        <tbody>${examRows}</tbody></table></div>
+      </div>`,
+      onOpen:b=>{ b.querySelectorAll('#stTabs .tab').forEach(t=>t.onclick=()=>{
+        b.querySelectorAll('#stTabs .tab').forEach(x=>x.classList.remove('active'));
+        b.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active'));
+        t.classList.add('active'); b.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active'); }); }
+    });
+  }
+
+  window.viewStudent = async id => {
+    try {
+      const s = await getStudent(id);
+      const extras = await fetchStudentExtras(id);
+      showStudentModal(s, extras);
+    }
+    catch (err) { App.toast(err.message || 'Failed to load student', 'err'); }
+  };
+
+  function studentForm(s){
+    const classOptions = unique(['Class A','Class B','Class 8','Class 9','Class 10','Class 11','Class 12', ...currentStudents.map(x=>x.cls)]);
+    const feeTypeOptions = unique(['Regular Fee','Scholarship', ...(DB.feeTypes||[]), ...currentStudents.map(x=>x.feeType)]);
+
+    
+    const courseOpts = courseList.length ? courseList
+      : unique(currentStudents.map(x=>x.course)).map(name => ({ id:'', name }));
+    const batchOpts = batchList.length ? batchList
+      : unique(currentStudents.map(x=>x.batch)).map(name => ({ id:'', name }));
+
+    return `<div class="form-grid">
+      <div><label>Full Name</label><input id="f_name" value="${esc(s?.name || '')}"></div>
+      <div><label>Mobile</label><input id="f_mobile" value="${esc(s?.mobile || '')}"></div>
+      <div><label>Parent Name</label><input id="f_parent" value="${esc(s?.parent || '')}"></div>
+      <div><label>Parent Mobile</label><input id="f_pmobile" value="${esc(s?.parentMobile || '')}"></div>
+      <div><label>Class / Standard</label><select id="f_cls">${classOptions.map(x=>`<option ${s?.cls===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+      <div><label>Course</label><select id="f_course">${courseOpts.map(cItem=>`<option value="${esc(cItem.name)}" data-id="${esc(cItem.id)}" ${(s?.courseId && s.courseId===cItem.id) || (!s?.courseId && s?.course===cItem.name)?'selected':''}>${esc(cItem.name)}${cItem.code?` (${esc(cItem.code)})`:''}</option>`).join('')}</select></div>
+      <div><label>Batch</label><select id="f_batch"><option value="" data-id="">— No batch —</option>${batchOpts.map(bItem=>`<option value="${esc(bItem.name)}" data-id="${esc(bItem.id)}" ${s?.batch===bItem.name?'selected':''}>${esc(bItem.name)}</option>`).join('')}</select></div>
+      <div><label>Fee Type</label><select id="f_feetype">${feeTypeOptions.map(x=>`<option ${s?.feeType===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+      <div><label>Fee Amount</label><input class="num" id="f_feeamt" value="${esc(s?.feeAmt ?? 0)}"></div>
+      <div><label>Attendance %</label><input class="num" id="f_att" value="${esc(s?.att ?? 0)}"></div>
+      <div><label>Fee Status</label><select id="f_fee_status">${feeStatuses.map(x=>`<option ${s?.feeStatus===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label>Admission Date</label><input type="date" id="f_adm" value="${esc(s?.admission || toDateStr(new Date()))}"></div>
+      <div><label>Status</label><select id="f_status">${statuses.map(x=>`<option ${s?.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label>Gender</label><select id="f_gender"><option value="M" ${s?.gender==='M'?'selected':''}>Male</option><option value="F" ${s?.gender==='F'?'selected':''}>Female</option></select></div>
+      <div><label>Date of Birth</label><input type="date" id="f_dob" value="${esc(s?.dob || '')}"></div>
+      <div><label>School</label><input id="f_school" value="${esc(s?.school || '')}"></div>
+      <div class="full"><label>Address</label><input id="f_addr" value="${esc(s?.address || '')}"></div>
+    </div>`;
+  }
+
+  window.addStudent = () => App.modal({ size:'lg', title:'Add New Student', sub:'Create a student admission record',
+    body:studentForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Save Student</button>`,
+    onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
+      const s = readForm(b);
+      if (!s.name) return App.toast('Enter student name','err');
+      try {
+        if (usingFallback) {
+          const cobj = (DB.courses||[]).find(c=>c.name===s.course) || {};
+          DB.students.unshift({ id:'STU-'+(1001+DB.students.length), ...s, feeAmt: s.feeAmt || cobj.monthly || 0 });
+          App.closeModal();
+          renderPage(localStudents());
+          return App.toast('Student added locally','ok');
+        }
+        // Use common API wrapper for POST
+        await API.post(API_BASE, toApiPayload(s));
+        App.closeModal();
+        await loadStudents();
+        App.toast('Student added successfully','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to add student','err');
+      }
+    }
+  });
+
+  window.editStudent = async id => {
+    try {
+      const s = await getStudent(id);
+      if (!s || !s.id) return App.toast('Student not found','err');
+      App.modal({ size:'lg', title:'Edit Student', sub:esc(s.code || s.id), body:studentForm(s),
+        foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Save Changes</button>`,
+        onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
+          const updated = readForm(b);
+          if (!updated.name) return App.toast('Enter student name','err');
+          try {
+            if (usingFallback) {
+              const local = findLocalStudent(id);
+              if (local) Object.assign(local, updated);
+              App.closeModal();
+              renderPage(localStudents());
+              return App.toast('Student updated locally','ok');
+            }
+            // Use common API wrapper for PUT
+            await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload(updated));
+            App.closeModal();
+            await loadStudents();
+            App.toast('Student updated','ok');
+          } catch (err) {
+            App.toast(err.message || 'Failed to update student','err');
+          }
+        }
+      });
+    } catch (err) {
+      App.toast(err.message || 'Could not fetch student','err');
+    }
+  };
+
+  window.delStudent = id => {
+    const s = findCurrentStudent(id);
+    const label = s ? `${esc(s.name)} (${esc(s.code || s.id)})` : esc(id);
+    App.confirmModal(`Delete <b>${label}</b>? This cannot be undone.`, async()=>{
+      try {
+        if (usingFallback) {
+          const i = (DB.students || []).findIndex(x => String(x.id) === String(id));
+          if (i > -1) DB.students.splice(i,1);
+          renderPage(localStudents());
+          return App.toast('Student deleted locally','ok');
+        }
+        // Use common API wrapper for DELETE
+        await API.delete(`${API_BASE}/${encodeURIComponent(id)}`);
+        await loadStudents();
+        App.toast('Student deleted','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to delete student','err');
+      }
+    }, {danger:true,yes:'Delete',title:'Delete student'});
+  };
+
+  window.collectFee = async id => {
+    const s = findCurrentStudent(id) || await getStudent(id).catch(()=>null);
+    if (!s) return App.toast('Student not found','err');
+    App.modal({ size:'lg', title:'Collect Fee', sub:`${esc(s.name)} - ${esc(s.batch || s.course || '-')}`,
+      body:`<div class="form-grid">
+        <div><label>Fee Type</label><input value="${esc(s.feeType || '-')}" disabled></div>
+        <div><label>Fee Period</label><input value="" id="cf_period" placeholder="e.g. Jun 2026"></div>
+        <div><label>Due Amount</label><input class="num" value="${esc(s.feeAmt)}" disabled></div>
+        <div><label>Discount</label><input class="num" id="cf_disc" value="0"></div>
+        <div><label>Late Fine</label><input class="num" id="cf_fine" value="0"></div>
+        <div><label>Paid Amount</label><input class="num" id="cf_paid" value="${esc(s.feeAmt)}"></div>
+        <div><label>Payment Mode</label><select id="cf_mode">${(DB.modes||[]).map(m=>`<option>${m}</option>`).join('')}</select></div>
+        <div><label>Transaction ID</label><input id="cf_txn" placeholder="UPI / Ref no."></div>
+        <div class="full"><label>Remarks</label><input id="cf_rem" placeholder="Optional note"></div></div>`,
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave">Collect & Generate Receipt</button>`,
+      onOpen:b=>b.querySelector('#cfSave').onclick=async()=>{
+        try {
+          if (usingFallback) {
+            const local = findLocalStudent(id);
+            if (local) local.feeStatus = 'Paid';
+            App.closeModal();
+            renderPage(localStudents());
+            return App.toast('Fee collected locally','ok');
+          }
+          // Use common API wrapper for PUT
+          await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload({...s, feeStatus:'Paid'}));
+          App.closeModal();
+          await loadStudents();
+          App.toast('Fee collected - receipt generated','ok');
+        } catch (err) {
+          App.toast(err.message || 'Failed to collect fee','err');
+        }
+      }
+    });
+  };
+
+  (async () => {
+    await loadDropdownData();
+    await loadStudents();
+  })();
+}
+</script>
+</body></html>

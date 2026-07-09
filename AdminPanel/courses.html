@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Courses - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const API_BASE = "http://localhost:5001/api/courses";
+  const cats = ["School", "Competitive", "Skill"];
+  let usingFallback = false;
+  let currentCourses = [];
+
+  const head = `<button class="btn btn-primary" onclick="addCourse()">${App.svg('plus')}Add Course</button>`;
+  const c = App.layout('courses', 'Courses & Subjects', ['Courses'], head);
+  c.innerHTML = `<div id="tbl"></div>`;
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const asNum = v => Number(v ?? 0) || 0;
+  const localCourses = () => (DB.courses || []).map(mapCourse);
+  const findLocalCourse = id => (DB.courses || []).find(x => String(x.id) === String(id) || String(x.course_code) === String(id));
+  const findCurrentCourse = id => currentCourses.find(x => String(x.id) === String(id));
+
+  function authHeaders(hasBody = false){
+    const token = localStorage.getItem('JWT_TOKEN') || '';
+    const headers = {};
+    if (hasBody) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }
+
+  async function apiRequest(path = '', options = {}){
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        data = { message: text };
+      }
+    }
+    if (!res.ok) {
+      throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+    }
+    return data;
+  }
+
+  function unwrapOne(payload){
+    return payload?.data?.course || payload?.data || payload?.course || payload;
+  }
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.courses)) return payload.courses;
+    if (Array.isArray(payload?.data?.courses)) return payload.data.courses;
+    return [];
+  }
+
+  function mapCourse(item = {}){
+    const id = item.id ?? item.course_id ?? item.course_code ?? '';
+    return {
+      id: String(id),
+      course_code: String(item.course_code ?? item.code ?? id ?? ''),
+      name: item.course_name || item.name || 'Unnamed Course',
+      category: item.category || 'School',
+      level: item.level || '',
+      subject: item.subject || '',
+      duration: item.duration || '',
+      monthly: asNum(item.monthly_fee ?? item.monthly),
+      quarterly: asNum(item.quarterly_fee ?? item.quarterly),
+      semi: asNum(item.semi_annual_fee ?? item.semi),
+      annual: asNum(item.annual_fee ?? item.annual),
+      status: item.status || 'Active',
+      desc: item.description || item.desc || ''
+    };
+  }
+
+  function toApiPayload(course){
+    return {
+      course_code: course.course_code,
+      course_name: course.name,
+      category: course.category,
+      level: course.level,
+      subject: course.subject,
+      duration: course.duration,
+      monthly_fee: course.monthly,
+      quarterly_fee: course.quarterly,
+      semi_annual_fee: course.semi,
+      annual_fee: course.annual,
+      status: course.status,
+      description: course.desc
+    };
+  }
+
+  function readForm(b){
+    return {
+      course_code: b.querySelector('#c_code').value.trim(),
+      name: b.querySelector('#c_name').value.trim(),
+      category: b.querySelector('#c_cat').value,
+      level: b.querySelector('#c_level').value.trim(),
+      subject: b.querySelector('#c_sub').value.trim(),
+      duration: b.querySelector('#c_dur').value.trim(),
+      monthly: asNum(b.querySelector('#c_m').value),
+      quarterly: asNum(b.querySelector('#c_q').value),
+      semi: asNum(b.querySelector('#c_s').value),
+      annual: asNum(b.querySelector('#c_a').value),
+      status: b.querySelector('#c_status').value,
+      desc: b.querySelector('#c_desc').value.trim()
+    };
+  }
+
+  function renderTable(rows){
+    currentCourses = rows;
+    App.table('tbl', {
+      rows,
+      searchKeys: ['id', 'course_code', 'name', 'subject', 'category', 'level'],
+      searchPlaceholder: 'Search courses...',
+      pageSize: 8,
+      filters: [{label: 'Category', key: 'category', options: cats}, {label: 'Status', key: 'status', options: ['Active', 'Inactive']}],
+      columns: [
+        {key: 'name', label: 'Course', render: r => `<div class="t-main">${esc(r.name)}</div><div class="t-sub">${esc(r.course_code)} - ${esc(r.level)}</div>`},
+        {key: 'category', label: 'Category', render: r => `<span class="chip">${esc(r.category)}</span>`},
+        {key: 'subject', label: 'Subject', render: r => esc(r.subject)},
+        {key: 'duration', label: 'Duration', render: r => esc(r.duration)},
+        {key: 'monthly', label: 'Monthly', num: true, render: r => App.money(r.monthly)},
+        {key: 'quarterly', label: 'Quarterly', num: true, render: r => App.money(r.quarterly)},
+        {key: 'annual', label: 'Annual', num: true, render: r => App.money(r.annual)},
+        {key: 'status', label: 'Status', render: r => App.badge(esc(r.status))}
+      ],
+      actions: r => `${App.actBtn('eye', 'View', `onclick="viewC('${jsStr(r.id)}')"`) }${App.actBtn('edit', 'Edit', `onclick="editC('${jsStr(r.id)}')"`) }${App.actBtn('trash', 'Delete', `class="danger" onclick="delC('${jsStr(r.id)}')"`) }`
+    });
+  }
+
+  async function loadCourses(){
+    try {
+      const payload = await apiRequest();
+      usingFallback = false;
+      renderTable(unwrapList(payload).map(mapCourse));
+    } catch (err) {
+      console.warn('Courses API unavailable, showing local data:', err);
+      usingFallback = true;
+      renderTable(localCourses());
+      App.toast('Courses API unavailable. Showing local data.', 'info');
+    }
+  }
+
+  async function getCourse(id){
+    if (usingFallback) return mapCourse(findLocalCourse(id));
+    const payload = await apiRequest(`/${encodeURIComponent(id)}`);
+    return mapCourse(unwrapOne(payload));
+  }
+
+  function showViewModal(x){
+    if (!x || !x.id) return App.toast('Course not found', 'err');
+    const batches = DB.batches ? DB.batches.filter(b => b.course === x.name) : [];
+    App.modal({size: 'lg', title: esc(x.name), sub: `${esc(x.course_code)} - ${esc(x.category)}`,
+      body: `<div class="dl cols-3"><div class="it"><div class="k">Subject</div><div class="v">${esc(x.subject)}</div></div>
+        <div class="it"><div class="k">Level</div><div class="v">${esc(x.level)}</div></div><div class="it"><div class="k">Duration</div><div class="v">${esc(x.duration)}</div></div></div>
+      <div class="sec-title">Fee Structure</div>
+      <div class="dl cols-2"><div class="it"><div class="k">Monthly Fee</div><div class="v num">${App.money(x.monthly)}</div></div>
+        <div class="it"><div class="k">Quarterly Fee</div><div class="v num">${App.money(x.quarterly)}</div></div>
+        <div class="it"><div class="k">Semi-Annual Fee</div><div class="v num">${App.money(x.semi)}</div></div>
+        <div class="it"><div class="k">Annual Fee</div><div class="v num">${App.money(x.annual)}</div></div></div>
+      <div class="sec-title">Description</div><p style="color:var(--ink-2)">${esc(x.desc)}</p>
+      <div class="sec-title">Batches (${batches.length})</div>
+      <div class="chips">${batches.map(b => `<span class="chip">${esc(b.name)} - ${esc(b.cur)} students</span>`).join('') || '<span class="t-sub">No batches</span>'}</div>`
+    });
+  }
+
+  function cForm(x){
+    return `<div class="form-grid">
+      <div><label>Course Code</label><input id="c_code" value="${esc(x?.course_code || '')}"></div>
+      <div><label>Course Name</label><input id="c_name" value="${esc(x?.name || '')}"></div>
+      <div><label>Category</label><select id="c_cat">${cats.map(k => `<option ${x?.category === k ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
+      <div><label>Class / Level</label><input id="c_level" value="${esc(x?.level || '')}"></div>
+      <div><label>Subject</label><input id="c_sub" value="${esc(x?.subject || '')}"></div>
+      <div><label>Duration</label><input id="c_dur" value="${esc(x?.duration || '')}"></div>
+      <div><label>Monthly Fee</label><input class="num" id="c_m" value="${esc(x?.monthly || '')}"></div>
+      <div><label>Quarterly Fee</label><input class="num" id="c_q" value="${esc(x?.quarterly || '')}"></div>
+      <div><label>Semi-Annual Fee</label><input class="num" id="c_s" value="${esc(x?.semi || '')}"></div>
+      <div><label>Annual Fee</label><input class="num" id="c_a" value="${esc(x?.annual || '')}"></div>
+      <div><label>Status</label><select id="c_status"><option ${x?.status === 'Active' ? 'selected' : ''}>Active</option><option ${x?.status === 'Inactive' ? 'selected' : ''}>Inactive</option></select></div>
+      <div class="full"><label>Description</label><textarea id="c_desc" rows="2">${esc(x?.desc || '')}</textarea></div>
+    </div>`;
+  }
+
+  window.viewC = async id => {
+    try {
+      showViewModal(await getCourse(id));
+    } catch (err) {
+      App.toast(err.message || 'Failed to load course details', 'err');
+    }
+  };
+
+  window.addCourse = () => App.modal({size: 'lg', title: 'Add Course', body: cForm(null),
+    foot: `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Course</button>`,
+    onOpen: b => b.querySelector('#sv').onclick = async () => {
+      const course = readForm(b);
+      if (!course.course_code) return App.toast('Enter course code', 'err');
+      if (!course.name) return App.toast('Enter course name', 'err');
+
+      try {
+        if (usingFallback) {
+          DB.courses.unshift({
+            id: course.course_code,
+            course_code: course.course_code,
+            name: course.name,
+            category: course.category,
+            level: course.level,
+            subject: course.subject,
+            duration: course.duration,
+            monthly: course.monthly,
+            quarterly: course.quarterly,
+            semi: course.semi,
+            annual: course.annual,
+            status: course.status,
+            desc: course.desc
+          });
+          App.closeModal();
+          renderTable(localCourses());
+          return App.toast('Course added locally', 'ok');
+        }
+
+        await apiRequest('', { method: 'POST', body: JSON.stringify(toApiPayload(course)) });
+        App.closeModal();
+        await loadCourses();
+        App.toast('Course added', 'ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to add course', 'err');
+      }
+    }
+  });
+
+  window.editC = async id => {
+    try {
+      openEditModal(await getCourse(id));
+    } catch (err) {
+      App.toast(err.message || 'Could not fetch current course data', 'err');
+    }
+  };
+
+  function openEditModal(x){
+    if (!x || !x.id) return App.toast('Course not found', 'err');
+    App.modal({size: 'lg', title: 'Edit Course', sub: esc(x.course_code), body: cForm(x),
+      foot: `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+      onOpen: b => b.querySelector('#sv').onclick = async () => {
+        const course = readForm(b);
+        if (!course.course_code) return App.toast('Enter course code', 'err');
+        if (!course.name) return App.toast('Enter course name', 'err');
+
+        try {
+          if (usingFallback) {
+            const matched = findLocalCourse(x.id);
+            if (matched) Object.assign(matched, {
+              id: course.course_code,
+              course_code: course.course_code,
+              name: course.name,
+              category: course.category,
+              level: course.level,
+              subject: course.subject,
+              duration: course.duration,
+              monthly: course.monthly,
+              quarterly: course.quarterly,
+              semi: course.semi,
+              annual: course.annual,
+              status: course.status,
+              desc: course.desc
+            });
+            App.closeModal();
+            renderTable(localCourses());
+            return App.toast('Course updated locally', 'ok');
+          }
+
+          await apiRequest(`/${encodeURIComponent(x.id)}`, { method: 'PUT', body: JSON.stringify(toApiPayload(course)) });
+          App.closeModal();
+          await loadCourses();
+          App.toast('Course updated', 'ok');
+        } catch(err) {
+          App.toast(err.message || 'Failed to update course', 'err');
+        }
+      }
+    });
+  }
+
+  window.delC = id => {
+    const x = findCurrentCourse(id);
+    const label = x ? `${esc(x.course_code)} - ${esc(x.name)}` : esc(id);
+    App.confirmModal(`Delete course <b>${label}</b>?`, async () => {
+      try {
+        if (usingFallback) {
+          const targetIdx = (DB.courses || []).findIndex(item => String(item.id) === String(id) || String(item.course_code) === String(id));
+          if (targetIdx > -1) DB.courses.splice(targetIdx, 1);
+          renderTable(localCourses());
+          return App.toast('Course deleted locally', 'ok');
+        }
+
+        await apiRequest(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        await loadCourses();
+        App.toast('Course deleted', 'ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to delete course', 'err');
+      }
+    }, {danger: true, yes: 'Delete'});
+  };
+
+  loadCourses();
+}
+</script>
+</body>
+</html>

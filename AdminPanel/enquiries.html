@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enquiries - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+
+  const CLASS_LEVELS = ['Class 8','Class 9','Class 10','Class 11','Class 12'];
+  const SOURCES = ['Walk-in','Referral','Newspaper','Social Media','Website','Other'];
+  const TIMINGS = ['Morning','Afternoon','Evening'];
+  const STATUSES = ['New','Contacted','Interested','Demo Scheduled','Demo Completed','Converted','Lost'];
+  const FEE_TYPES = ['Monthly Fee','Quarterly Fee','Semi-Annual Fee','Annual Fee'];
+  const FEE_FIELD_BY_TYPE = {
+    'Monthly Fee':'monthly_fee','Quarterly Fee':'quarterly_fee',
+    'Semi-Annual Fee':'semi_annual_fee','Annual Fee':'annual_fee'
+  };
+
+  const head = `<button class="btn btn-primary" onclick="addEnq()">${App.svg('plus')}New Enquiry</button>`;
+  const c = App.layout('enquiries','Enquiries',['Enquiries'],head);
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const unique = values => [...new Set(values.filter(Boolean))];
+
+  let currentEnquiries = [];
+  let courses = [];
+  let batches = [];
+
+  const findCurrentEnquiry = id => currentEnquiries.find(e => String(e.id) === String(id));
+
+  // Match an enquiry's free-text course_interest to a real course row.
+  const findMatchingCourse = (courseName) =>
+    courses.find(c => (c.course_name || '').trim().toLowerCase() === (courseName || '').trim().toLowerCase());
+
+  // Backend already returns frontend-shaped fields (see mapToFrontend), this
+  // just guards against any missing keys so the UI never throws.
+  function mapEnquiry(item = {}){
+    return {
+      id: item.id || '', name: item.name || 'Unnamed Student', parent: item.parent || '',
+      mobile: item.mobile || '', cls: item.cls || '', course: item.course || '',
+      source: item.source || '', timing: item.timing || '', followup: item.followup || '',
+      counselor: item.counselor || '', status: item.status || 'New',
+      remarks: item.remarks || '', date: item.date || ''
+    };
+  }
+
+  function toApiPayload(e){
+    return {
+      name: e.name, parent: e.parent, mobile: e.mobile, cls: e.cls, course: e.course,
+      source: e.source, timing: e.timing, followup: e.followup, counselor: e.counselor,
+      status: e.status, remarks: e.remarks
+    };
+  }
+
+  function readForm(box){
+    return {
+      name: box.querySelector('#e_name').value.trim(),
+      parent: box.querySelector('#e_parent').value.trim(),
+      mobile: box.querySelector('#e_mobile').value.trim(),
+      cls: box.querySelector('#e_cls').value,
+      course: box.querySelector('#e_course').value,
+      source: box.querySelector('#e_source').value,
+      timing: box.querySelector('#e_timing').value,
+      followup: box.querySelector('#e_follow').value,
+      counselor: box.querySelector('#e_couns').value,
+      status: box.querySelector('#e_status').value,
+      remarks: box.querySelector('#e_rem').value.trim()
+    };
+  }
+
+  async function loadLookups(){
+    try {
+      const [courseRes, batchRes] = await Promise.all([
+        API.get('/courses'), API.get('/batches')
+      ]);
+      courses = courseRes?.data || [];
+      batches = batchRes?.data || [];
+    } catch (err) {
+      console.warn('Could not load courses/batches:', err);
+      courses = []; batches = [];
+    }
+  }
+
+  function renderPage(rows){
+    currentEnquiries = rows;
+    const converted = rows.filter(e => e.status === 'Converted').length;
+    const open = rows.filter(e => ['New','Contacted','Interested','Demo Scheduled','Demo Completed'].includes(e.status)).length;
+    const rate = rows.length ? Math.round(converted / rows.length * 100) : 0;
+
+    c.innerHTML = `<div class="kpi-grid">
+      <div class="kpi"><div class="top"><span class="label">Total Enquiries</span><span class="ic b-brand">${App.svg('enquiry')}</span></div><div class="val">${rows.length}</div></div>
+      <div class="kpi"><div class="top"><span class="label">New / Open</span><span class="ic b-blue">${App.svg('bell')}</span></div><div class="val">${open}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Converted</span><span class="ic b-green">${App.svg('check')}</span></div><div class="val">${converted}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Conversion Rate</span><span class="ic b-amber">${App.svg('trending')}</span></div><div class="val">${rate}%</div></div>
+    </div><div id="tbl"></div>`;
+
+    if (!rows.length){
+      document.getElementById('tbl').innerHTML = `<div class="empty-state">No records available yet.</div>`;
+      return;
+    }
+
+    App.table('tbl',{
+      rows,
+      searchKeys:['id','name','mobile','course','counselor'],
+      searchPlaceholder:'Search enquiries...',
+      pageSize:9,
+      dateFilter:true,
+      filters:[
+        {label:'Status',key:'status',options:unique([...STATUSES, ...rows.map(e=>e.status)])},
+        {label:'Source',key:'source',options:unique([...SOURCES, ...rows.map(e=>e.source)])},
+        {label:'Counselor',key:'counselor',options:unique(rows.map(e=>e.counselor))}
+      ],
+      columns:[
+        {key:'name',label:'Student',render:r=>`<div class="t-main">${esc(r.name)}</div><div class="t-sub">${esc(r.id)} - ${esc(r.cls)}</div>`},
+        {key:'mobile',label:'Contact',render:r=>`<div>${esc(r.mobile)}</div><div class="t-sub">${esc(r.parent)}</div>`},
+        {key:'course',label:'Course Interest',render:r=>esc(r.course)},
+        {key:'source',label:'Source',render:r=>`<span class="chip">${esc(r.source)}</span>`},
+        {key:'counselor',label:'Counselor',render:r=>esc(r.counselor)},
+        {key:'followup',label:'Follow-up',render:r=>esc(r.followup)},
+        {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
+      ],
+      actions:r=>{
+        const convertBtn = r.status === 'Converted' ? '' : App.actBtn('admit','Convert',`onclick="convertE('${jsStr(r.id)}')"`);
+        return `${App.actBtn('eye','View',`onclick="viewE('${jsStr(r.id)}')"`) }${App.actBtn('edit','Edit',`onclick="editE('${jsStr(r.id)}')"`) }${convertBtn}${App.actBtn('trash','Delete',`class="danger" onclick="delE('${jsStr(r.id)}')"`) }`;
+      }
+    });
+  }
+
+  async function loadEnquiries(){
+    try {
+      const payload = await API.get('/enquiries');
+      renderPage((payload?.data || []).map(mapEnquiry));
+    } catch (err) {
+      App.toast(err.message || 'Failed to load enquiries','err');
+      renderPage([]);
+    }
+  }
+
+  function showEnquiryModal(x){
+    if (!x || !x.id) return App.toast('Enquiry not found', 'err');
+    App.modal({size:'lg',title:esc(x.name),sub:`${esc(x.id)} - ${esc(x.status)}`,
+      body:`<div class="dl cols-2"><div class="it"><div class="k">Parent</div><div class="v">${esc(x.parent)}</div></div>
+        <div class="it"><div class="k">Mobile</div><div class="v">${esc(x.mobile)}</div></div>
+        <div class="it"><div class="k">Class</div><div class="v">${esc(x.cls)}</div></div><div class="it"><div class="k">Course Interest</div><div class="v">${esc(x.course)}</div></div>
+        <div class="it"><div class="k">Source</div><div class="v">${esc(x.source)}</div></div><div class="it"><div class="k">Preferred Timing</div><div class="v">${esc(x.timing)}</div></div>
+        <div class="it"><div class="k">Counselor</div><div class="v">${esc(x.counselor)}</div></div><div class="it"><div class="k">Follow-up Date</div><div class="v">${esc(x.followup)}</div></div></div>
+      <div class="sec-title">Enquiry Log</div>
+      <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)"><span class="t-id" style="min-width:90px">${esc(x.date || '-')}</span><span style="color:var(--ink-2)">Enquiry created via ${esc(x.source || '-')}</span></div>
+      <div class="sec-title">Remarks</div><p style="color:var(--ink-2)">${esc(x.remarks) || 'No remarks recorded.'}</p>`,
+      foot:`<button class="btn btn-light" data-close>Close</button>${x.status === 'Converted' ? '' : `<button class="btn btn-primary" onclick="App.closeModal();convertE('${jsStr(x.id)}')">Convert to Admission</button>`}`
+    });
+  }
+
+  function eForm(x){
+    const courseNames = unique(courses.map(c => c.course_name));
+    // Status editable here, but 'Converted' is intentionally excluded —
+    // that transition only happens through the Convert flow.
+    const editableStatuses = STATUSES.filter(s => s !== 'Converted');
+    return `<div class="form-grid">
+      <div><label>Student Name</label><input id="e_name" value="${esc(x?.name || '')}"></div>
+      <div><label>Parent Name</label><input id="e_parent" value="${esc(x?.parent || '')}"></div>
+      <div><label>Mobile</label><input id="e_mobile" value="${esc(x?.mobile || '')}"></div>
+      <div><label>Class</label><select id="e_cls">${CLASS_LEVELS.map(k=>`<option ${x?.cls===k?'selected':''}>${esc(k)}</option>`).join('')}</select></div>
+      <div><label>Course Interested</label><select id="e_course">${courseNames.map(cn=>`<option ${x?.course===cn?'selected':''}>${esc(cn)}</option>`).join('')}</select></div>
+      <div><label>Source</label><select id="e_source">${SOURCES.map(s=>`<option ${x?.source===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+      <div><label>Preferred Timing</label><select id="e_timing">${TIMINGS.map(t=>`<option ${x?.timing===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Follow-up Date</label><input type="date" id="e_follow" value="${esc(x?.followup || '')}"></div>
+      <div><label>Counselor</label><input id="e_couns" value="${esc(x?.counselor || '')}"></div>
+      <div><label>Status</label><select id="e_status">${editableStatuses.map(s=>`<option ${x?.status===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+      <div class="full"><label>Remarks</label><textarea id="e_rem" rows="2">${esc(x?.remarks || '')}</textarea></div>
+    </div>`;
+  }
+
+  window.viewE = id => showEnquiryModal(findCurrentEnquiry(id));
+
+  window.addEnq = () => App.modal({size:'lg',title:'New Enquiry',body:eForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Enquiry</button>`,
+    onOpen:box=>box.querySelector('#sv').onclick=async()=>{
+      const enquiry = readForm(box);
+      if (!enquiry.name) return App.toast('Enter name','err');
+      try {
+        await API.post('/enquiries', toApiPayload(enquiry));
+        App.closeModal();
+        await loadEnquiries();
+        App.toast('Enquiry added','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to add enquiry','err');
+      }
+    }
+  });
+
+  window.editE = id => {
+    const x = findCurrentEnquiry(id);
+    if (!x) return App.toast('Enquiry not found', 'err');
+    App.modal({size:'lg',title:'Edit Enquiry',sub:esc(x.id),body:eForm(x),
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+      onOpen:box=>box.querySelector('#sv').onclick=async()=>{
+        const enquiry = readForm(box);
+        if (!enquiry.name) return App.toast('Enter name','err');
+        try {
+          await API.put(`/enquiries/${encodeURIComponent(x.id)}`, toApiPayload(enquiry));
+          App.closeModal();
+          await loadEnquiries();
+          App.toast('Enquiry updated','ok');
+        } catch (err) {
+          App.toast(err.message || 'Failed to update enquiry','err');
+        }
+      }
+    });
+  };
+
+  // --- Convert flow -----------------------------------------------------
+  // Only asks for what the enquiry doesn't already have: Batch, Fee Type,
+  // Fee Amount, Admission Date, Fee Status. Course comes from the enquiry
+  // itself and is used (read-only) to filter which batches are shown.
+
+  function convertForm(x, matchedCourse){
+    if (!matchedCourse) {
+      return `<div class="empty-state">
+        Course "${esc(x.course)}" from this enquiry doesn't match any course in your Courses list.
+        Please update the enquiry's course to an existing course before converting.
+      </div>`;
+    }
+
+    // batchController's mapToFrontend returns `course` as the course NAME
+    // (falling back to the raw course_id only if its join didn't resolve) —
+    // there is no `course_id` field on the batch objects the API returns.
+    const matchingBatches = batches.filter(b =>
+      (b.course && b.course === matchedCourse.course_name) ||
+      String(b.course) === String(matchedCourse.id)
+    );
+    // batchController's mapToFrontend returns the label as `name`.
+    const batchOptions = matchingBatches.length
+      ? matchingBatches.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')
+      : '';
+
+    return `<div class="dl cols-2">
+        <div class="it"><div class="k">Student</div><div class="v">${esc(x.name)} (${esc(x.cls)})</div></div>
+        <div class="it"><div class="k">Course (from enquiry)</div><div class="v">${esc(matchedCourse.course_name)}</div></div>
+      </div>
+      <div class="form-grid">
+        <div><label>Batch</label><select id="cv_batch">${batchOptions || '<option value="">No batches for this course</option>'}</select></div>
+        <div><label>Fee Type</label><select id="cv_feetype">${FEE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <div><label>Fee Amount</label><input type="number" id="cv_feeamount" step="0.01"></div>
+        <div><label>Admission Date</label><input type="date" id="cv_date" value="${new Date().toISOString().split('T')[0]}"></div>
+        <div><label>Fee Status</label><select id="cv_feestatus"><option>Paid</option><option>Pending</option></select></div>
+      </div>`;
+  }
+
+  window.convertE = id => {
+    const x = findCurrentEnquiry(id);
+    if (!x) return App.toast('Enquiry not found', 'err');
+
+    const matchedCourse = findMatchingCourse(x.course);
+
+    App.modal({size:'lg',title:`Convert ${esc(x.name)} to Admission`,sub:esc(x.id),
+      body: convertForm(x, matchedCourse),
+      foot: matchedCourse
+        ? `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cv_sv">Convert</button>`
+        : `<button class="btn btn-light" data-close>Close</button>`,
+      onOpen: box => {
+        if (!matchedCourse) return;
+
+        const feeTypeSel = box.querySelector('#cv_feetype');
+        const feeAmountInput = box.querySelector('#cv_feeamount');
+
+        // Auto-fill fee amount from the course's fee table when the fee
+        // type changes; the counselor can still edit it manually.
+        const refreshFeeAmount = () => {
+          const field = FEE_FIELD_BY_TYPE[feeTypeSel.value];
+          if (field && matchedCourse[field] != null) feeAmountInput.value = matchedCourse[field];
+        };
+        feeTypeSel.onchange = refreshFeeAmount;
+        refreshFeeAmount();
+
+        box.querySelector('#cv_sv').onclick = async () => {
+          const batchId = box.querySelector('#cv_batch').value;
+          const feeType = feeTypeSel.value;
+          const feeAmount = feeAmountInput.value;
+          const feeStatus = box.querySelector('#cv_feestatus').value;
+          const admissionDate = box.querySelector('#cv_date').value;
+
+          if (!batchId) return App.toast('Select a batch','err');
+          if (!feeAmount) return App.toast('Enter a fee amount','err');
+
+          try {
+            // Only the admission-specific fields are sent — the backend
+            // reads the rest (name, mobile, parent, class, course) straight
+            // off the enquiry record and merges them in.
+            await API.post(`/enquiries/${encodeURIComponent(x.id)}/convert`, {
+              batchId, feeType, feeAmount, feeStatus, admissionDate
+            });
+            App.closeModal();
+            App.toast('Enquiry converted to admission','ok');
+            location.href = 'admissions.html';
+          } catch (err) {
+            App.toast(err.message || 'Failed to convert enquiry','err');
+          }
+        };
+      }
+    });
+  };
+
+  window.delE = id => {
+    const x = findCurrentEnquiry(id);
+    const label = x ? esc(x.name) : esc(id);
+    App.confirmModal(`Delete enquiry from <b>${label}</b>?`, async()=>{
+      try {
+        await API.delete(`/enquiries/${encodeURIComponent(id)}`);
+        await loadEnquiries();
+        App.toast('Enquiry deleted','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to delete enquiry','err');
+      }
+    },{danger:true,yes:'Delete'});
+  };
+
+  (async function init(){
+    await loadLookups();
+    await loadEnquiries();
+  })();
+}
+</script>
+</body></html>

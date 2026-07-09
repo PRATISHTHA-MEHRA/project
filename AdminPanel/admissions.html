@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admissions - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+if (App.guard()) {
+  const API_BASE = "/admissions"; // will be appended to BASE_URL in api.js
+  let usingFallback = false;
+  let currentAdmissions = [];
+
+  const head = `<button class="btn btn-primary" onclick="newAdmission()">${App.svg('plus')}New Admission</button>`;
+  const c = App.layout('admissions', 'Admissions', ['Admissions'], head);
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const asNum = v => Number(v ?? 0) || 0;
+  const unique = values => [...new Set(values.filter(Boolean))];
+
+  // ---- API helpers (using common API.js) ----
+
+  function unwrapList(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.admissions)) return payload.admissions;
+    if (Array.isArray(payload?.data?.admissions)) return payload.data.admissions;
+    return [];
+  }
+
+  function mapAdmission(item = {}) {
+    const id = item.id ?? item.admission_id ?? item.student_id ?? '';
+    const courseObj = (DB.courses || []).find(
+      c => c.name === item.course || c.course_name === item.course
+    );
+    return {
+      id: String(id),
+      name: item.name || item.student_name || 'Unnamed Student',
+      mobile: item.mobile || '',
+      parent: item.parent || item.parent_name || '',
+      cls: item.cls || item.class || '',
+      course: item.course || '',
+      batch: item.batch || '',
+      feeType: item.feeType || item.fee_type || 'Monthly Fee',
+      feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
+      admission: item.admission || item.admission_date || item.created_at || '',
+      feeStatus: item.feeStatus || item.fee_status || 'Pending'
+    };
+  }
+
+  function toApiPayload(a) {
+    return {
+      name: a.name,
+      mobile: a.mobile,
+      parent: a.parent,
+      cls: a.cls,
+      course: a.course,
+      batch: a.batch,
+      feeType: a.feeType,
+      feeAmt: a.feeAmt
+    };
+  }
+
+  function fallbackAdmissions() {
+    return (DB.students || []).slice(0, 12).map(mapAdmission);
+  }
+
+  function avgFee(rows) {
+    return rows.length
+      ? Math.round(rows.reduce((a, r) => a + asNum(r.feeAmt), 0) / rows.length)
+      : 0;
+  }
+
+  // ---- Rendering ----
+
+  function renderPage(rows) {
+    currentAdmissions = rows;
+    const admittedThisMonth = rows.length;
+    const quarter = Math.max(rows.length, DB.dash?.newAdmissions || rows.length);
+    const fromDemos = Math.round(rows.length * 0.6);
+
+    c.innerHTML = `
+      <div class="card mb16">
+        <div class="card-head">
+          <div>
+            <h3>Admission Workflow</h3>
+            <div class="sub">From enquiry to enrolled student in 6 steps</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="flow-steps">
+            ${['Create Enquiry','Schedule Demo','Convert','Assign Course & Batch','Select Fee Type','Generate Receipt']
+              .map((s,i)=>`<div class="flow-step ${i<2?'done':i===2?'active':''}">
+                <div class="dot">${i<2?App.svg('check'):i+1}</div>
+                <div class="lab">${s}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="top">
+            <span class="label">Admissions This Month</span>
+            <span class="ic b-brand">${App.svg('admit')}</span>
+          </div>
+          <div class="val">${admittedThisMonth}</div>
+        </div>
+        <div class="kpi">
+          <div class="top">
+            <span class="label">This Quarter</span>
+            <span class="ic b-blue">${App.svg('calendar')}</span>
+          </div>
+          <div class="val">${quarter}</div>
+        </div>
+        <div class="kpi">
+          <div class="top">
+            <span class="label">From Demos</span>
+            <span class="ic b-green">${App.svg('demo')}</span>
+          </div>
+          <div class="val">${fromDemos}</div>
+        </div>
+        <div class="kpi">
+          <div class="top">
+            <span class="label">Avg Fee / Admission</span>
+            <span class="ic b-amber">${App.svg('rupee')}</span>
+          </div>
+          <div class="val">${App.money(avgFee(rows))}</div>
+        </div>
+      </div>
+      <div id="tbl"></div>
+    `;
+
+    App.table('tbl', {
+      rows,
+      searchKeys: ['id','name','mobile','parent','course','batch'],
+      searchPlaceholder: 'Search recent admissions...',
+      pageSize: 8,
+      filters: [
+        { label:'Course', key:'course', options:unique(rows.map(s=>s.course)) },
+        {
+          label:'Fee Type',
+          key:'feeType',
+          options: unique([...DB.feeTypes, ...rows.map(s=>s.feeType)])
+        }
+      ],
+      columns: [
+        {
+          key:'name',
+          label:'Student',
+          render:r=>App.whoCell(esc(r.name), esc(r.id || r.mobile))
+        },
+        {
+          key:'mobile',
+          label:'Contact',
+          render:r=>`<div>${esc(r.mobile || '-')}</div>
+                     <div class="t-sub">${esc(r.parent || '-')}</div>`
+        },
+        {
+          key:'course',
+          label:'Course / Batch',
+          render:r=>`<div>${esc(r.course)}</div>
+                     <div class="t-sub">${esc(r.batch)}</div>`
+        },
+        { key:'feeType', label:'Fee Type', render:r=>esc(r.feeType) },
+        {
+          key:'feeAmt',
+          label:'Fee',
+          num:true,
+          render:r=>App.money(r.feeAmt)
+        },
+        {
+          key:'admission',
+          label:'Admission Date',
+          render:r=>esc(String(r.admission || '').slice(0,10) || '-')
+        },
+        {
+          key:'feeStatus',
+          label:'Fee Status',
+          render:r=>App.badge(esc(r.feeStatus))
+        }
+      ],
+      actions: r =>
+        `${App.actBtn('eye','View',`onclick="viewAdmission('${jsStr(r.id)}')"`)}` +
+        `${App.actBtn('print','Receipt',`onclick="App.toast('Receipt printed','ok')"`)}`
+    });
+  }
+
+  // ---- Load admissions via common API ----
+
+  async function loadAdmissions() {
+    try {
+      const payload = await API.get(API_BASE); // "/admissions" → "http://localhost:5001/api/admissions"
+      usingFallback = false;
+      renderPage(unwrapList(payload).map(mapAdmission));
+    } catch (err) {
+      console.warn('Admissions API unavailable, showing local data:', err);
+      usingFallback = true;
+      renderPage(fallbackAdmissions());
+      App.toast('Admissions API unavailable. Showing local data.', 'info');
+    }
+  }
+
+  // ---- View Admission ----
+
+  window.viewAdmission = id => {
+    const a = currentAdmissions.find(x => String(x.id) === String(id));
+    if (!a) return App.toast('Admission not found', 'err');
+    App.modal({
+      size:'lg',
+      title:esc(a.name),
+      sub:`${esc(a.cls)} - ${esc(a.course)}`,
+      body:`<div class="dl cols-2">
+        <div class="it"><div class="k">Mobile</div><div class="v">${esc(a.mobile || '-')}</div></div>
+        <div class="it"><div class="k">Parent</div><div class="v">${esc(a.parent || '-')}</div></div>
+        <div class="it"><div class="k">Class</div><div class="v">${esc(a.cls)}</div></div>
+        <div class="it"><div class="k">Batch</div><div class="v">${esc(a.batch)}</div></div>
+        <div class="it"><div class="k">Fee Type</div><div class="v">${esc(a.feeType)}</div></div>
+        <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(a.feeAmt)}</div></div>
+      </div>`,
+      foot:`<button class="btn btn-light" data-close>Close</button>
+            <button class="btn btn-primary" onclick="App.toast('Receipt printed','ok')">
+              ${App.svg('print')}Receipt
+            </button>`
+    });
+  };
+
+  // ---- New Admission flow (unchanged, except API call) ----
+
+  function optionList(values, selected) {
+    return unique(values).map(
+      v => `<option ${selected===v?'selected':''}>${esc(v)}</option>`
+    ).join('');
+  }
+
+  function amountForFee(courseName, feeType) {
+    const course = (DB.courses || []).find(
+      c => c.name === courseName || c.course_name === courseName
+    );
+    if (!course) return 0;
+    if (feeType === 'Quarterly Fee') return course.quarterly || course.quarterly_fee || 0;
+    if (feeType === 'Semi-Annual Fee') return course.semi || course.semi_annual_fee || 0;
+    if (feeType === 'Annual Fee') return course.annual || course.annual_fee || 0;
+    return course.monthly || course.monthly_fee || 0;
+  }
+
+  window.newAdmission = () => {
+    let step = 1;
+    const data = {
+      name: '',
+      mobile: '',
+      parent: '',
+      cls: 'Class 11',
+      course: 'Full Stack Development',
+      batch: 'Alpha Web Dev',
+      feeType: 'Quarterly Fee',
+      feeAmt: 7350
+    };
+
+    const saveStep = box => {
+      if (step === 1) {
+        data.name = box.querySelector('#a_name').value.trim();
+        data.mobile = box.querySelector('#a_mobile').value.trim();
+        data.parent = box.querySelector('#a_parent').value.trim();
+        data.cls = box.querySelector('#a_cls').value;
+      } else if (step === 2) {
+        data.course = box.querySelector('#a_course').value;
+        data.batch = box.querySelector('#a_batch').value;
+      } else if (step === 3) {
+        data.feeType = box.querySelector('#a_fee').value;
+        data.feeAmt = asNum(box.querySelector('#a_fee_amt').value);
+      }
+    };
+
+    const render = box => {
+      const steps = ['Student Details','Course & Batch','Fee Type','Confirm & Receipt'];
+      const stepsHtml = `<div class="flow-steps" style="margin-bottom:22px">
+        ${steps.map((s,i)=>`<div class="flow-step ${i+1<step?'done':i+1===step?'active':''}">
+          <div class="dot">${i+1<step?App.svg('check'):i+1}</div>
+          <div class="lab">${s}</div>
+        </div>`).join('')}
+      </div>`;
+      let body = '';
+
+      if (step === 1) {
+        body = `<div class="form-grid">
+          <div><label>Student Name</label><input id="a_name" placeholder="Full name" value="${esc(data.name)}"></div>
+          <div><label>Mobile</label><input id="a_mobile" value="${esc(data.mobile)}"></div>
+          <div><label>Parent Name</label><input id="a_parent" value="${esc(data.parent)}"></div>
+          <div><label>Class</label><select id="a_cls">${optionList(['Class 9','Class 10','Class 11','Class 12','Class A','Class B'], data.cls)}</select></div>
+        </div>`;
+      } else if (step === 2) {
+        const courseOptions = ['Full Stack Development', ...DB.courses.map(c=>c.name), ...currentAdmissions.map(a=>a.course)];
+        const batchOptions = ['Alpha Web Dev', ...DB.batches.map(b=>b.name), ...currentAdmissions.map(a=>a.batch)];
+        body = `<div class="form-grid">
+          <div><label>Course</label><select id="a_course">${optionList(courseOptions, data.course)}</select></div>
+          <div><label>Batch</label><select id="a_batch">${optionList(batchOptions, data.batch)}</select></div>
+        </div>`;
+      } else if (step === 3) {
+        if (!data.feeAmt) data.feeAmt = amountForFee(data.course, data.feeType);
+        body = `<div class="form-grid">
+          <div><label>Select Fee Type</label><select id="a_fee">${optionList(['Monthly Fee','Quarterly Fee','Semi-Annual Fee','Annual Fee', ...DB.feeTypes], data.feeType)}</select></div>
+          <div><label>Fee Amount</label><input class="num" id="a_fee_amt" value="${esc(data.feeAmt)}"></div>
+        </div>
+        <p class="hint">Tuition fees are recurring - choose Monthly, Quarterly, Semi-Annual or Annual.</p>`;
+      } else {
+        body = `<div class="dl cols-2">
+          <div class="it"><div class="k">Student</div><div class="v">${esc(data.name)}</div></div>
+          <div class="it"><div class="k">Mobile</div><div class="v">${esc(data.mobile)}</div></div>
+          <div class="it"><div class="k">Parent</div><div class="v">${esc(data.parent)}</div></div>
+          <div class="it"><div class="k">Class</div><div class="v">${esc(data.cls)}</div></div>
+          <div class="it"><div class="k">Course</div><div class="v">${esc(data.course)}</div></div>
+          <div class="it"><div class="k">Batch</div><div class="v">${esc(data.batch)}</div></div>
+          <div class="it"><div class="k">Fee Type</div><div class="v">${esc(data.feeType)}</div></div>
+          <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(data.feeAmt)}</div></div>
+        </div>`;
+      }
+
+      box.querySelector('.modal-body').innerHTML = stepsHtml + body;
+
+      if (step === 3) {
+        const feeSel = box.querySelector('#a_fee');
+        const amount = box.querySelector('#a_fee_amt');
+        feeSel.onchange = () => {
+          const next = amountForFee(data.course, feeSel.value);
+          if (next) amount.value = next;
+        };
+      }
+
+      box.querySelector('#wizBtn').textContent =
+        step < 4 ? 'Next' : 'Confirm & Generate Receipt';
+    };
+
+    App.modal({
+      size:'lg',
+      title:'New Admission',
+      sub:'Guided admission flow',
+      body:'<div></div>',
+      foot:`<button class="btn btn-light" data-close>Cancel</button>
+            <button class="btn btn-primary" id="wizBtn">Next</button>`,
+      onOpen: box => {
+        render(box);
+        box.querySelector('#wizBtn').onclick = async () => {
+          saveStep(box);
+          if (step === 1 && !data.name) return App.toast('Enter student name','err');
+          if (step === 1 && !data.mobile) return App.toast('Enter mobile number','err');
+
+          if (step < 4) {
+            step++;
+            render(box);
+            return;
+          }
+
+          try {
+            if (usingFallback) {
+              const local = {
+                id: 'ADM-' + (1001 + currentAdmissions.length),
+                ...data,
+                admission: new Date().toISOString().slice(0,10),
+                feeStatus: 'Pending'
+              };
+              currentAdmissions.unshift(local);
+              App.closeModal();
+              renderPage(currentAdmissions);
+              return App.toast('Admission saved locally','ok');
+            }
+
+            // Use common API wrapper for POST
+            await API.post(API_BASE, toApiPayload(data));
+            App.closeModal();
+            await loadAdmissions();
+            App.toast('Admission complete - receipt generated','ok');
+          } catch (err) {
+            App.toast(err.message || 'Failed to create admission','err');
+          }
+        };
+      }
+    });
+  };
+
+  // Initial load
+  loadAdmissions();
+}
+</script>
+</body></html>

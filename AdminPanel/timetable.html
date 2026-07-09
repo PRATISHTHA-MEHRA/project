@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timetable · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-light" onclick="App.toast('Timetable exported (PDF)','ok')">${App.svg('print')}Print</button>`;
+  const c=App.layout('timetable','Timetable',['Timetable'],head);
+  c.innerHTML=`<div class="card mb16"><div class="toolbar">
+      <div class="seg" id="viewSeg">
+        <button class="active" data-v="today">Today</button><button data-v="weekly">Weekly</button>
+        <button data-v="teacher">Teacher-wise</button><button data-v="batch">Batch-wise</button><button data-v="room">Classroom-wise</button>
+      </div><div class="grow"></div>
+      <input type="date" class="filter-sel" value="2026-06-07" style="min-width:150px">
+    </div><div id="ttBody" style="padding:18px"></div></div>`;
+
+  const statuses=['Scheduled','Completed','Cancelled','Rescheduled','Teacher Absent','Holiday'];
+  function slot(cl){ return `<div class="tt-slot"><div class="tt-time">${cl.st} – ${cl.et}</div>
+    <div class="tt-info"><b>${cl.batch}</b> · ${cl.subject} <div class="m">${cl.teacher} · ${cl.room} · ${cl.students} students</div></div>
+    ${App.badge(cl.status)}
+    <div class="act" style="margin-left:10px">${App.actBtn('eye','View',`onclick="viewClass('${cl.id}')"`)}${App.actBtn('calendar','Reschedule',`onclick="App.toast('Reschedule request sent','ok')"`)}</div></div>`; }
+
+  const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  function buildClasses(){
+    const arr=[];
+    DB.batches.filter(b=>b.status==='Active').forEach(b=>{ arr.push({id:b.id,batch:b.name,subject:b.subject,teacher:b.teacher,room:b.room,st:b.st,et:b.et,students:b.cur,days:b.days,status:'Scheduled'}); });
+    return arr;
+  }
+  const all=buildClasses();
+
+  function render(v){
+    const host=document.getElementById('ttBody');
+    if(v==='today'){
+      host.innerHTML=`<div class="tt-day"><div class="dh">Saturday, 07 June 2026 <span class="t-sub">${DB.today.length} classes</span></div>${DB.today.map(slot).join('')}</div>`;
+    } else if(v==='weekly'){
+      host.innerHTML=`<div class="tt-grid">${days.map(d=>{ const cls=all.filter(c=>c.days.includes(d.slice(0,3))||c.days.includes('Mon-')||c.days==='Mon-Sat'); return `<div class="tt-day"><div class="dh">${d} <span class="t-sub">${cls.length} classes</span></div>${cls.length?cls.map(slot).join(''):'<div class="tt-slot" style="color:var(--ink-4)">No classes scheduled</div>'}</div>`; }).join('')}</div>`;
+    } else if(v==='teacher'){
+      host.innerHTML=`<div class="tt-grid">${DB.teachers.filter(t=>t.status==='Active').map(t=>{ const cls=all.filter(c=>c.teacher===t.name); return cls.length?`<div class="tt-day"><div class="dh">${t.name} <span class="t-sub">${cls.length} classes</span></div>${cls.map(slot).join('')}</div>`:''; }).join('')}</div>`;
+    } else if(v==='batch'){
+      host.innerHTML=`<div class="tt-grid">${all.map(c=>`<div class="tt-day"><div class="dh">${c.batch} <span class="t-sub">${c.days}</span></div>${slot(c)}</div>`).join('')}</div>`;
+    } else {
+      host.innerHTML=`<div class="tt-grid">${DB.classrooms.map(r=>{ const cls=all.filter(c=>c.room===r); return `<div class="tt-day"><div class="dh">${r} <span class="t-sub">${cls.length} classes</span></div>${cls.length?cls.map(slot).join(''):'<div class="tt-slot" style="color:var(--ink-4)">Room free</div>'}</div>`; }).join('')}</div>`;
+    }
+  }
+  render('today');
+  document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); render(b.dataset.v); });
+
+  window.viewClass=id=>{ const cl=DB.today.find(c=>c.id===id)||all.find(c=>c.id===id);
+    App.modal({size:'md',title:cl.batch,sub:cl.subject,
+      body:`<div class="dl cols-2"><div class="it"><div class="k">Teacher</div><div class="v">${cl.teacher}</div></div>
+        <div class="it"><div class="k">Room</div><div class="v">${cl.room}</div></div>
+        <div class="it"><div class="k">Time</div><div class="v">${cl.st} – ${cl.et}</div></div><div class="it"><div class="k">Students</div><div class="v">${cl.students}</div></div>
+        <div class="it"><div class="k">Status</div><div class="v">${App.badge(cl.status)}</div></div></div>
+      <div class="sec-title">Actions</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-light btn-sm" onclick="App.toast('Class rescheduled','ok')">${App.svg('calendar')}Reschedule</button>
+        <button class="btn btn-light btn-sm" onclick="App.toast('Class cancelled','ok')">${App.svg('x')}Cancel</button>
+        <button class="btn btn-light btn-sm" onclick="App.toast('Substitute assigned','ok')">${App.svg('teacher')}Assign Substitute</button>
+        <button class="btn btn-amber btn-sm" onclick="App.toast('Students notified','ok')">${App.svg('bell')}Notify Students</button>
+      </div>`
+    }); };
+}
+</script>
+</body></html>

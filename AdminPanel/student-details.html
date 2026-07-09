@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student Profile - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const API_BASE = "http://localhost:5001/api/students";
+  const requestedId = new URLSearchParams(location.search).get('id') || DB.students[0].id;
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const asNum = v => Number(v ?? 0) || 0;
+
+  function authHeaders(){
+    const token = localStorage.getItem('JWT_TOKEN') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  async function apiRequest(path = ''){
+    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (err) { data = { message: text }; }
+    }
+    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function unwrapOne(payload){
+    return payload?.data?.student || payload?.data || payload?.student || payload;
+  }
+
+  function mapStudent(item = {}){
+    const id = item.id ?? item.student_id ?? item.student_code ?? '';
+    const course = item.course || '';
+    const courseObj = (DB.courses || []).find(c => c.name === course || c.course_name === course);
+    return {
+      id: String(id),
+      name: item.name || item.student_name || 'Unnamed Student',
+      mobile: item.mobile || '',
+      parent: item.parent || item.parent_name || '',
+      parentMobile: item.parentMobile || item.parent_mobile || '',
+      cls: item.cls || item.class || item.standard || '',
+      course,
+      batch: item.batch || '',
+      feeType: item.feeType || item.fee_type || 'Regular Fee',
+      feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
+      admission: item.admission || item.admission_date || '',
+      status: item.status || 'Active',
+      feeStatus: item.feeStatus || item.fee_status || 'Pending',
+      att: asNum(item.att ?? item.attendance),
+      gender: item.gender || 'M',
+      dob: item.dob || '',
+      address: item.address || '',
+      school: item.school || ''
+    };
+  }
+
+  function fallbackStudent(id){
+    return mapStudent((DB.students || []).find(x => String(x.id) === String(id)) || DB.students[0]);
+  }
+
+  async function loadStudent(id){
+    try {
+      return mapStudent(unwrapOne(await apiRequest(`/${encodeURIComponent(id)}`)));
+    } catch (err) {
+      console.warn('Student API unavailable, showing local profile:', err);
+      App.toast('Student API unavailable. Showing local profile.', 'info');
+      return fallbackStudent(id);
+    }
+  }
+
+  function render(s){
+    const head = `<button class="btn btn-light" onclick="App.toast('Statement downloaded','ok')">${App.svg('download')}Statement</button>
+      <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
+    const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,s.id],head);
+    const initials = s.name.split(' ').map(w=>w[0]).join('');
+
+    c.innerHTML = `
+      <div class="card mb16"><div class="card-body">
+        <div class="detail-hero" style="border:none;padding:0;margin:0">
+          <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
+          <div style="flex:1"><h3 style="font-size:22px">${esc(s.name)}</h3>
+            <div class="meta">${esc(s.id)} - ${esc(s.cls)} - ${esc(s.course)}</div>
+            <div class="chips" style="margin-top:9px">${App.badge(esc(s.status))} ${App.badge(esc(s.feeStatus))} <span class="chip">${esc(s.batch || '-')}</span> <span class="chip">Admitted ${esc(s.admission || '-')}</span></div></div>
+          <div style="text-align:right"><div class="t-sub">Fee Amount</div><div class="num" style="font-size:24px;font-weight:600">${App.money(s.feeAmt)}</div><div class="t-sub">${esc(s.feeType)}</div></div>
+        </div></div></div>
+
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi"><div class="top"><span class="label">Attendance</span><span class="ic b-brand">${App.svg('attendance')}</span></div><div class="val">${s.att}%</div></div>
+        <div class="kpi"><div class="top"><span class="label">Avg Test Score</span><span class="ic b-blue">${App.svg('marks')}</span></div><div class="val">82%</div></div>
+        <div class="kpi"><div class="top"><span class="label">Fees Paid (YTD)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(s.feeAmt*3)}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Pending Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${s.feeStatus==='Paid'?'Rs 0':App.money(s.feeAmt)}</div></div>
+      </div>
+
+      <div class="grid-2 mb16">
+        <div class="card"><div class="card-head"><h3>Personal & Parent Details</h3></div><div class="card-body">
+          <div class="dl"><div class="it"><div class="k">Gender</div><div class="v">${esc(s.gender==='M'?'Male':'Female')}</div></div>
+          <div class="it"><div class="k">Date of Birth</div><div class="v">${esc(s.dob || '-')}</div></div>
+          <div class="it"><div class="k">Mobile</div><div class="v">${esc(s.mobile || '-')}</div></div>
+          <div class="it"><div class="k">School</div><div class="v">${esc(s.school || '-')}</div></div>
+          <div class="it"><div class="k">Parent Name</div><div class="v">${esc(s.parent || '-')}</div></div>
+          <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(s.parentMobile || '-')}</div></div>
+          <div class="it" style="grid-column:1/-1"><div class="k">Address</div><div class="v">${esc(s.address || '-')}</div></div></div>
+        </div></div>
+        <div class="card"><div class="card-head"><h3>Course & Batch</h3></div><div class="card-body">
+          <div class="dl"><div class="it"><div class="k">Course</div><div class="v">${esc(s.course)}</div></div>
+          <div class="it"><div class="k">Batch</div><div class="v">${esc(s.batch || '-')}</div></div>
+          <div class="it"><div class="k">Fee Type</div><div class="v">${esc(s.feeType)}</div></div>
+          <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(s.feeAmt)}</div></div></div>
+          <div class="sec-title">Documents</div>
+          <div class="chips"><span class="chip">Aadhaar.pdf</span><span class="chip">Birth Certificate.pdf</span><span class="chip">Prev Marksheet.pdf</span><span class="chip">Photo.jpg</span></div>
+        </div></div>
+      </div>
+
+      <div class="grid-2 mb16">
+        <div class="card"><div class="card-head"><h3>Payment Ledger</h3></div><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Receipt</th><th>Period</th><th class="num">Amount</th><th>Mode</th><th>Date</th></tr></thead>
+          <tbody>${['Apr 2026','May 2026','Jun 2026'].map((p,i)=>`<tr><td class="t-id">RCP-240${10+i}</td><td>${p}</td><td class="num">${App.money(s.feeAmt)}</td><td>${['UPI','Cash','Bank Transfer'][i]}</td><td>0${4+i}-06-2026</td></tr>`).join('')}</tbody></table></div></div>
+        <div class="card"><div class="card-head"><h3>Test Performance</h3></div><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Test</th><th class="num">Score</th><th>Grade</th><th>Remark</th></tr></thead>
+          <tbody>${[['Unit Test 3',82,'A','Consistent'],['Monthly Test',74,'B+','Improving'],['Weekly Quiz 5',91,'A+','Excellent'],['Mock Exam 1',68,'B','Revise']].map(t=>`<tr><td>${t[0]}</td><td class="num">${t[1]}/100</td><td><span class="badge b-blue"><span class="pip"></span>${t[2]}</span></td><td>${t[3]}</td></tr>`).join('')}</tbody></table></div></div>
+      </div>
+
+      <div class="card"><div class="card-head"><h3>Teacher Remarks</h3></div><div class="card-body">
+        ${[['Rajesh Verma','Diligent student, strong in conceptual questions. Needs to improve speed in numerical sections.','2 days ago'],['Pooja Bansal','Active participation in class. Homework submitted on time consistently.','1 week ago']].map(r=>`
+          <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)">${App.avatar(r[0])}<div><b>${r[0]}</b> <span class="t-sub">- ${r[2]}</span><p style="margin:4px 0 0;color:var(--ink-2)">${r[1]}</p></div></div>`).join('')}
+      </div></div>`;
+  }
+
+  loadStudent(requestedId).then(render).catch(err => App.toast(err.message || 'Failed to load student profile', 'err'));
+}
+</script>
+</body></html>

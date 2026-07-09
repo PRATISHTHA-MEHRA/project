@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exams · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-primary" onclick="addExam()">${App.svg('plus')}Create Test</button>`;
+  const c=App.layout('exams','Exams & Tests',[`<span>Assessment</span>`,'Exams'],head);
+  c.innerHTML=`<div id="tbl"></div>`;
+  App.table('tbl',{
+    rows:DB.exams, searchKeys:['id','name','course','batch','subject'], searchPlaceholder:'Search tests…', pageSize:9, dateFilter:true,
+    filters:[{label:'Batch',key:'batch',options:[...new Set(DB.exams.map(e=>e.batch))]},{label:'Status',key:'status',options:['Scheduled','Completed','Result Published']}],
+    columns:[
+      {key:'name',label:'Test',render:r=>`<div class="t-main">${r.name}</div><div class="t-sub">${r.id} · ${r.subject}</div>`},
+      {key:'batch',label:'Batch / Course',render:r=>`<div>${r.batch}</div><div class="t-sub">${r.course}</div>`},
+      {key:'teacher',label:'Teacher',render:r=>App.whoCell(r.teacher)},
+      {key:'date',label:'Test Date'},
+      {key:'total',label:'Marks',num:true,render:r=>`${r.total} <span class="t-sub">(pass ${r.pass})</span>`},
+      {key:'status',label:'Status',render:r=>App.badge(r.status)}
+    ],
+    actions:r=>`${App.actBtn('eye','View',`onclick="viewEx('${r.id}')"`)}${App.actBtn('marks','Add Marks',`onclick="location.href='marks.html'"`)}${App.actBtn('edit','Edit',`onclick="editEx('${r.id}')"`)}`
+  });
+  const find=id=>DB.exams.find(e=>e.id===id);
+  window.viewEx=id=>{ const x=find(id);
+    App.modal({size:'md',title:x.name,sub:x.id,
+      body:`<div class="dl cols-2"><div class="it"><div class="k">Course</div><div class="v">${x.course}</div></div>
+        <div class="it"><div class="k">Batch</div><div class="v">${x.batch}</div></div><div class="it"><div class="k">Subject</div><div class="v">${x.subject}</div></div>
+        <div class="it"><div class="k">Teacher</div><div class="v">${x.teacher}</div></div><div class="it"><div class="k">Date</div><div class="v">${x.date}</div></div>
+        <div class="it"><div class="k">Total / Pass</div><div class="v">${x.total} / ${x.pass}</div></div>
+        <div class="it"><div class="k">Status</div><div class="v">${App.badge(x.status)}</div></div></div>
+      <div class="sec-title">Syllabus</div><p style="color:var(--ink-2)">${x.syllabus}</p>`,
+      foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-primary" onclick="App.closeModal();location.href='marks.html'">View Marks</button>` }); };
+  function exForm(x){ return `<div class="form-grid">
+    <div class="full"><label>Test Name</label><input id="x_name" value="${x?x.name:''}"></div>
+    <div><label>Course</label><select id="x_course">${DB.courses.map(c=>`<option ${x&&x.course===c.name?'selected':''}>${c.name}</option>`).join('')}</select></div>
+    <div><label>Batch</label><select id="x_batch">${DB.batches.map(b=>`<option ${x&&x.batch===b.name?'selected':''}>${b.name}</option>`).join('')}</select></div>
+    <div><label>Subject</label><input id="x_sub" value="${x?x.subject:''}"></div>
+    <div><label>Teacher</label><select id="x_teacher">${DB.teachers.map(t=>`<option ${x&&x.teacher===t.name?'selected':''}>${t.name}</option>`).join('')}</select></div>
+    <div><label>Test Date</label><input type="date" id="x_date" value="${x?x.date:'2026-06-15'}"></div>
+    <div><label>Total Marks</label><input class="num" id="x_total" value="${x?x.total:'100'}"></div>
+    <div><label>Passing Marks</label><input class="num" id="x_pass" value="${x?x.pass:'33'}"></div>
+    <div><label>Status</label><select id="x_status">${['Scheduled','Completed','Result Published'].map(s=>`<option ${x&&x.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="full"><label>Syllabus</label><input id="x_syll" value="${x?x.syllabus:''}"></div></div>`; }
+  window.addExam=()=>App.modal({size:'lg',title:'Create Test',body:exForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Create Test</button>`,
+    onOpen:b=>b.querySelector('#sv').onclick=()=>{ const n=b.querySelector('#x_name').value.trim(); if(!n)return App.toast('Enter test name','err');
+      DB.exams.unshift({id:'EX-'+(2001+DB.exams.length),name:n,course:b.querySelector('#x_course').value,batch:b.querySelector('#x_batch').value,subject:b.querySelector('#x_sub').value,teacher:b.querySelector('#x_teacher').value,date:b.querySelector('#x_date').value,total:+b.querySelector('#x_total').value,pass:+b.querySelector('#x_pass').value,syllabus:b.querySelector('#x_syll').value,status:b.querySelector('#x_status').value});
+      App.closeModal();location.reload(); }});
+  window.editEx=id=>{ const x=find(id); App.modal({size:'lg',title:'Edit Test',sub:x.id,body:exForm(x),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Test updated','ok')">Save Changes</button>`}); };
+}
+</script>
+</body></html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Batches - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const API_BASE = "http://localhost:5001/api/batches";
+  const types = ["Regular","Crash Course","Weekend","Online","Hybrid"];
+  const statuses = ["Active","Upcoming","Completed"];
+  let usingFallback = false;
+  let currentBatches = [];
+
+  const head = `<button class="btn btn-primary" onclick="addBatch()">${App.svg('plus')}Add Batch</button>`;
+  const c = App.layout('batches','Batches',['Batches'],head);
+  c.innerHTML = `<div id="tbl"></div>`;
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const asNum = v => Number(v ?? 0) || 0;
+  const unique = values => [...new Set(values.filter(Boolean))];
+  const localBatches = () => (DB.batches || []).map(mapBatch);
+  const findLocalBatch = id => (DB.batches || []).find(b => String(b.id) === String(id));
+  const findCurrentBatch = id => currentBatches.find(b => String(b.id) === String(id));
+
+  function authHeaders(hasBody = false){
+    const token = localStorage.getItem('JWT_TOKEN') || '';
+    const headers = {};
+    if (hasBody) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }
+
+  async function apiRequest(path = '', options = {}){
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (err) { data = { message: text }; }
+    }
+    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function unwrapOne(payload){
+    return payload?.data?.batch || payload?.data || payload?.batch || payload;
+  }
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.batches)) return payload.batches;
+    if (Array.isArray(payload?.data?.batches)) return payload.data.batches;
+    return [];
+  }
+
+  function mapBatch(item = {}){
+    const id = item.id ?? item.batch_id ?? item.batch_code ?? '';
+    return {
+      id: String(id),
+      name: item.name || item.batch_name || 'Unnamed Batch',
+      course: item.course || '',
+      subject: item.subject || '',
+      teacher: item.teacher || '',
+      room: item.room || '',
+      start: item.start || item.start_date || '',
+      end: item.end || item.end_date || '',
+      days: item.days || '',
+      type: item.type || 'Regular',
+      st: item.st || item.start_time || '',
+      et: item.et || item.end_time || '',
+      max: asNum(item.max ?? item.max_students),
+      cur: asNum(item.cur ?? item.current_students),
+      status: item.status || 'Active'
+    };
+  }
+
+  function toApiPayload(b){
+    return {
+      name: b.name,
+      course: b.course,
+      subject: b.subject,
+      teacher: b.teacher,
+      room: b.room,
+      start: b.start,
+      end: b.end,
+      days: b.days,
+      type: b.type,
+      st: b.st,
+      et: b.et,
+      max: String(b.max),
+      cur: String(b.cur),
+      status: b.status
+    };
+  }
+
+  function readForm(box){
+    return {
+      name: box.querySelector('#b_name').value.trim(),
+      course: box.querySelector('#b_course').value.trim(),
+      subject: box.querySelector('#b_sub').value.trim(),
+      teacher: box.querySelector('#b_teacher').value.trim(),
+      room: box.querySelector('#b_room').value.trim(),
+      start: box.querySelector('#b_start').value,
+      end: box.querySelector('#b_end').value,
+      days: box.querySelector('#b_days').value.trim(),
+      type: box.querySelector('#b_type').value,
+      st: box.querySelector('#b_st').value.trim(),
+      et: box.querySelector('#b_et').value.trim(),
+      max: asNum(box.querySelector('#b_max').value),
+      cur: asNum(box.querySelector('#b_cur').value),
+      status: box.querySelector('#b_status').value
+    };
+  }
+
+  function renderTable(rows){
+    currentBatches = rows;
+    App.table('tbl',{
+      rows,
+      searchKeys:['id','name','course','teacher','room','subject'],
+      searchPlaceholder:'Search batches...',
+      pageSize:8,
+      filters:[
+        {label:'Course',key:'course',options:unique(rows.map(b=>b.course))},
+        {label:'Type',key:'type',options:types},
+        {label:'Status',key:'status',options:statuses}
+      ],
+      columns:[
+        {key:'name',label:'Batch',render:r=>`<div class="t-main">${esc(r.name)}</div><div class="t-sub">${esc(r.id)} - ${esc(r.type)}</div>`},
+        {key:'course',label:'Course / Subject',render:r=>`<div>${esc(r.course)}</div><div class="t-sub">${esc(r.subject)}</div>`},
+        {key:'teacher',label:'Teacher',render:r=>App.whoCell(esc(r.teacher || '-'), esc(r.room || '-'))},
+        {key:'days',label:'Schedule',render:r=>`<div>${esc(r.days)}</div><div class="t-sub num">${esc(r.st)}-${esc(r.et)}</div>`},
+        {key:'cur',label:'Capacity',num:true,render:r=>{
+          const pct = r.max ? Math.min(100, (r.cur / r.max) * 100) : 0;
+          return `<div class="pct-cell"><div class="progress ${pct>90?'warn':''}"><span style="width:${pct}%"></span></div><span class="num">${esc(r.cur)}/${esc(r.max)}</span></div>`;
+        }},
+        {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
+      ],
+      actions:r=>`${App.actBtn('eye','View',`onclick="viewB('${jsStr(r.id)}')"`) }${App.actBtn('edit','Edit',`onclick="editB('${jsStr(r.id)}')"`) }${App.actBtn('trash','Delete',`class="danger" onclick="delB('${jsStr(r.id)}')"`) }`
+    });
+  }
+
+  async function loadBatches(){
+    try {
+      const payload = await apiRequest();
+      usingFallback = false;
+      renderTable(unwrapList(payload).map(mapBatch));
+    } catch (err) {
+      console.warn('Batches API unavailable, showing local data:', err);
+      usingFallback = true;
+      renderTable(localBatches());
+      App.toast('Batches API unavailable. Showing local data.', 'info');
+    }
+  }
+
+  async function getBatch(id){
+    if (usingFallback) return mapBatch(findLocalBatch(id));
+    return mapBatch(unwrapOne(await apiRequest(`/${encodeURIComponent(id)}`)));
+  }
+
+  function enrolledStudents(batch){
+    return (DB.students || []).filter(s => s.batch === batch.name);
+  }
+
+  function showBatchModal(x){
+    if (!x || !x.id) return App.toast('Batch not found', 'err');
+    const studs = enrolledStudents(x);
+    App.modal({size:'xl',title:esc(x.name),sub:`${esc(x.id)} - ${esc(x.course)}`,
+      body:`<div class="dl cols-3"><div class="it"><div class="k">Teacher</div><div class="v">${esc(x.teacher)}</div></div>
+        <div class="it"><div class="k">Classroom</div><div class="v">${esc(x.room)}</div></div><div class="it"><div class="k">Type</div><div class="v">${esc(x.type)}</div></div>
+        <div class="it"><div class="k">Days</div><div class="v">${esc(x.days)}</div></div><div class="it"><div class="k">Timing</div><div class="v">${esc(x.st)} - ${esc(x.et)}</div></div>
+        <div class="it"><div class="k">Duration</div><div class="v">${esc(x.start)} -> ${esc(x.end)}</div></div>
+        <div class="it"><div class="k">Capacity</div><div class="v">${esc(x.cur)} / ${esc(x.max)}</div></div><div class="it"><div class="k">Status</div><div class="v">${App.badge(esc(x.status))}</div></div></div>
+      <div class="sec-title">Enrolled Students (${studs.length})</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Student</th><th>Class</th><th>Fee Type</th><th class="num">Attendance</th><th>Fee Status</th></tr></thead>
+      <tbody>${studs.slice(0,8).map(s=>`<tr><td>${App.whoCell(esc(s.name),esc(s.id))}</td><td>${esc(s.cls)}</td><td>${esc(String(s.feeType).replace(' Fee',''))}</td><td class="num">${esc(s.att)}%</td><td>${App.badge(esc(s.feeStatus))}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No students enrolled yet</td></tr>'}</tbody></table></div>`
+    });
+  }
+
+  function options(values, selected){
+    return unique(values).map(v => `<option ${selected===v?'selected':''}>${esc(v)}</option>`).join('');
+  }
+
+  function bForm(x){
+    const courseValues = ['Full Stack Development', ...DB.courses.map(c=>c.name), ...currentBatches.map(b=>b.course)];
+    const teacherValues = ['John Doe', ...DB.teachers.map(t=>t.name), ...currentBatches.map(b=>b.teacher)];
+    const roomValues = ['Lab 3','Room 102', ...DB.classrooms, ...currentBatches.map(b=>b.room)];
+    return `<div class="form-grid">
+      <div class="full"><label>Batch Name</label><input id="b_name" value="${esc(x?.name || '')}"></div>
+      <div><label>Course</label><select id="b_course">${options(courseValues, x?.course)}</select></div>
+      <div><label>Subject</label><input id="b_sub" value="${esc(x?.subject || '')}"></div>
+      <div><label>Teacher</label><select id="b_teacher">${options(teacherValues, x?.teacher)}</select></div>
+      <div><label>Classroom</label><select id="b_room">${options(roomValues, x?.room)}</select></div>
+      <div><label>Start Date</label><input type="date" id="b_start" value="${esc(x?.start || '2026-07-01')}"></div>
+      <div><label>End Date</label><input type="date" id="b_end" value="${esc(x?.end || '2027-02-28')}"></div>
+      <div><label>Days</label><input id="b_days" value="${esc(x?.days || 'Mon, Wed, Fri')}"></div>
+      <div><label>Batch Type</label><select id="b_type">${types.map(t=>`<option ${x?.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Start Time</label><input id="b_st" value="${esc(x?.st || '05:00 PM')}"></div>
+      <div><label>End Time</label><input id="b_et" value="${esc(x?.et || '06:30 PM')}"></div>
+      <div><label>Max Students</label><input class="num" id="b_max" value="${esc(x?.max ?? '30')}"></div>
+      <div><label>Current Students</label><input class="num" id="b_cur" value="${esc(x?.cur ?? '0')}"></div>
+      <div><label>Status</label><select id="b_status">${statuses.map(s=>`<option ${x?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    </div>`;
+  }
+
+  window.viewB = async id => {
+    try { showBatchModal(await getBatch(id)); }
+    catch (err) { App.toast(err.message || 'Failed to load batch', 'err'); }
+  };
+
+  window.addBatch = () => App.modal({size:'lg',title:'Add Batch',body:bForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Batch</button>`,
+    onOpen:box=>box.querySelector('#sv').onclick=async()=>{
+      const batch = readForm(box);
+      if (!batch.name) return App.toast('Enter batch name','err');
+      try {
+        if (usingFallback) {
+          DB.batches.unshift({id:'B-'+(110+DB.batches.length), ...batch});
+          App.closeModal();
+          renderTable(localBatches());
+          return App.toast('Batch created locally','ok');
+        }
+        await apiRequest('', { method:'POST', body:JSON.stringify(toApiPayload(batch)) });
+        App.closeModal();
+        await loadBatches();
+        App.toast('Batch created','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to create batch','err');
+      }
+    }
+  });
+
+  window.editB = async id => {
+    try {
+      const x = await getBatch(id);
+      if (!x || !x.id) return App.toast('Batch not found', 'err');
+      App.modal({size:'lg',title:'Edit Batch',sub:esc(x.id),body:bForm(x),
+        foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+        onOpen:box=>box.querySelector('#sv').onclick=async()=>{
+          const batch = readForm(box);
+          if (!batch.name) return App.toast('Enter batch name','err');
+          try {
+            if (usingFallback) {
+              const local = findLocalBatch(id);
+              if (local) Object.assign(local, batch);
+              App.closeModal();
+              renderTable(localBatches());
+              return App.toast('Batch updated locally','ok');
+            }
+            await apiRequest(`/${encodeURIComponent(x.id)}`, { method:'PUT', body:JSON.stringify(toApiPayload(batch)) });
+            App.closeModal();
+            await loadBatches();
+            App.toast('Batch updated','ok');
+          } catch (err) {
+            App.toast(err.message || 'Failed to update batch','err');
+          }
+        }
+      });
+    } catch (err) {
+      App.toast(err.message || 'Could not fetch batch','err');
+    }
+  };
+
+  window.delB = id => {
+    const x = findCurrentBatch(id);
+    const label = x ? `${esc(x.name)} (${esc(x.id)})` : esc(id);
+    App.confirmModal(`Delete batch <b>${label}</b>?`, async()=>{
+      try {
+        if (usingFallback) {
+          const i = (DB.batches || []).findIndex(b => String(b.id) === String(id));
+          if (i > -1) DB.batches.splice(i, 1);
+          renderTable(localBatches());
+          return App.toast('Batch deleted locally','ok');
+        }
+        await apiRequest(`/${encodeURIComponent(id)}`, { method:'DELETE' });
+        await loadBatches();
+        App.toast('Batch deleted','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to delete batch','err');
+      }
+    },{danger:true,yes:'Delete'});
+  };
+
+  loadBatches();
+}
+</script>
+</body></html>

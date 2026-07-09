@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teacher Profile - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const API_BASE = "http://localhost:5001/api/teachers";
+  const requestedId = new URLSearchParams(location.search).get('id') || DB.teachers[0].id;
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const asNum = v => Number(v ?? 0) || 0;
+  const splitSubjects = v => Array.isArray(v) ? v : String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+
+  async function apiRequest(path = ''){
+    const res = await fetch(`${API_BASE}${path}`);
+    const text = await res.text();
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (err) { data = { message: text }; }
+    }
+    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function unwrapOne(payload){
+    return payload?.data?.teacher || payload?.data || payload?.teacher || payload;
+  }
+
+  function mapTeacher(item = {}){
+    const id = item.id ?? item.teacher_id ?? item.teacher_code ?? '';
+    const name = item.teacher_name || item.name || 'Unnamed Teacher';
+    const subjects = splitSubjects(item.subjects);
+    const exp = item.experience ?? item.exp ?? '';
+    return {
+      id: String(id),
+      teacher_code: String(item.teacher_code ?? item.code ?? id ?? ''),
+      name,
+      mobile: item.mobile || '',
+      email: item.email || '',
+      qual: item.qualification || item.qual || '',
+      exp: exp === '' ? '' : String(exp).includes('yr') ? String(exp) : `${exp} yrs`,
+      subjects,
+      payType: item.payment_type || item.payType || '',
+      joined: item.joining_date || item.joined || '',
+      status: item.status || 'Active'
+    };
+  }
+
+  function fallbackTeacher(id){
+    return mapTeacher((DB.teachers || []).find(x => String(x.id) === String(id) || String(x.teacher_code) === String(id)) || DB.teachers[0]);
+  }
+
+  async function loadTeacher(id){
+    try {
+      return mapTeacher(unwrapOne(await apiRequest(`/${encodeURIComponent(id)}`)));
+    } catch (err) {
+      console.warn('Teacher API unavailable, showing local profile:', err);
+      App.toast('Teacher API unavailable. Showing local profile.', 'info');
+      return fallbackTeacher(id);
+    }
+  }
+
+  function paymentSummary(t){
+    const exact = (DB.tpayments || []).find(p => String(p.teacherId) === String(t.teacher_code) || String(p.teacherId) === String(t.id));
+    return exact || (DB.tpayments || []).find(p => p.teacher === t.name) || {
+      net:0, status:'Pending', taken:0, students:0, cancelled:0, gross:0, ded:0, adv:0, paid:0, balance:0
+    };
+  }
+
+  function render(t){
+    const tp = paymentSummary(t);
+    const batches = (DB.batches || []).filter(b => b.teacher === t.name);
+    const head = `<button class="btn btn-light" onclick="App.toast('Statement downloaded','ok')">${App.svg('download')}Statement</button><button class="btn btn-primary" onclick="location.href='teachers.html'">Back to list</button>`;
+    const c = App.layout('teachers', t.name, [`<a href="teachers.html">Teachers</a>`, t.teacher_code || t.id], head);
+    const initials = t.name.split(' ').map(w=>w[0]).join('');
+
+    c.innerHTML=`
+      <div class="card mb16"><div class="card-body"><div class="detail-hero" style="border:none;padding:0;margin:0">
+        <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
+        <div style="flex:1"><h3 style="font-size:22px">${esc(t.name)}</h3><div class="meta">${esc(t.teacher_code)} - ${esc(t.qual)} - ${esc(t.exp)}</div>
+          <div class="chips" style="margin-top:9px">${App.badge(esc(t.status))} <span class="chip">${esc(t.payType)}</span> ${t.subjects.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div></div>
+        <div style="text-align:right"><div class="t-sub">Net Payable (May)</div><div class="num" style="font-size:24px;font-weight:600">${App.money(tp.net)}</div>${App.badge(tp.status)}</div>
+      </div></div></div>
+
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi"><div class="top"><span class="label">Assigned Batches</span><span class="ic b-brand">${App.svg('batch')}</span></div><div class="val">${batches.length}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Classes Taken (May)</span><span class="ic b-blue">${App.svg('timetable')}</span></div><div class="val">${asNum(tp.taken)}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Students</span><span class="ic b-violet">${App.svg('students')}</span></div><div class="val">${asNum(tp.students)}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Cancelled</span><span class="ic b-amber">${App.svg('x')}</span></div><div class="val">${asNum(tp.cancelled)}</div></div>
+      </div>
+
+      <div class="grid-2 mb16">
+        <div class="card"><div class="card-head"><h3>Assigned Batches & Timetable</h3></div><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Batch</th><th>Subject</th><th>Days</th><th>Time</th><th class="num">Students</th></tr></thead>
+          <tbody>${batches.map(b=>`<tr><td class="t-main">${esc(b.name)}</td><td>${esc(b.subject)}</td><td>${esc(b.days)}</td><td>${esc(b.st)}</td><td class="num">${esc(b.cur)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No batches</td></tr>'}</tbody></table></div></div>
+        <div class="card"><div class="card-head"><h3>Payment Statement (May 2026)</h3></div><div class="card-body">
+          <div class="dl"><div class="it"><div class="k">Payment Type</div><div class="v">${esc(t.payType)}</div></div>
+            <div class="it"><div class="k">Gross Payable</div><div class="v num">${App.money(tp.gross)}</div></div>
+            <div class="it"><div class="k">Deductions</div><div class="v num">- ${App.money(tp.ded)}</div></div>
+            <div class="it"><div class="k">Advance Paid</div><div class="v num">- ${App.money(tp.adv)}</div></div>
+            <div class="it"><div class="k">Net Payable</div><div class="v num">${App.money(tp.net)}</div></div>
+            <div class="it"><div class="k">Paid / Balance</div><div class="v num">${App.money(tp.paid)} / ${App.money(tp.balance)}</div></div></div>
+        </div></div>
+      </div>
+
+      <div class="grid-2 mb16">
+        <div class="card"><div class="card-head"><h3>Payment History</h3></div><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Month</th><th class="num">Gross</th><th class="num">Net</th><th class="num">Paid</th><th>Status</th></tr></thead>
+          <tbody>${['Feb 2026','Mar 2026','Apr 2026','May 2026'].map((m,i)=>`<tr><td>${m}</td><td class="num">${App.money(tp.gross-i*500)}</td><td class="num">${App.money(tp.net-i*500)}</td><td class="num">${App.money(i<3?tp.net-i*500:tp.paid)}</td><td>${App.badge(i<3?'Paid':tp.status)}</td></tr>`).join('')}</tbody></table></div></div>
+        <div class="card"><div class="card-head"><h3>Leave History</h3></div><div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Date</th><th>Type</th><th>Reason</th><th>Status</th></tr></thead>
+          <tbody>${[['2026-05-12','Casual','Personal work','Approved'],['2026-04-03','Sick','Fever','Approved'],['2026-03-21','Casual','Family event','Approved']].map(l=>`<tr><td>${l[0]}</td><td>${l[1]}</td><td>${l[2]}</td><td>${App.badge(l[3])}</td></tr>`).join('')}</tbody></table></div></div>
+      </div>`;
+  }
+
+  loadTeacher(requestedId).then(render).catch(err => App.toast(err.message || 'Failed to load teacher profile', 'err'));
+}
+</script>
+</body></html>

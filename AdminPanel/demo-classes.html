@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demo Classes - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const API_BASE = "http://localhost:5001/api/demo-classes";
+  const statuses = ["Scheduled","Completed","Cancelled","No Show"];
+  let usingFallback = false;
+  let currentDemos = [];
+
+  const head = `<button class="btn btn-primary" onclick="addDemo()">${App.svg('plus')}Schedule Demo</button>`;
+  const c = App.layout('demo-classes','Demo Classes',['Demo Classes'],head);
+  c.innerHTML = `<div id="tbl"></div>`;
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const unique = values => [...new Set(values.filter(Boolean))];
+  const localDemos = () => (DB.demos || []).map(mapDemo);
+  const findLocalDemo = id => (DB.demos || []).find(d => String(d.id) === String(id));
+  const findCurrentDemo = id => currentDemos.find(d => String(d.id) === String(id));
+
+  function authHeaders(hasBody = false){
+    const token = localStorage.getItem('JWT_TOKEN') || '';
+    const headers = {};
+    if (hasBody) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+  }
+
+  async function apiRequest(path = '', options = {}){
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (err) { data = { message: text }; }
+    }
+    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.demos)) return payload.demos;
+    if (Array.isArray(payload?.demoClasses)) return payload.demoClasses;
+    if (Array.isArray(payload?.data?.demos)) return payload.data.demos;
+    if (Array.isArray(payload?.data?.demoClasses)) return payload.data.demoClasses;
+    return [];
+  }
+
+  function mapDemo(item = {}){
+    return {
+      id: String(item.id ?? item.demo_id ?? item.demo_code ?? ''),
+      student: item.student || item.student_name || '',
+      course: item.course || '',
+      batch: item.batch || '',
+      teacher: item.teacher || '',
+      date: item.date || '',
+      time: item.time || '',
+      status: item.status || 'Scheduled',
+      feedback: item.feedback || '-'
+    };
+  }
+
+  function toApiPayload(d){
+    return {
+      student: d.student,
+      course: d.course,
+      batch: d.batch,
+      teacher: d.teacher,
+      date: d.date,
+      time: d.time,
+      status: d.status,
+      feedback: d.feedback || '-'
+    };
+  }
+
+  function readForm(box){
+    return {
+      student: box.querySelector('#d_stu').value.trim(),
+      course: box.querySelector('#d_course').value.trim(),
+      batch: box.querySelector('#d_batch').value.trim(),
+      teacher: box.querySelector('#d_teacher').value.trim(),
+      date: box.querySelector('#d_date').value,
+      time: box.querySelector('#d_time').value.trim(),
+      status: box.querySelector('#d_status').value,
+      feedback: box.querySelector('#d_feedback').value.trim() || '-'
+    };
+  }
+
+  function renderTable(rows){
+    currentDemos = rows;
+    App.table('tbl',{
+      rows,
+      searchKeys:['id','student','course','teacher','batch'],
+      searchPlaceholder:'Search demos...',
+      pageSize:9,
+      dateFilter:true,
+      filters:[
+        {label:'Status',key:'status',options:statuses},
+        {label:'Course',key:'course',options:unique(rows.map(d=>d.course))}
+      ],
+      columns:[
+        {key:'student',label:'Student',render:r=>`<div class="t-main">${esc(r.student)}</div><div class="t-sub">${esc(r.id)}</div>`},
+        {key:'course',label:'Course',render:r=>esc(r.course)},
+        {key:'batch',label:'Batch',render:r=>esc(r.batch)},
+        {key:'teacher',label:'Teacher',render:r=>App.whoCell(esc(r.teacher || '-'))},
+        {key:'date',label:'Date & Time',render:r=>`<div>${esc(r.date)}</div><div class="t-sub num">${esc(r.time)}</div>`},
+        {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
+      ],
+      actions:r=>`${App.actBtn('eye','View',`onclick="viewD('${jsStr(r.id)}')"`) }${App.actBtn('check','Mark Complete',`onclick="mark('${jsStr(r.id)}')"`) }${App.actBtn('admit','Convert',`onclick="convertDemo('${jsStr(r.id)}')"`) }`
+    });
+  }
+
+  async function loadDemos(){
+    try {
+      const payload = await apiRequest();
+      usingFallback = false;
+      renderTable(unwrapList(payload).map(mapDemo));
+    } catch (err) {
+      console.warn('Demo classes API unavailable, showing local data:', err);
+      usingFallback = true;
+      renderTable(localDemos());
+      App.toast('Demo classes API unavailable. Showing local data.', 'info');
+    }
+  }
+
+  function showDemoModal(x){
+    if (!x || !x.id) return App.toast('Demo class not found', 'err');
+    App.modal({size:'md',title:'Demo Class - '+esc(x.student),sub:esc(x.id),
+      body:`<div class="dl cols-2"><div class="it"><div class="k">Course</div><div class="v">${esc(x.course)}</div></div>
+        <div class="it"><div class="k">Batch</div><div class="v">${esc(x.batch)}</div></div>
+        <div class="it"><div class="k">Teacher</div><div class="v">${esc(x.teacher)}</div></div><div class="it"><div class="k">Date</div><div class="v">${esc(x.date)} - ${esc(x.time)}</div></div>
+        <div class="it"><div class="k">Status</div><div class="v">${App.badge(esc(x.status))}</div></div></div>
+      <div class="sec-title">Feedback</div><p style="color:var(--ink-2)">${esc(x.feedback)}</p>`,
+      foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-amber" onclick="App.toast('Reminder sent to student','ok')">${App.svg('whatsapp')}Remind</button><button class="btn btn-primary" onclick="App.closeModal();convertDemo('${jsStr(x.id)}')">Convert</button>`
+    });
+  }
+
+  function optionList(values, selected){
+    return unique(values).map(v => `<option ${selected===v?'selected':''}>${esc(v)}</option>`).join('');
+  }
+
+  function demoForm(x){
+    const students = ['Rahul Sharma', ...DB.enquiries.map(e=>e.name), ...currentDemos.map(d=>d.student)];
+    const courses = ['Class 9 Mathematics', ...DB.courses.map(c=>c.name), ...currentDemos.map(d=>d.course)];
+    const batches = ['Alpha Math Warriors', ...DB.batches.map(b=>b.name), ...currentDemos.map(d=>d.batch)];
+    const teachers = ['Anjali Das', ...DB.teachers.map(t=>t.name), ...currentDemos.map(d=>d.teacher)];
+    return `<div class="form-grid">
+      <div><label>Student / Enquiry</label><select id="d_stu">${optionList(students, x?.student)}</select></div>
+      <div><label>Course</label><select id="d_course">${optionList(courses, x?.course)}</select></div>
+      <div><label>Batch</label><select id="d_batch">${optionList(batches, x?.batch)}</select></div>
+      <div><label>Teacher</label><select id="d_teacher">${optionList(teachers, x?.teacher)}</select></div>
+      <div><label>Date</label><input type="date" id="d_date" value="${esc(x?.date || '2026-07-02')}"></div>
+      <div><label>Time</label><input id="d_time" value="${esc(x?.time || '04:30 PM')}"></div>
+      <div><label>Status</label><select id="d_status">${statuses.map(s=>`<option ${x?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="full"><label>Feedback</label><textarea id="d_feedback" rows="2">${esc(x?.feedback || '-')}</textarea></div>
+    </div>`;
+  }
+
+  window.viewD = id => showDemoModal(findCurrentDemo(id));
+
+  window.addDemo = () => App.modal({size:'lg',title:'Schedule Demo Class',
+    body:demoForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Schedule Demo</button>`,
+    onOpen:box=>box.querySelector('#sv').onclick=async()=>{
+      const demo = readForm(box);
+      if (!demo.student) return App.toast('Select student','err');
+      if (!demo.course) return App.toast('Select course','err');
+      try {
+        if (usingFallback) {
+          DB.demos.unshift({id:'DM-'+(301+DB.demos.length), ...demo});
+          App.closeModal();
+          renderTable(localDemos());
+          return App.toast('Demo scheduled locally','ok');
+        }
+        await apiRequest('', { method:'POST', body:JSON.stringify(toApiPayload(demo)) });
+        App.closeModal();
+        await loadDemos();
+        App.toast('Demo scheduled','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to schedule demo','err');
+      }
+    }
+  });
+
+  window.mark = async id => {
+    const x = findCurrentDemo(id);
+    if (!x) return App.toast('Demo class not found', 'err');
+    const completed = {
+      ...x,
+      status:'Completed',
+      feedback: x.feedback && x.feedback !== '-' ? x.feedback : 'Student participated well and was highly responsive.'
+    };
+    try {
+      if (usingFallback) {
+        const local = findLocalDemo(id);
+        if (local) Object.assign(local, completed);
+        renderTable(localDemos());
+        return App.toast('Demo marked completed locally','ok');
+      }
+      await apiRequest(`/${encodeURIComponent(x.id)}`, { method:'PUT', body:JSON.stringify(toApiPayload(completed)) });
+      await loadDemos();
+      App.toast('Demo marked completed','ok');
+    } catch (err) {
+      App.toast(err.message || 'Failed to update demo','err');
+    }
+  };
+
+  window.convertDemo = async id => {
+    const x = findCurrentDemo(id);
+    if (!x) return App.toast('Demo class not found', 'err');
+    try {
+      if (usingFallback) {
+        const local = findLocalDemo(id);
+        if (local) local.status = 'Completed';
+        renderTable(localDemos());
+        App.toast('Demo converted locally','ok');
+        location.href = 'admissions.html';
+        return;
+      }
+      await apiRequest(`/${encodeURIComponent(x.id)}/convert`, { method:'POST' });
+      await loadDemos();
+      App.toast('Demo converted to admission','ok');
+      location.href = 'admissions.html';
+    } catch (err) {
+      App.toast(err.message || 'Failed to convert demo','err');
+    }
+  };
+
+  loadDemos();
+}
+</script>
+</body></html>

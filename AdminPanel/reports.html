@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reports · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`
+    <input type="month" class="filter-sel" value="2026-06" style="min-width:140px">
+    <button class="btn btn-light" onclick="App.toast('Report pack exported (PDF)','ok')">${App.svg('download')}Export All</button>
+    <button class="btn btn-primary" onclick="App.toast('Scheduled report email sent','ok')">${App.svg('bell')}Schedule</button>`;
+  const c=App.layout('reports','Reports',[`<span>Insights</span>`,'Reports'],head);
+  const ch=DB.charts;
+
+  /* ───────── KPI strip ───────── */
+  const kpis=`
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi"><div class="top"><span class="label">Total Collection (Jun)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(842500)}</div><span class="delta up">${App.svg('up')}10.6% MoM</span></div>
+      <div class="kpi"><div class="top"><span class="label">Outstanding Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(186400)}</div><span class="delta down">${App.svg('down')}6% vs last month</span></div>
+      <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('trending')}</span></div><div class="val">${App.money(356000)}</div><span class="delta up">${App.svg('up')}12% MoM</span></div>
+      <div class="kpi"><div class="top"><span class="label">New Admissions</span><span class="ic b-blue">${App.svg('admit')}</span></div><div class="val">9</div><span class="delta up">${App.svg('up')}+2 vs last month</span></div>
+    </div>`;
+
+  /* ───────── Charts ───────── */
+  const charts=`
+    <div class="grid-2 mb16">
+      <div class="card"><div class="card-head"><div><h3>Monthly Fee Collection</h3><div class="sub">₹ in '000</div></div><button class="btn btn-light btn-sm" onclick="App.toast('Exported','ok')">${App.svg('download')}Export</button></div><div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div></div>
+      <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison, ₹ in '000</div></div></div><div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
+    </div>
+    <div class="grid-3 mb16">
+      <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
+      <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(ch.teacherPayout.slice(0,6),App.money)}</div></div>
+      <div class="card"><div class="card-head"><h3>Admission Sources</h3></div><div class="card-body">${App.donut(ch.admissionSource)}</div></div>
+    </div>`;
+
+  /* ───────── Report definitions ───────── */
+  const REPORTS=[
+    {key:'daily-fee',   name:'Daily Fee Collection',    cat:'Finance',   period:'07 Jun 2026', records:12},
+    {key:'monthly-fee', name:'Monthly Fee Collection',  cat:'Finance',   period:'Jun 2026',    records:40},
+    {key:'pending-fees',name:'Pending Fees Report',     cat:'Finance',   period:'Jun 2026',    records:24},
+    {key:'teacher-due', name:'Teacher Payment Due',     cat:'Finance',   period:'May 2026',    records:4},
+    {key:'income',      name:'Income Report',           cat:'Finance',   period:'Jun 2026',    records:14},
+    {key:'expense',     name:'Expense Report',          cat:'Finance',   period:'Jun 2026',    records:16},
+    {key:'pnl',         name:'Profit & Loss',           cat:'Finance',   period:'Jun 2026',    records:1},
+    {key:'stu-att',     name:'Student Attendance',      cat:'Academic',  period:'Jun 2026',    records:64},
+    {key:'batch-att',   name:'Batch Attendance',        cat:'Academic',  period:'Jun 2026',    records:9},
+    {key:'admissions',  name:'Admission Report',        cat:'Academic',  period:'Q1 2026',     records:31},
+    {key:'enquiry-conv',name:'Enquiry Conversion',      cat:'Marketing', period:'Jun 2026',    records:22},
+    {key:'course-rev',  name:'Course-wise Revenue',     cat:'Finance',   period:'Jun 2026',    records:8},
+    {key:'batch-rev',   name:'Batch-wise Revenue',      cat:'Finance',   period:'Jun 2026',    records:9},
+    {key:'pay-mode',    name:'Payment Mode Report',     cat:'Finance',   period:'Jun 2026',    records:5},
+    {key:'discount',    name:'Discount Report',         cat:'Finance',   period:'Jun 2026',    records:11},
+  ];
+
+  /* ───────── Category colour ───────── */
+  const catClass={Finance:'b-brand',Academic:'b-blue',Marketing:'b-violet'};
+
+  /* ───────── All Reports table ───────── */
+  const allReports=`
+    <div class="card">
+      <div class="card-head">
+        <div><h3>All Reports</h3><div class="sub">Click View to open the report with live data</div></div>
+        <div class="seg" id="catSeg">
+          <button class="active" onclick="filterCat(this,'')">All</button>
+          <button onclick="filterCat(this,'Finance')">Finance</button>
+          <button onclick="filterCat(this,'Academic')">Academic</button>
+          <button onclick="filterCat(this,'Marketing')">Marketing</button>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl" id="rptTbl">
+          <thead><tr>
+            <th>Report</th><th>Category</th><th>Period</th><th class="num">Records</th>
+            <th>Last Generated</th><th style="text-align:right">Action</th>
+          </tr></thead>
+          <tbody>${REPORTS.map(r=>`<tr data-cat="${r.cat}">
+            <td class="t-main">${r.name}</td>
+            <td><span class="badge ${catClass[r.cat]||'b-slate'}"><span class="pip"></span>${r.cat}</span></td>
+            <td>${r.period}</td>
+            <td class="num">${r.records}</td>
+            <td class="t-sub">07 Jun 2026, 09:14 AM</td>
+            <td style="text-align:right">
+              <div class="act" style="justify-content:flex-end">
+                ${App.actBtn('eye','View Report',`onclick="viewReport('${r.key}','${r.name}','${r.period}')"`)}
+                ${App.actBtn('download','Download',`onclick="App.toast('${r.name} downloaded','ok')"`)}
+                ${App.actBtn('print','Print',`onclick="App.toast('Sent to printer','ok')"`)}
+              </div>
+            </td>
+          </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  c.innerHTML = kpis + charts + allReports;
+
+  /* ───────── Category filter ───────── */
+  window.filterCat=function(btn, cat){
+    document.querySelectorAll('#catSeg button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('#rptTbl tbody tr').forEach(tr=>{
+      tr.style.display = (!cat || tr.dataset.cat===cat) ? '' : 'none';
+    });
+  };
+
+  /* ───────── Helpers ───────── */
+  const th=(...cols)=>`<thead><tr>${cols.map(c=>typeof c==='object'?`<th class="${c.cls||''}">${c.label}</th>`:`<th>${c}</th>`).join('')}</tr></thead>`;
+  const tblWrap=html=>`<div class="tbl-wrap"><table class="tbl">${html}</table></div>`;
+  const sumBar=(label,val,cls='')=>`<div class="pl-line ${cls}"><span>${label}</span><span class="v">${App.money(val)}</span></div>`;
+
+  /* ───────── Report modal bodies ───────── */
+  function buildBody(key, period){
+    switch(key){
+
+      /* ── 1. Daily Fee Collection ── */
+      case 'daily-fee':
+        return tblWrap(
+          th('Receipt #','Student','Batch','Fee Type',{label:'Due',cls:'num'},{label:'Paid',cls:'num'},
+             {label:'Disc',cls:'num'},'Mode','Collected By','Time')+
+          `<tbody>${DB.fees.slice(0,12).map(f=>`<tr>
+            <td class="t-id">${f.id}</td>
+            <td class="t-main">${f.student}</td>
+            <td>${f.batch}</td>
+            <td>${f.feeType}</td>
+            <td class="num">${App.money(f.due)}</td>
+            <td class="num" style="color:var(--green);font-weight:600">${App.money(f.paid)}</td>
+            <td class="num">${f.discount?App.money(f.discount):'—'}</td>
+            <td>${App.badge(f.mode==='Cash'?'Cash':f.mode)}</td>
+            <td>${f.collectedBy}</td>
+            <td class="t-sub">09:${String(10+DB.fees.indexOf(f)).padStart(2,'0')} AM</td>
+          </tr>`).join('')}</tbody>`
+        );
+
+      /* ── 2. Monthly Fee Collection ── */
+      case 'monthly-fee':
+        return tblWrap(
+          th('Student','Batch','Fee Type','Period',{label:'Due',cls:'num'},{label:'Paid',cls:'num'},
+             {label:'Disc',cls:'num'},{label:'Balance',cls:'num'},'Mode','Status')+
+          `<tbody>${DB.fees.slice(0,20).map(f=>`<tr>
+            <td class="t-main">${f.student}</td>
+            <td>${f.batch}</td>
+            <td>${f.feeType}</td>
+            <td>${f.period}</td>
+            <td class="num">${App.money(f.due)}</td>
+            <td class="num">${App.money(f.paid)}</td>
+            <td class="num">${f.discount?App.money(f.discount):'—'}</td>
+            <td class="num">${f.balance?App.money(f.balance):'—'}</td>
+            <td>${f.mode}</td>
+            <td>${App.badge('Paid')}</td>
+          </tr>`).join('')}</tbody>`
+        );
+
+      /* ── 3. Pending Fees ── */
+      case 'pending-fees':
+        return tblWrap(
+          th('Student','Parent Mobile','Batch','Fee Type','Period',{label:'Due',cls:'num'},
+             'Due Date','Days Overdue','Follow-up','Promise Date')+
+          `<tbody>${DB.pending.map(p=>`<tr>
+            <td class="t-main">${p.student}</td>
+            <td class="num">${p.parentMobile}</td>
+            <td>${p.batch}</td>
+            <td>${p.feeType}</td>
+            <td>${p.period}</td>
+            <td class="num" style="color:var(--red);font-weight:600">${App.money(p.due)}</td>
+            <td>${p.dueDate}</td>
+            <td class="num">${p.overdue > 30 ? `<span style="color:var(--red);font-weight:600">${p.overdue}d</span>` : p.overdue+'d'}</td>
+            <td>${App.badge(p.follow==='Promised'?'Interested':p.follow==='Reminder Sent'?'Contacted':'New')}</td>
+            <td class="t-sub">${p.promise}</td>
+          </tr>`).join('')}</tbody>`
+        );
+
+      /* ── 4. Teacher Payment Due ── */
+      case 'teacher-due':
+        return tblWrap(
+          th('Teacher','Pay Type',{label:'Gross',cls:'num'},{label:'Deductions',cls:'num'},
+             {label:'Advance',cls:'num'},{label:'Net Payable',cls:'num'},
+             {label:'Paid',cls:'num'},{label:'Balance',cls:'num'},'Status')+
+          `<tbody>${DB.tpayments.filter(t=>t.status!=='Paid').map(t=>`<tr>
+            <td>${App.whoCell(t.teacher)}</td>
+            <td><span style="font-size:12px;color:var(--ink-3)">${t.payType}</span></td>
+            <td class="num">${App.money(t.gross)}</td>
+            <td class="num">${t.ded?App.money(t.ded):'—'}</td>
+            <td class="num">${t.adv?App.money(t.adv):'—'}</td>
+            <td class="num" style="font-weight:600">${App.money(t.net)}</td>
+            <td class="num">${t.paid?App.money(t.paid):'—'}</td>
+            <td class="num" style="color:var(--red);font-weight:600">${App.money(t.balance)}</td>
+            <td>${App.badge(t.status)}</td>
+          </tr>`).join('')}</tbody>`
+        );
+
+      /* ── 5. Income Report ── */
+      case 'income': {
+        const total=DB.income.reduce((a,x)=>a+x.amount,0);
+        return tblWrap(
+          th('ID','Date','Category','Description','Mode',{label:'Amount',cls:'num'})+
+          `<tbody>${DB.income.map(x=>`<tr>
+            <td class="t-id">${x.id}</td>
+            <td>${x.date}</td>
+            <td><span class="badge b-green"><span class="pip"></span>${x.category}</span></td>
+            <td>${x.desc}</td>
+            <td>${x.mode}</td>
+            <td class="num" style="color:var(--green);font-weight:600">${App.money(x.amount)}</td>
+          </tr>`).join('')}
+          <tr style="background:var(--brand-tint)">
+            <td colspan="5" style="font-weight:700;text-align:right;color:var(--ink)">Total Income</td>
+            <td class="num" style="font-weight:700;color:var(--brand-700)">${App.money(total)}</td>
+          </tr></tbody>`
+        );
+      }
+
+      /* ── 6. Expense Report ── */
+      case 'expense': {
+        const total=DB.expense.reduce((a,x)=>a+x.amount,0);
+        return tblWrap(
+          th('ID','Date','Category','Description','Vendor','Mode',{label:'Amount',cls:'num'})+
+          `<tbody>${DB.expense.map(x=>`<tr>
+            <td class="t-id">${x.id}</td>
+            <td>${x.date}</td>
+            <td><span class="badge b-red"><span class="pip"></span>${x.category}</span></td>
+            <td>${x.desc}</td>
+            <td class="t-sub">${x.vendor}</td>
+            <td>${x.mode}</td>
+            <td class="num" style="color:var(--red);font-weight:600">${App.money(x.amount)}</td>
+          </tr>`).join('')}
+          <tr style="background:var(--red-soft)">
+            <td colspan="6" style="font-weight:700;text-align:right;color:var(--ink)">Total Expenses</td>
+            <td class="num" style="font-weight:700;color:var(--red)">${App.money(total)}</td>
+          </tr></tbody>`
+        );
+      }
+
+      /* ── 7. Profit & Loss ── */
+      case 'pnl': {
+        const inc=DB.income.reduce((a,x)=>a+x.amount,0);
+        const exp=DB.expense.reduce((a,x)=>a+x.amount,0);
+        const tcPaid=DB.tpayments.reduce((a,t)=>a+t.paid,0);
+        const rent=78000, elec=18000, internet=4800, staff=96000, mktg=32000, misc=22000;
+        const totalExp=exp;
+        const net=inc-totalExp;
+        return `
+          <div style="max-width:560px;margin:0 auto">
+            <div style="padding:14px 0;border-bottom:2px solid var(--line);margin-bottom:16px">
+              <div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:700;margin-bottom:10px">Income</div>
+              ${sumBar('Monthly Fees Collected',842500,'plus')}
+              ${sumBar('Admission Fees',27000,'plus')}
+              ${sumBar('Study Material Sales',18500,'plus')}
+              ${sumBar('Test Series Fees',31000,'plus')}
+              ${sumBar('Other Income',49000,'plus')}
+              <div class="pl-line" style="background:var(--brand-soft);font-weight:700"><span>Gross Income</span><span class="v">${App.money(968000)}</span></div>
+            </div>
+            <div style="padding:14px 0;border-bottom:2px solid var(--line);margin-bottom:16px">
+              <div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:700;margin-bottom:10px">Expenses</div>
+              ${sumBar('Teacher Salaries & Payouts',tcPaid,'minus')}
+              ${sumBar('Staff Salary',staff,'minus')}
+              ${sumBar('Rent',rent,'minus')}
+              ${sumBar('Electricity & Utilities',elec+internet,'minus')}
+              ${sumBar('Marketing',mktg,'minus')}
+              ${sumBar('Miscellaneous',misc,'minus')}
+              <div class="pl-line" style="background:var(--red-soft);font-weight:700"><span>Total Expenses</span><span class="v" style="color:var(--red)">${App.money(612000)}</span></div>
+            </div>
+            <div class="pl-line total" style="font-size:16px">
+              <span>Net Profit (Jun 2026)</span><span class="v">${App.money(356000)}</span>
+            </div>
+            <div style="text-align:center;margin-top:12px;color:var(--ink-3);font-size:12.5px">Profit Margin: <b style="color:var(--brand)">36.8%</b></div>
+          </div>`;
+      }
+
+      /* ── 8. Student Attendance ── */
+      case 'stu-att':
+        return tblWrap(
+          th('Student ID','Student','Batch','Course',
+             {label:'Present',cls:'num'},{label:'Absent',cls:'num'},{label:'Late',cls:'num'},
+             {label:'Att %',cls:'num'},'Status')+
+          `<tbody>${DB.students.map(s=>{
+            const tot=24, pct=s.att;
+            const pres=Math.round(tot*pct/100), abs=tot-pres-Math.floor(Math.random()*2);
+            const late=tot-pres-abs;
+            return `<tr>
+              <td class="t-id">${s.id}</td>
+              <td>${App.whoCell(s.name,s.cls)}</td>
+              <td>${s.batch}</td>
+              <td class="t-sub">${s.course}</td>
+              <td class="num">${pres}</td>
+              <td class="num" style="${abs>5?'color:var(--red)':''}">${abs}</td>
+              <td class="num">${late>0?late:'—'}</td>
+              <td class="num"><div class="pct-cell" style="justify-content:flex-end">
+                <span style="font-weight:600;color:${pct>=80?'var(--green)':pct>=60?'var(--amber)':'var(--red)'}">${pct}%</span>
+              </div></td>
+              <td>${App.badge(pct>=80?'Active':pct>=60?'Rescheduled':'Overdue')}</td>
+            </tr>`;
+          }).join('')}</tbody>`
+        );
+
+      /* ── 9. Batch Attendance ── */
+      case 'batch-att':
+        return tblWrap(
+          th('Batch','Course','Subject','Teacher','Total Students',
+             {label:'Classes (Jun)',cls:'num'},{label:'Avg Present',cls:'num'},
+             {label:'Att %',cls:'num'},'Type')+
+          `<tbody>${DB.batches.filter(b=>b.status!=='Upcoming').map(b=>{
+            const classes=20, pct=70+Math.floor(Math.random()*25);
+            return `<tr>
+              <td class="t-main">${b.name}</td>
+              <td class="t-sub">${b.course}</td>
+              <td>${b.subject}</td>
+              <td>${b.teacher}</td>
+              <td class="num">${b.cur}</td>
+              <td class="num">${classes}</td>
+              <td class="num">${Math.round(b.cur*pct/100)}</td>
+              <td class="num"><span style="font-weight:600;color:${pct>=80?'var(--green)':pct>=60?'var(--amber)':'var(--red)'}">${pct}%</span></td>
+              <td>${App.badge(b.status)}</td>
+            </tr>`;
+          }).join('')}</tbody>`
+        );
+
+      /* ── 10. Admission Report ── */
+      case 'admissions':
+        return tblWrap(
+          th('Student ID','Student','Class','Course','Batch',
+             'Fee Type',{label:'Fee Amt',cls:'num'},'Source','Admission Date','Status')+
+          `<tbody>${DB.students.slice(0,31).map(s=>`<tr>
+            <td class="t-id">${s.id}</td>
+            <td>${App.whoCell(s.name,s.cls)}</td>
+            <td>${s.cls}</td>
+            <td class="t-sub">${s.course}</td>
+            <td>${s.batch}</td>
+            <td>${s.feeType}</td>
+            <td class="num">${App.money(s.feeAmt)}</td>
+            <td><span class="chip">${DB.sources[DB.students.indexOf(s)%DB.sources.length]}</span></td>
+            <td>${s.admission}</td>
+            <td>${App.badge(s.status)}</td>
+          </tr>`).join('')}</tbody>`
+        );
+
+      /* ── 11. Enquiry Conversion ── */
+      case 'enquiry-conv':
+        return tblWrap(
+          th('Enq ID','Student Name','Class','Course Interested','Source','Date','Counselor','Status')+
+          `<tbody>${DB.enquiries.map(e=>`<tr>
+            <td class="t-id">${e.id}</td>
+            <td class="t-main">${e.name}</td>
+            <td>${e.cls}</td>
+            <td class="t-sub">${e.course}</td>
+            <td><span class="chip">${e.source}</span></td>
+            <td>${e.date}</td>
+            <td>${e.counselor}</td>
+            <td>${App.badge(e.status)}</td>
+          </tr>`).join('')}</tbody>`
+        );
+
+      /* ── 12. Course-wise Revenue ── */
+      case 'course-rev':
+        return tblWrap(
+          th('Course','Category','Level',{label:'Monthly Fee',cls:'num'},
+             {label:'Active Students',cls:'num'},{label:'Monthly Revenue',cls:'num'},
+             {label:'Annual Rev (Est.)',cls:'num'},'Status')+
+          `<tbody>${DB.courses.map(cr=>{
+            const studs=DB.students.filter(s=>s.course===cr.name&&s.status==='Active').length;
+            const mrev=studs*cr.monthly;
+            return `<tr>
+              <td class="t-main">${cr.name}</td>
+              <td>${cr.category}</td>
+              <td>${cr.level}</td>
+              <td class="num">${App.money(cr.monthly)}</td>
+              <td class="num">${studs}</td>
+              <td class="num" style="font-weight:600;color:var(--brand)">${App.money(mrev)}</td>
+              <td class="num">${App.money(mrev*12)}</td>
+              <td>${App.badge(cr.status)}</td>
+            </tr>`;
+          }).join('')}</tbody>`
+        );
+
+      /* ── 13. Batch-wise Revenue ── */
+      case 'batch-rev':
+        return tblWrap(
+          th('Batch','Course','Teacher',{label:'Students',cls:'num'},
+             'Dominant Fee Type',{label:'Avg Fee',cls:'num'},
+             {label:'Monthly Revenue',cls:'num'},'Status')+
+          `<tbody>${DB.batches.map(b=>{
+            const cr=DB.courses.find(c=>c.name===b.course)||{monthly:1800};
+            const rev=b.cur*cr.monthly;
+            return `<tr>
+              <td class="t-main">${b.name}</td>
+              <td class="t-sub">${b.course}</td>
+              <td>${b.teacher}</td>
+              <td class="num">${b.cur}</td>
+              <td>Monthly Fee</td>
+              <td class="num">${App.money(cr.monthly)}</td>
+              <td class="num" style="font-weight:600;color:var(--brand)">${App.money(rev)}</td>
+              <td>${App.badge(b.status)}</td>
+            </tr>`;
+          }).join('')}</tbody>`
+        );
+
+      /* ── 14. Payment Mode Report ── */
+      case 'pay-mode': {
+        const modes=['Cash','UPI','Bank Transfer','Card','Cheque'];
+        const totFees=DB.fees.reduce((a,f)=>a+f.paid,0);
+        const modeData=modes.map(m=>{
+          const txns=DB.fees.filter(f=>f.mode===m);
+          const amt=txns.reduce((a,f)=>a+f.paid,0);
+          return {mode:m, count:txns.length, amt, avg:txns.length?Math.round(amt/txns.length):0, pct:Math.round(amt/totFees*100)};
+        });
+        return tblWrap(
+          th('Payment Mode',{label:'Transactions',cls:'num'},{label:'Total Amount',cls:'num'},
+             {label:'Avg per Txn',cls:'num'},{label:'% of Total',cls:'num'},'Trend')+
+          `<tbody>${modeData.map(m=>`<tr>
+            <td class="t-main">${m.mode}</td>
+            <td class="num">${m.count||'—'}</td>
+            <td class="num" style="font-weight:600">${App.money(m.amt)}</td>
+            <td class="num">${m.avg?App.money(m.avg):'—'}</td>
+            <td class="num"><span style="font-weight:600;color:var(--brand)">${m.pct}%</span></td>
+            <td><div class="track" style="width:120px;height:8px;border-radius:5px;background:var(--surface-3);overflow:hidden"><span style="display:block;height:100%;border-radius:5px;background:var(--brand);width:${m.pct}%"></span></div></td>
+          </tr>`).join('')}
+          <tr style="background:var(--brand-tint)">
+            <td style="font-weight:700">Total</td>
+            <td class="num" style="font-weight:700">${DB.fees.length}</td>
+            <td class="num" style="font-weight:700;color:var(--brand-700)">${App.money(totFees)}</td>
+            <td colspan="3"></td>
+          </tr></tbody>`
+        );
+      }
+
+      /* ── 15. Discount Report ── */
+      case 'discount': {
+        const discFees=DB.fees.filter(f=>f.discount>0);
+        const totalDisc=discFees.reduce((a,f)=>a+f.discount,0);
+        return tblWrap(
+          th('Receipt #','Student','Batch','Fee Type',
+             {label:'Original Fee',cls:'num'},{label:'Discount',cls:'num'},
+             {label:'Disc %',cls:'num'},'Mode','Date','Reason')+
+          `<tbody>${discFees.map(f=>`<tr>
+            <td class="t-id">${f.id}</td>
+            <td class="t-main">${f.student}</td>
+            <td>${f.batch}</td>
+            <td>${f.feeType}</td>
+            <td class="num">${App.money(f.due)}</td>
+            <td class="num" style="color:var(--amber);font-weight:600">${App.money(f.discount)}</td>
+            <td class="num">${Math.round(f.discount/f.due*100)}%</td>
+            <td>${f.mode}</td>
+            <td>${f.date}</td>
+            <td class="t-sub">${['Sibling discount','Merit scholarship','Staff concession','Early payment','Need-based'][DB.fees.indexOf(f)%5]}</td>
+          </tr>`).join('')}
+          <tr style="background:var(--amber-soft)">
+            <td colspan="4" style="font-weight:700;text-align:right;color:var(--ink)">Total Discount Given</td>
+            <td class="num" style="font-weight:700">${App.money(discFees.reduce((a,f)=>a+f.due,0))}</td>
+            <td class="num" style="font-weight:700;color:var(--amber)">${App.money(totalDisc)}</td>
+            <td colspan="4"></td>
+          </tr></tbody>`
+        );
+      }
+
+      default:
+        return `<div class="empty"><div class="ic">${App.svg('reports')}</div><h4>Report not available</h4></div>`;
+    }
+  }
+
+  /* ───────── viewReport ───────── */
+  window.viewReport=function(key, name, period){
+    const body=buildBody(key, period);
+    const isFullWidth=['stu-att','monthly-fee','admissions','enquiry-conv','course-rev','batch-rev','pay-mode','discount','batch-att'].includes(key);
+    App.modal({
+      title: name,
+      sub: `Period: ${period} · Generated 07 Jun 2026, 09:14 AM`,
+      size: isFullWidth ? 'xl' : 'lg',
+      body,
+      foot: `
+        <span style="color:var(--ink-3);font-size:12.5px">BrightPath Coaching Centre</span>
+        <div style="display:flex;gap:9px">
+          <button class="btn btn-light" onclick="App.toast('${name} exported (PDF)','ok')">${App.svg('download')}Export PDF</button>
+          <button class="btn btn-light" onclick="App.toast('Sent to printer','ok')">${App.svg('print')}Print</button>
+          <button class="btn btn-primary" data-close>Close</button>
+        </div>`
+    });
+  };
+}
+</script>
+</body></html>

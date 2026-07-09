@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teachers - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const API_BASE = "http://localhost:5001/api/teachers";
+  const payTypes = ["Fixed Monthly Salary","Per Class Payment","Per Student Payment","Revenue Share Percentage","Hybrid Fixed + Per Class"];
+  const statuses = ["Active", "On Leave", "Inactive"];
+  let usingFallback = false;
+  let currentTeachers = [];
+
+  const head = `<button class="btn btn-light" onclick="App.toast('Exported teacher list','ok')">${App.svg('download')}Export</button>
+    <button class="btn btn-primary" onclick="addTeacher()">${App.svg('plus')}Add Teacher</button>`;
+  const c = App.layout('teachers','Teachers',['Teachers'],head);
+  c.innerHTML = `<div id="tbl"></div>`;
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const asNum = v => Number(v ?? 0) || 0;
+  const splitSubjects = v => Array.isArray(v) ? v : String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+  const localTeachers = () => (DB.teachers || []).map(mapTeacher);
+  const findLocalTeacher = id => (DB.teachers || []).find(t => String(t.id) === String(id) || String(t.teacher_code) === String(id));
+  const findCurrentTeacher = id => currentTeachers.find(t => String(t.id) === String(id));
+
+  async function apiRequest(path = '', options = {}){
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...(options.body ? {'Content-Type':'application/json'} : {}), ...(options.headers || {}) }
+    });
+    const text = await res.text();
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (err) { data = { message: text }; }
+    }
+    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function unwrapOne(payload){
+    return payload?.data?.teacher || payload?.data || payload?.teacher || payload;
+  }
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.teachers)) return payload.teachers;
+    if (Array.isArray(payload?.data?.teachers)) return payload.data.teachers;
+    return [];
+  }
+
+  function mapTeacher(item = {}){
+    const id = item.id ?? item.teacher_id ?? item.teacher_code ?? '';
+    const name = item.teacher_name || item.name || 'Unnamed Teacher';
+    const subjects = splitSubjects(item.subjects);
+    const exp = item.experience ?? item.exp ?? '';
+    return {
+      id: String(id),
+      teacher_code: String(item.teacher_code ?? item.code ?? id ?? ''),
+      name,
+      mobile: item.mobile || '',
+      email: item.email || '',
+      qual: item.qualification || item.qual || '',
+      exp: exp === '' ? '' : String(exp).includes('yr') ? String(exp) : `${exp} yrs`,
+      experience: asNum(exp),
+      subjects,
+      payType: item.payment_type || item.payType || '',
+      joined: item.joining_date || item.joined || '',
+      status: item.status || 'Active',
+      batches: asNum(item.batches ?? (DB.batches || []).filter(b => b.teacher === name).length)
+    };
+  }
+
+  function toApiPayload(t){
+    return {
+      teacher_code: t.teacher_code,
+      teacher_name: t.name,
+      mobile: t.mobile,
+      email: t.email,
+      qualification: t.qual,
+      experience: t.experience,
+      subjects: t.subjects.join(','),
+      payment_type: t.payType,
+      joining_date: t.joined,
+      status: t.status
+    };
+  }
+
+  function readForm(b){
+    return {
+      teacher_code: b.querySelector('#tf_code').value.trim(),
+      name: b.querySelector('#tf_name').value.trim(),
+      mobile: b.querySelector('#tf_mobile').value.trim(),
+      email: b.querySelector('#tf_email').value.trim(),
+      qual: b.querySelector('#tf_qual').value.trim(),
+      experience: asNum(b.querySelector('#tf_exp').value),
+      subjects: splitSubjects(b.querySelector('#tf_sub').value),
+      payType: b.querySelector('#tf_pay').value,
+      joined: b.querySelector('#tf_join').value,
+      status: b.querySelector('#tf_status').value
+    };
+  }
+
+  function renderTable(rows){
+    currentTeachers = rows;
+    App.table('tbl',{
+      rows,
+      searchKeys:['id','teacher_code','name','mobile','email','qual'],
+      searchPlaceholder:'Search teachers...',
+      pageSize:8,
+      filters:[{label:'Payment Type',key:'payType',options:payTypes},{label:'Status',key:'status',options:statuses}],
+      columns:[
+        {key:'name',label:'Teacher',render:r=>App.whoCell(esc(r.name),`${esc(r.teacher_code)} - ${esc(r.qual)}`)},
+        {key:'subjects',label:'Subjects',render:r=>`<div class="chips">${r.subjects.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div>`},
+        {key:'mobile',label:'Contact',render:r=>`<div>${esc(r.mobile)}</div><div class="t-sub">${esc(r.email)}</div>`},
+        {key:'exp',label:'Exp',num:true,render:r=>esc(r.exp)},
+        {key:'batches',label:'Batches',num:true},
+        {key:'payType',label:'Payment',render:r=>`<span class="chip">${esc(r.payType)}</span>`},
+        {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
+      ],
+      actions:r=>`${App.actBtn('eye','View',`onclick="viewT('${jsStr(r.id)}')"`) }${App.actBtn('edit','Edit',`onclick="editT('${jsStr(r.id)}')"`) }${App.actBtn('payment','Pay',`onclick="location.href='teacher-payments.html'"`) }${App.actBtn('trash','Delete',`class="danger" onclick="delT('${jsStr(r.id)}')"`) }`
+    });
+  }
+
+  async function loadTeachers(){
+    try {
+      const payload = await apiRequest();
+      usingFallback = false;
+      renderTable(unwrapList(payload).map(mapTeacher));
+    } catch (err) {
+      console.warn('Teachers API unavailable, showing local data:', err);
+      usingFallback = true;
+      renderTable(localTeachers());
+      App.toast('Teachers API unavailable. Showing local data.', 'info');
+    }
+  }
+
+  async function getTeacher(id){
+    if (usingFallback) return mapTeacher(findLocalTeacher(id));
+    return mapTeacher(unwrapOne(await apiRequest(`/${encodeURIComponent(id)}`)));
+  }
+
+  function paymentSummary(t){
+    const exact = (DB.tpayments || []).find(p => String(p.teacherId) === String(t.teacher_code) || String(p.teacherId) === String(t.id));
+    return exact || (DB.tpayments || []).find(p => p.teacher === t.name) || { gross:0, net:0, status:'Pending' };
+  }
+
+  function assignedBatches(t){
+    return (DB.batches || []).filter(b => b.teacher === t.name);
+  }
+
+  window.viewT = async id => {
+    try {
+      const t = await getTeacher(id);
+      if (!t || !t.id) return App.toast('Teacher not found', 'err');
+      const tp = paymentSummary(t);
+      const batches = assignedBatches(t);
+      App.modal({size:'xl',title:esc(t.name),sub:`${esc(t.teacher_code)} - ${esc(t.subjects.join(', '))}`,
+        foot:`<button class="btn btn-light" onclick="location.href='teacher-details.html?id=${encodeURIComponent(t.id)}'">Full profile</button><button class="btn btn-primary" data-close>Close</button>`,
+        body:`<div class="detail-hero"><div class="av" style="background:var(--brand)">${esc(t.name.split(' ').map(w=>w[0]).join(''))}</div>
+          <div style="flex:1"><h3>${esc(t.name)}</h3><div class="meta">${esc(t.qual)} - ${esc(t.exp)} experience</div>
+          <div class="chips" style="margin-top:8px">${App.badge(esc(t.status))} <span class="chip">${esc(t.payType)}</span></div></div></div>
+        <div class="sec-title">Contact</div>
+        <div class="dl"><div class="it"><div class="k">Mobile</div><div class="v">${esc(t.mobile)}</div></div><div class="it"><div class="k">Email</div><div class="v">${esc(t.email)}</div></div>
+          <div class="it"><div class="k">Joined</div><div class="v">${esc(t.joined)}</div></div><div class="it"><div class="k">Assigned Batches</div><div class="v">${batches.length}</div></div></div>
+        <div class="sec-title">Assigned Batches</div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Batch</th><th>Subject</th><th>Timing</th><th class="num">Students</th></tr></thead>
+        <tbody>${batches.map(b=>`<tr><td class="t-main">${esc(b.name)}</td><td>${esc(b.subject)}</td><td>${esc(b.st)}-${esc(b.et)}</td><td class="num">${esc(b.cur)}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--ink-4)">No batches assigned</td></tr>'}</tbody></table></div>
+        <div class="sec-title">Payment Summary (May 2026)</div>
+        <div class="dl cols-3"><div class="it"><div class="k">Gross Payable</div><div class="v num">${App.money(tp.gross)}</div></div>
+          <div class="it"><div class="k">Net Payable</div><div class="v num">${App.money(tp.net)}</div></div>
+          <div class="it"><div class="k">Status</div><div class="v">${App.badge(tp.status)}</div></div></div>`
+      });
+    } catch (err) {
+      App.toast(err.message || 'Failed to load teacher', 'err');
+    }
+  };
+
+  function tForm(t){
+    return `<div class="form-grid">
+      <div><label>Teacher Code</label><input id="tf_code" value="${esc(t?.teacher_code || '')}"></div>
+      <div><label>Name</label><input id="tf_name" value="${esc(t?.name || '')}"></div>
+      <div><label>Mobile</label><input id="tf_mobile" value="${esc(t?.mobile || '')}"></div>
+      <div><label>Email</label><input id="tf_email" value="${esc(t?.email || '')}"></div>
+      <div><label>Qualification</label><input id="tf_qual" value="${esc(t?.qual || '')}"></div>
+      <div><label>Experience</label><input id="tf_exp" value="${esc(t?.experience || '')}"></div>
+      <div class="full"><label>Subjects (comma separated)</label><input id="tf_sub" value="${esc((t?.subjects || []).join(', '))}"></div>
+      <div><label>Payment Type</label><select id="tf_pay">${payTypes.map(p=>`<option ${t?.payType===p?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div><label>Joining Date</label><input type="date" id="tf_join" value="${esc(t?.joined || '2026-06-20')}"></div>
+      <div><label>Status</label><select id="tf_status">${statuses.map(s=>`<option ${t?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    </div>`;
+  }
+
+  window.addTeacher = () => App.modal({size:'lg',title:'Add Teacher',body:tForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Teacher</button>`,
+    onOpen:b=>b.querySelector('#sv').onclick=async()=>{
+      const t = readForm(b);
+      if (!t.teacher_code) return App.toast('Enter teacher code','err');
+      if (!t.name) return App.toast('Enter name','err');
+      try {
+        if (usingFallback) {
+          DB.teachers.unshift({id:t.teacher_code, teacher_code:t.teacher_code, name:t.name, mobile:t.mobile, email:t.email, subjects:t.subjects, qual:t.qual, exp:`${t.experience} yrs`, batches:0, payType:t.payType, joined:t.joined, status:t.status});
+          App.closeModal();
+          renderTable(localTeachers());
+          return App.toast('Teacher added locally','ok');
+        }
+        await apiRequest('', { method:'POST', body:JSON.stringify(toApiPayload(t)) });
+        App.closeModal();
+        await loadTeachers();
+        App.toast('Teacher added','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to add teacher','err');
+      }
+    }
+  });
+
+  window.editT = async id => {
+    try {
+      const t = await getTeacher(id);
+      if (!t || !t.id) return App.toast('Teacher not found','err');
+      App.modal({size:'lg',title:'Edit Teacher',sub:esc(t.teacher_code),body:tForm(t),
+        foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+        onOpen:b=>b.querySelector('#sv').onclick=async()=>{
+          const updated = readForm(b);
+          if (!updated.teacher_code) return App.toast('Enter teacher code','err');
+          if (!updated.name) return App.toast('Enter name','err');
+          try {
+            if (usingFallback) {
+              const matched = findLocalTeacher(t.id);
+              if (matched) Object.assign(matched, {id:updated.teacher_code, teacher_code:updated.teacher_code, name:updated.name, mobile:updated.mobile, email:updated.email, subjects:updated.subjects, qual:updated.qual, exp:`${updated.experience} yrs`, payType:updated.payType, joined:updated.joined, status:updated.status});
+              App.closeModal();
+              renderTable(localTeachers());
+              return App.toast('Teacher updated locally','ok');
+            }
+            await apiRequest(`/${encodeURIComponent(t.id)}`, { method:'PUT', body:JSON.stringify(toApiPayload(updated)) });
+            App.closeModal();
+            await loadTeachers();
+            App.toast('Teacher updated','ok');
+          } catch (err) {
+            App.toast(err.message || 'Failed to update teacher','err');
+          }
+        }
+      });
+    } catch (err) {
+      App.toast(err.message || 'Could not fetch teacher','err');
+    }
+  };
+
+  window.delT = id => {
+    const t = findCurrentTeacher(id);
+    const label = t ? `${esc(t.teacher_code)} - ${esc(t.name)}` : esc(id);
+    App.confirmModal(`Remove <b>${label}</b> from staff?`, async()=>{
+      try {
+        if (usingFallback) {
+          const i = (DB.teachers || []).findIndex(x => String(x.id) === String(id) || String(x.teacher_code) === String(id));
+          if (i > -1) DB.teachers.splice(i, 1);
+          renderTable(localTeachers());
+          return App.toast('Teacher removed locally','ok');
+        }
+        await apiRequest(`/${encodeURIComponent(id)}`, { method:'DELETE' });
+        await loadTeachers();
+        App.toast('Teacher removed','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to remove teacher','err');
+      }
+    },{danger:true,yes:'Remove'});
+  };
+
+  loadTeachers();
+}
+</script>
+</body></html>

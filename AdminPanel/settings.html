@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-primary" onclick="App.toast('Settings saved','ok')">${App.svg('check')}Save Changes</button>`;
+  const c=App.layout('settings','Settings',['Settings'],head);
+  c.innerHTML=`
+    <div class="tabs" id="setTabs">
+      <div class="tab active" data-t="t1">Centre Profile</div><div class="tab" data-t="t2">Branches & Classrooms</div>
+      <div class="tab" data-t="t3">Fee Reminders</div><div class="tab" data-t="t4">Roles & Permissions</div>
+      <div class="tab" data-t="t5">Notification Templates</div><div class="tab" data-t="t6">Academic Year</div></div>
+
+    <div class="tab-pane active" data-p="t1"><div class="card"><div class="card-head"><h3>Centre Profile</h3></div><div class="card-body">
+      <div class="form-grid"><div><label>Centre Name</label><input value="BrightPath Coaching Centre"></div>
+      <div><label>Contact Number</label><input value="+91 98201 00000"></div>
+      <div><label>Email</label><input value="info@brightpath.in"></div>
+      <div><label>GST / Registration No.</label><input value="27ABCDE1234F1Z5"></div>
+      <div class="full"><label>Address</label><input value="12, Scholars Lane, Andheri West, Mumbai 400058"></div>
+      <div><label>Receipt Prefix</label><input value="RCP-"></div>
+      <div><label>Currency</label><select><option>INR (₹)</option></select></div></div></div></div></div>
+
+    <div class="tab-pane" data-p="t2"><div class="grid-2">
+      <div class="card"><div class="card-head"><div><h3>Branches</h3></div><button class="btn btn-light btn-sm" onclick="App.toast('Add branch','info')">${App.svg('plus')}Add</button></div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Branch</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>${[['Main Centre','Andheri West','Active'],['North Branch','Borivali','Active'],['Online Wing','Virtual','Active']].map(b=>`<tr><td class="t-main">${b[0]}</td><td>${b[1]}</td><td>${App.badge(b[2])}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card"><div class="card-head"><div><h3>Classrooms</h3></div><button class="btn btn-light btn-sm" onclick="App.toast('Add classroom','info')">${App.svg('plus')}Add</button></div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Room</th><th class="num">Capacity</th><th>Status</th></tr></thead>
+        <tbody>${DB.classrooms.map((r,i)=>`<tr><td class="t-main">${r}</td><td class="num">${[30,28,25,24,20,100][i]}</td><td>${App.badge('Active')}</td></tr>`).join('')}</tbody></table></div></div></div></div>
+
+    <div class="tab-pane" data-p="t3"><div class="card"><div class="card-head"><h3>Fee Reminder Rules</h3></div><div class="card-body">
+      <div class="form-grid"><div><label>First Reminder (days before due)</label><input class="num" value="3"></div>
+      <div><label>Second Reminder (days after due)</label><input class="num" value="3"></div>
+      <div><label>Final Reminder (days after due)</label><input class="num" value="10"></div>
+      <div><label>Late Fine per day (₹)</label><input class="num" value="20"></div>
+      <div><label>Reminder Channel</label><select><option>WhatsApp + SMS</option><option>WhatsApp only</option><option>SMS only</option></select></div>
+      <div><label>Auto-send reminders</label><select><option>Enabled</option><option>Disabled</option></select></div></div></div></div></div>
+
+    <div class="tab-pane" data-p="t4"><div class="card"><div class="card-head"><div><h3>User Roles & Permissions</h3></div><button class="btn btn-light btn-sm" onclick="App.toast('Add role','info')">${App.svg('plus')}Add Role</button></div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Role</th><th>Users</th><th>Permissions</th><th>Status</th></tr></thead>
+      <tbody>${[['Centre Admin',1,'Full access'],['Counselor',3,'Enquiries, Admissions, Demos'],['Accountant',2,'Fees, Payments, Reports'],['Front Desk',2,'Attendance, Fee Collection']].map(r=>`<tr><td class="t-main">${r[0]}</td><td class="num">${r[1]}</td><td><span class="chip">${r[2]}</span></td><td>${App.badge('Active')}</td></tr>`).join('')}</tbody></table></div></div></div>
+
+    <div class="tab-pane" data-p="t5"><div class="card"><div class="card-head"><h3>Notification Templates</h3></div><div class="card-body">
+      <div class="form-row"><label>Fee Reminder (WhatsApp)</label><textarea rows="2">Dear {parent}, fee of ₹{amount} for {student} ({batch}) is due on {date}. Kindly pay at the earliest. — BrightPath</textarea></div>
+      <div class="form-row"><label>Payment Receipt (SMS)</label><textarea rows="2">Received ₹{amount} for {student}. Receipt {receipt}. Thank you! — BrightPath</textarea></div>
+      <div class="form-row"><label>Class Reschedule</label><textarea rows="2">{batch} class on {date} is rescheduled to {newtime}. — BrightPath</textarea></div></div></div></div>
+
+    <div class="tab-pane" data-p="t6"><div class="card"><div class="card-head"><h3>Academic Year</h3></div><div class="card-body">
+      <div class="form-grid"><div><label>Current Academic Year</label><select><option>2026-27</option><option>2025-26</option></select></div>
+      <div><label>Session Start</label><input type="date" value="2026-04-01"></div>
+      <div><label>Session End</label><input type="date" value="2027-03-31"></div>
+      <div><label>Working Days</label><input value="Mon – Sat"></div></div>
+      <div class="sec-title">Holidays</div>
+      <div class="chips">${['15 Aug','02 Oct','Diwali (5 days)','25 Dec','26 Jan','Holi'].map(h=>`<span class="chip">${h}</span>`).join('')}</div></div></div></div>`;
+
+  document.querySelectorAll('#setTabs .tab').forEach(t=>t.onclick=()=>{ document.querySelectorAll('#setTabs .tab').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active')); t.classList.add('active'); document.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active'); });
+}
+</script>
+</body></html>

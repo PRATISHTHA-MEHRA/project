@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fee Collection · BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script>
+if(App.guard()){
+  const head=`<button class="btn btn-light" onclick="App.toast('Day-book exported','ok')">${App.svg('download')}Export</button><button class="btn btn-primary" onclick="collect()">${App.svg('plus')}Collect Fee</button>`;
+  const c=App.layout('fees','Fee Collection',[`<span>Finance</span>`,'Fee Collection'],head);
+  const todayTotal=DB.fees.filter(f=>f.date==='2026-06-07').reduce((a,f)=>a+f.paid,0);
+  const monthTotal=DB.fees.reduce((a,f)=>a+f.paid,0);
+  c.innerHTML=`<div class="kpi-grid">
+    <div class="kpi"><div class="top"><span class="label">Today's Collection</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(58400)}</div></div>
+    <div class="kpi"><div class="top"><span class="label">This Month</span><span class="ic b-brand">${App.svg('fees')}</span></div><div class="val">${App.money(monthTotal)}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Receipts Issued</span><span class="ic b-blue">${App.svg('print')}</span></div><div class="val">${DB.fees.length}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Discounts Given</span><span class="ic b-amber">${App.svg('money')}</span></div><div class="val">${App.money(DB.fees.reduce((a,f)=>a+f.discount,0))}</div></div>
+  </div><div id="tbl"></div>`;
+
+  App.table('tbl',{
+    rows:DB.fees, searchKeys:['id','student','batch','txn'], searchPlaceholder:'Search receipts, students…', pageSize:10, dateFilter:true,
+    filters:[{label:'Fee Type',key:'feeType',options:DB.feeTypes},{label:'Mode',key:'mode',options:DB.modes}],
+    columns:[
+      {key:'id',label:'Receipt',render:r=>`<span class="t-id">${r.id}</span>`},
+      {key:'student',label:'Student',render:r=>App.whoCell(r.student,r.batch)},
+      {key:'feeType',label:'Fee',render:r=>`<div>${r.feeType.replace(' Fee','')}</div><div class="t-sub">${r.period}</div>`},
+      {key:'due',label:'Due',num:true,render:r=>App.money(r.due)},
+      {key:'discount',label:'Disc.',num:true,render:r=>r.discount?'-'+App.money(r.discount):'—'},
+      {key:'paid',label:'Paid',num:true,render:r=>`<b>${App.money(r.paid)}</b>`},
+      {key:'mode',label:'Mode',render:r=>`<span class="chip">${r.mode}</span>`},
+      {key:'date',label:'Date'}
+    ],
+    actions:r=>`${App.actBtn('eye','View Receipt',`onclick="receipt('${r.id}')"`)}${App.actBtn('print','Print',`onclick="App.toast('Receipt sent to printer','ok')"`)}`
+  });
+  const find=id=>DB.fees.find(f=>f.id===id);
+
+  window.receipt=id=>{ const f=find(id);
+    App.modal({size:'lg',title:'Fee Receipt',sub:f.id,
+      foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-primary" onclick="App.toast('Receipt printed','ok')">${App.svg('print')}Print Receipt</button>`,
+      body:`<div class="receipt">
+        <div class="receipt-head"><div class="org"><h3>BrightPath Coaching Centre</h3><p>12, Scholars Lane, Andheri West, Mumbai 400058 · +91 98201 00000</p></div>
+          <div class="rno"><div class="k">Receipt No.</div><div class="v">${f.id}</div><div class="k" style="margin-top:6px">Date</div><div class="v">${f.date}</div></div></div>
+        <div class="receipt-body">
+          <div class="receipt-line"><span class="k">Student</span><span class="v">${f.student} (${f.studentId})</span></div>
+          <div class="receipt-line"><span class="k">Batch</span><span class="v">${f.batch}</span></div>
+          <div class="receipt-line"><span class="k">Fee Type / Period</span><span class="v">${f.feeType} · ${f.period}</span></div>
+          <div class="receipt-line"><span class="k">Due Amount</span><span class="v num">${App.money(f.due)}</span></div>
+          <div class="receipt-line"><span class="k">Discount</span><span class="v num">- ${App.money(f.discount)}</span></div>
+          <div class="receipt-line"><span class="k">Late Fine</span><span class="v num">+ ${App.money(f.fine)}</span></div>
+          <div class="receipt-line"><span class="k">Payment Mode</span><span class="v">${f.mode}${f.txn?' · '+f.txn:''}</span></div>
+          <div class="receipt-line"><span class="k">Collected By</span><span class="v">${f.collectedBy}</span></div>
+          <div class="receipt-total"><span>Total Paid</span><span class="v">${App.money(f.paid)}</span></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px"><span class="stamp">PAID</span></div>
+        </div>
+        <div class="receipt-foot"><span>This is a computer-generated receipt.</span><span>Balance: ${App.money(f.balance)}</span></div>
+      </div>`
+    }); };
+
+  window.collect=()=>{
+    App.modal({size:'lg',title:'Collect Fee',sub:'Generate a new fee receipt',
+      body:`<div class="form-grid">
+        <div class="full"><label>Student</label><select id="cf_stu">${DB.students.map(s=>`<option data-amt="${s.feeAmt}" data-ft="${s.feeType}" data-b="${s.batch}">${s.name} · ${s.id}</option>`).join('')}</select></div>
+        <div><label>Fee Type</label><select id="cf_ft">${DB.feeTypes.map(f=>`<option>${f}</option>`).join('')}</select></div>
+        <div><label>Fee Period</label><input id="cf_period" value="Jun 2026"></div>
+        <div><label>Due Amount (₹)</label><input class="num" id="cf_due" value="2200"></div>
+        <div><label>Discount (₹)</label><input class="num" id="cf_disc" value="0"></div>
+        <div><label>Late Fine (₹)</label><input class="num" id="cf_fine" value="0"></div>
+        <div><label>Paid Amount (₹)</label><input class="num" id="cf_paid" value="2200"></div>
+        <div><label>Payment Mode</label><select id="cf_mode">${DB.modes.map(m=>`<option>${m}</option>`).join('')}</select></div>
+        <div><label>Transaction ID</label><input id="cf_txn" placeholder="Ref no."></div>
+        <div class="full"><label>Remarks</label><input id="cf_rem"></div></div>`,
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cf_save">Collect & Generate</button>`,
+      onOpen:b=>{ const sel=b.querySelector('#cf_stu'); const sync=()=>{ const o=sel.selectedOptions[0]; b.querySelector('#cf_due').value=o.dataset.amt; b.querySelector('#cf_paid').value=o.dataset.amt; b.querySelector('#cf_ft').value=o.dataset.ft; }; sel.onchange=sync; sync();
+        b.querySelector('#cf_save').onclick=()=>{ const o=sel.selectedOptions[0];
+          DB.fees.unshift({id:'RCP-'+(24001+DB.fees.length),student:o.textContent.split(' · ')[0],studentId:o.textContent.split(' · ')[1],batch:o.dataset.b,feeType:b.querySelector('#cf_ft').value,period:b.querySelector('#cf_period').value,due:+b.querySelector('#cf_due').value,paid:+b.querySelector('#cf_paid').value,discount:+b.querySelector('#cf_disc').value,fine:+b.querySelector('#cf_fine').value,mode:b.querySelector('#cf_mode').value,txn:b.querySelector('#cf_txn').value,collectedBy:'Anand Kulkarni',date:'2026-06-07',balance:0,remarks:b.querySelector('#cf_rem').value});
+          App.closeModal();location.reload(); }; }
+    });
+  };
+}
+</script>
+</body></html>

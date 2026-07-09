@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teacher Payments · BrightPath Admin</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/css/admin-style.css" />
+  </head>
+  <body>
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/admin-data.js"></script>
+    <script src="assets/js/admin-app.js"></script>
+
+    <script>
+      if (App.guard()) {
+        let paymentRows = [];
+
+        const head = `
+          <button class="btn btn-primary" onclick="addPay()">
+            ${App.svg("plus")}
+            Add Payment
+          </button>
+        `;
+
+        const c = App.layout(
+          "teacher-payments",
+          "Teacher Payments",
+          ["<span>Finance</span>", "Teacher Payments"],
+          head,
+        );
+
+        c.innerHTML = `
+          <div class="kpi-grid">
+            <div class="kpi">
+              <div class="top">
+                <span class="label">Total Net Payable</span>
+                <span class="ic b-brand">${App.svg("payment")}</span>
+              </div>
+              <div class="val" id="totNet">₹0</div>
+            </div>
+
+            <div class="kpi">
+              <div class="top">
+                <span class="label">Paid (May)</span>
+                <span class="ic b-green">${App.svg("check")}</span>
+              </div>
+              <div class="val" id="totPaid">₹0</div>
+            </div>
+
+            <div class="kpi">
+              <div class="top">
+                <span class="label">Balance Due</span>
+                <span class="ic b-red">${App.svg("pending")}</span>
+              </div>
+              <div class="val" id="totBal">₹0</div>
+            </div>
+
+            <div class="kpi">
+              <div class="top">
+                <span class="label">Pending Teachers</span>
+                <span class="ic b-amber">${App.svg("teacher")}</span>
+              </div>
+              <div class="val" id="pendingCount">0</div>
+            </div>
+          </div>
+
+          <div id="tbl"></div>
+        `;
+
+        async function loadTeacherPayments() {
+          try {
+            const res = await API.get(
+              "/teacher-payments/dashboard?month=May%202026",
+            );
+
+            const metrics = res.metrics || {};
+            paymentRows = res.payments || [];
+
+            document.getElementById("totNet").innerHTML = App.money(metrics.totNet || 0);
+            document.getElementById("totPaid").innerHTML = App.money(metrics.totPaid || 0);
+            document.getElementById("totBal").innerHTML = App.money(metrics.totBal || 0);
+            document.getElementById("pendingCount").innerHTML = metrics.pendingTeachers || 0;
+
+            renderPaymentTable(paymentRows);
+          } catch (err) {
+            console.error(err);
+            App.toast(err.message, "error");
+          }
+        }
+
+        function renderPaymentTable(rows) {
+          App.table("tbl", {
+            rows: rows,
+            searchKeys: ["id", "teacher", "payType"],
+            searchPlaceholder: "Search teacher payments…",
+            pageSize: 8,
+
+            filters: [
+              {
+                label: "Status",
+                key: "status",
+                options: ["Paid", "Pending", "Partially Paid", "Hold"],
+              },
+              {
+                label: "Month",
+                key: "month",
+                options: ["May 2026"],
+              },
+            ],
+
+            columns: [
+              {
+                key: "teacher",
+                label: "Teacher",
+                render: (r) => App.whoCell(r.teacher, r.id),
+              },
+              {
+                key: "payType",
+                label: "Type",
+                render: (r) => `<span class="chip">${r.payType}</span>`,
+              },
+              {
+                key: "taken",
+                label: "Classes",
+                num: true,
+                render: (r) => `${r.taken}/${r.assigned}`,
+              },
+              {
+                key: "gross",
+                label: "Gross",
+                num: true,
+                render: (r) => App.money(r.gross),
+              },
+              {
+                key: "ded",
+                label: "Deduct",
+                num: true,
+                render: (r) => (r.ded ? "-" + App.money(r.ded) : "—"),
+              },
+              {
+                key: "net",
+                label: "Net Payable",
+                num: true,
+                render: (r) => `<b>${App.money(r.net)}</b>`,
+              },
+              {
+                key: "balance",
+                label: "Balance",
+                num: true,
+                render: (r) => App.money(r.balance),
+              },
+              {
+                key: "status",
+                label: "Status",
+                render: (r) => App.badge(r.status),
+              },
+            ],
+
+            actions: (r) => `
+              ${App.actBtn("eye", "Statement", `onclick="stmt('${r.id}')"`)}
+              ${App.actBtn("payment", "Pay", `onclick="pay('${r.id}')"`)}
+              ${App.actBtn("print", "Voucher", `onclick="App.toast('Voucher printed','ok')"`)}
+            `,
+          });
+        }
+
+        loadTeacherPayments();
+        window.reloadTeacherPayments = loadTeacherPayments;
+
+        // ===============================
+        // PAYMENT STATEMENT MODAL
+        // ===============================
+        window.stmt = function (id) {
+          const t = paymentRows.find((x) => x.id === id);
+          if (!t) return;
+
+          App.modal({
+            size: "xl",
+            title: t.teacher + " · Payment Statement",
+            sub: `${t.id} · ${t.month}`,
+
+            foot: `
+              <button class="btn btn-light" data-close>Close</button>
+              <button class="btn btn-primary" onclick="App.toast('Statement downloaded','ok')">
+                ${App.svg("download")}
+                Download
+              </button>
+            `,
+
+            body: `
+              <div class="dl cols-3">
+                <div class="it">
+                  <div class="k">Payment Type</div>
+                  <div class="v">${t.payType}</div>
+                </div>
+
+                <div class="it">
+                  <div class="k">Classes Assigned</div>
+                  <div class="v num">${t.assigned}</div>
+                </div>
+
+                <div class="it">
+                  <div class="k">Classes Taken</div>
+                  <div class="v num">${t.taken}</div>
+                </div>
+
+                <div class="it">
+                  <div class="k">Cancelled</div>
+                  <div class="v num">${t.cancelled || 0}</div>
+                </div>
+
+                <div class="it">
+                  <div class="k">Student Count</div>
+                  <div class="v num">${t.students || 0}</div>
+                </div>
+
+                <div class="it">
+                  <div class="k">Batch Collection</div>
+                  <div class="v num">${App.money(t.collection || 0)}</div>
+                </div>
+              </div>
+
+              <div class="sec-title">Payment Breakdown</div>
+
+              <div class="pl-line plus">
+                <span>Gross Payable</span>
+                <span class="v">${App.money(t.gross)}</span>
+              </div>
+
+              <div class="pl-line minus">
+                <span>Deductions</span>
+                <span class="v">- ${App.money(t.ded || 0)}</span>
+              </div>
+
+              <div class="pl-line minus">
+                <span>Advance Paid</span>
+                <span class="v">- ${App.money(t.adv || 0)}</span>
+              </div>
+
+              <div class="pl-line total">
+                <span>Net Payable</span>
+                <span class="v">${App.money(t.net)}</span>
+              </div>
+
+              <div class="dl cols-3 mt16">
+                <div class="it">
+                  <div class="k">Paid Amount</div>
+                  <div class="v num">${App.money(t.paid)}</div>
+                </div>
+
+                <div class="it">
+                  <div class="k">Balance</div>
+                  <div class="v num">${App.money(t.balance)}</div>
+                </div>
+
+                <div class="it">
+                  <div class="k">Status</div>
+                  <div class="v">${App.badge(t.status)}</div>
+                </div>
+              </div>
+            `,
+          });
+        };
+
+        // ===============================
+        // RECORD PAYMENT PATCH
+        // ===============================
+        window.pay = async function (id) {
+          const t = paymentRows.find((x) => x.id === id);
+          if (!t) return;
+
+          App.modal({
+            size: "lg",
+            title: "Record Payment",
+            sub: `${t.teacher} · ${t.month}`,
+
+            body: `
+              <div class="form-grid">
+                <div>
+                  <label>Payable Amount (₹)</label>
+                  <input class="num" value="${t.net}" disabled>
+                </div>
+
+                <div>
+                  <label>Paid Amount (₹)</label>
+                  <input class="num" id="paidAmount" value="${t.balance}">
+                </div>
+
+                <div>
+                  <label>Payment Mode</label>
+                  <select id="payMode">
+                    <option>Bank Transfer</option>
+                    <option>UPI</option>
+                    <option>Cash</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Transaction ID</label>
+                  <input id="txn">
+                </div>
+
+                <div>
+                  <label>Payment Date</label>
+                  <input type="date" id="payDate" value="2026-06-07">
+                </div>
+
+                <div>
+                  <label>Voucher Number</label>
+                  <input id="voucher" value="VCH-${t.id}">
+                </div>
+
+                <div class="full">
+                  <label>Remarks</label>
+                  <input id="remarks">
+                </div>
+              </div>
+            `,
+
+            foot: `
+              <button class="btn btn-light" data-close>Cancel</button>
+              <button class="btn btn-primary" id="savePayment">Record Payment</button>
+            `,
+
+            onOpen: (box) => {
+              box.querySelector("#savePayment").onclick = async () => {
+                try {
+                  await API.patch(`/teacher-payments/pay/${id}`, {
+                    paidAmount: Number(box.querySelector("#paidAmount").value),
+                    mode: box.querySelector("#payMode").value,
+                    txn: box.querySelector("#txn").value,
+                    date: box.querySelector("#payDate").value,
+                    voucher: box.querySelector("#voucher").value,
+                    remarks: box.querySelector("#remarks").value,
+                  });
+
+                  App.closeModal();
+                  App.toast("Payment recorded successfully", "ok");
+                  loadTeacherPayments();
+                } catch (err) {
+                  App.toast(err.message, "error");
+                }
+              };
+            },
+          });
+        };
+
+        // ===============================
+        // ADD PAYMENT POST
+        // ===============================
+        window.addPay = function () {
+          App.modal({
+            size: "lg",
+            title: "Add Teacher Payment",
+
+            body: `
+              <div class="form-grid">
+                <div>
+                  <label>Teacher</label>
+                  <input id="teacherName">
+                </div>
+
+                <div>
+                  <label>Month</label>
+                  <input id="month" value="May 2026">
+                </div>
+
+                <div>
+                  <label>Gross Amount (₹)</label>
+                  <input class="num" id="gross">
+                </div>
+
+                <div>
+                  <label>Paid Amount (₹)</label>
+                  <input class="num" id="paid" value="0">
+                </div>
+
+                <div>
+                  <label>Payment Mode</label>
+                  <select id="mode">
+                    <option>UPI</option>
+                    <option>Bank Transfer</option>
+                    <option>Cash</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Payment Date</label>
+                  <input type="date" id="date" value="2026-06-07">
+                </div>
+
+                <div>
+                  <label>Voucher Number</label>
+                  <input id="voucher" value="VCH-1099">
+                </div>
+
+                <div>
+                  <label>Transaction ID</label>
+                  <input id="txn">
+                </div>
+
+                <div class="full">
+                  <label>Remarks</label>
+                  <input id="remarks">
+                </div>
+              </div>
+            `,
+
+            foot: `
+              <button class="btn btn-light" data-close>Cancel</button>
+              <button class="btn btn-primary" id="addPayment">Save Payment</button>
+            `,
+
+            onOpen: (box) => {
+              box.querySelector("#addPayment").onclick = async () => {
+                try {
+                  await API.post("/teacher-payments/add", {
+                    teacher: box.querySelector("#teacherName").value,
+                    month: box.querySelector("#month").value,
+                    gross: Number(box.querySelector("#gross").value),
+                    paid: Number(box.querySelector("#paid").value),
+                    mode: box.querySelector("#mode").value,
+                    date: box.querySelector("#date").value,
+                    voucher: box.querySelector("#voucher").value,
+                    txn: box.querySelector("#txn").value,
+                    remarks: box.querySelector("#remarks").value,
+                  });
+
+                  App.closeModal();
+                  App.toast("Payment voucher created", "ok");
+                  loadTeacherPayments();
+                } catch (err) {
+                  App.toast(err.message, "error");
+                }
+              };
+            },
+          });
+        };
+      }
+    </script>
+  </body>
+</html>
