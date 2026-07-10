@@ -7,13 +7,14 @@
 <link rel="stylesheet" href="assets/css/admin-style.css">
 </head>
 <body>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
-  const API_BASE = "http://localhost:5001/api/courses";
+
+  const ENDPOINT = "/courses";
   const cats = ["School", "Competitive", "Skill"];
-  let usingFallback = false;
   let currentCourses = [];
 
   const head = `<button class="btn btn-primary" onclick="addCourse()">${App.svg('plus')}Add Course</button>`;
@@ -23,37 +24,7 @@ if(App.guard()){
   const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const asNum = v => Number(v ?? 0) || 0;
-  const localCourses = () => (DB.courses || []).map(mapCourse);
-  const findLocalCourse = id => (DB.courses || []).find(x => String(x.id) === String(id) || String(x.course_code) === String(id));
   const findCurrentCourse = id => currentCourses.find(x => String(x.id) === String(id));
-
-  function authHeaders(hasBody = false){
-    const token = localStorage.getItem('JWT_TOKEN') || '';
-    const headers = {};
-    if (hasBody) headers['Content-Type'] = 'application/json';
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
-  }
-
-  async function apiRequest(path = '', options = {}){
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
-    });
-    const text = await res.text();
-    let data = null;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch (err) {
-        data = { message: text };
-      }
-    }
-    if (!res.ok) {
-      throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
-    }
-    return data;
-  }
 
   function unwrapOne(payload){
     return payload?.data?.course || payload?.data || payload?.course || payload;
@@ -142,27 +113,31 @@ if(App.guard()){
     });
   }
 
-  async function loadCourses(){
-    try {
-      const payload = await apiRequest();
-      usingFallback = false;
-      renderTable(unwrapList(payload).map(mapCourse));
-    } catch (err) {
-      console.warn('Courses API unavailable, showing local data:', err);
-      usingFallback = true;
-      renderTable(localCourses());
-      App.toast('Courses API unavailable. Showing local data.', 'info');
-    }
+  async function loadCourses() {
+  try {
+    const payload = await API.get(ENDPOINT);
+    console.log("Payload:", payload);
+
+    const rows = unwrapList(payload);
+    console.log("Rows:", rows);
+
+    const mapped = rows.map(mapCourse);
+    console.log("Mapped:", mapped);
+
+    renderTable(mapped);
+  } catch (err) {
+    console.error(err);
   }
+}
 
   async function getCourse(id){
-    if (usingFallback) return mapCourse(findLocalCourse(id));
-    const payload = await apiRequest(`/${encodeURIComponent(id)}`);
+    const payload = await API.get(`${ENDPOINT}/${encodeURIComponent(id)}`);
     return mapCourse(unwrapOne(payload));
   }
 
   function showViewModal(x){
     if (!x || !x.id) return App.toast('Course not found', 'err');
+    // No batches API yet — still derived from the static batches list.
     const batches = DB.batches ? DB.batches.filter(b => b.course === x.name) : [];
     App.modal({size: 'lg', title: esc(x.name), sub: `${esc(x.course_code)} - ${esc(x.category)}`,
       body: `<div class="dl cols-3"><div class="it"><div class="k">Subject</div><div class="v">${esc(x.subject)}</div></div>
@@ -211,28 +186,7 @@ if(App.guard()){
       if (!course.name) return App.toast('Enter course name', 'err');
 
       try {
-        if (usingFallback) {
-          DB.courses.unshift({
-            id: course.course_code,
-            course_code: course.course_code,
-            name: course.name,
-            category: course.category,
-            level: course.level,
-            subject: course.subject,
-            duration: course.duration,
-            monthly: course.monthly,
-            quarterly: course.quarterly,
-            semi: course.semi,
-            annual: course.annual,
-            status: course.status,
-            desc: course.desc
-          });
-          App.closeModal();
-          renderTable(localCourses());
-          return App.toast('Course added locally', 'ok');
-        }
-
-        await apiRequest('', { method: 'POST', body: JSON.stringify(toApiPayload(course)) });
+        await API.post(ENDPOINT, toApiPayload(course));
         App.closeModal();
         await loadCourses();
         App.toast('Course added', 'ok');
@@ -260,29 +214,7 @@ if(App.guard()){
         if (!course.name) return App.toast('Enter course name', 'err');
 
         try {
-          if (usingFallback) {
-            const matched = findLocalCourse(x.id);
-            if (matched) Object.assign(matched, {
-              id: course.course_code,
-              course_code: course.course_code,
-              name: course.name,
-              category: course.category,
-              level: course.level,
-              subject: course.subject,
-              duration: course.duration,
-              monthly: course.monthly,
-              quarterly: course.quarterly,
-              semi: course.semi,
-              annual: course.annual,
-              status: course.status,
-              desc: course.desc
-            });
-            App.closeModal();
-            renderTable(localCourses());
-            return App.toast('Course updated locally', 'ok');
-          }
-
-          await apiRequest(`/${encodeURIComponent(x.id)}`, { method: 'PUT', body: JSON.stringify(toApiPayload(course)) });
+          await API.put(`${ENDPOINT}/${encodeURIComponent(x.id)}`, toApiPayload(course));
           App.closeModal();
           await loadCourses();
           App.toast('Course updated', 'ok');
@@ -298,14 +230,7 @@ if(App.guard()){
     const label = x ? `${esc(x.course_code)} - ${esc(x.name)}` : esc(id);
     App.confirmModal(`Delete course <b>${label}</b>?`, async () => {
       try {
-        if (usingFallback) {
-          const targetIdx = (DB.courses || []).findIndex(item => String(item.id) === String(id) || String(item.course_code) === String(id));
-          if (targetIdx > -1) DB.courses.splice(targetIdx, 1);
-          renderTable(localCourses());
-          return App.toast('Course deleted locally', 'ok');
-        }
-
-        await apiRequest(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        await API.delete(`${ENDPOINT}/${encodeURIComponent(id)}`);
         await loadCourses();
         App.toast('Course deleted', 'ok');
       } catch (err) {

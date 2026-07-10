@@ -7,13 +7,14 @@
 <link rel="stylesheet" href="assets/css/admin-style.css">
 </head>
 <body>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
-  const API_BASE = "http://localhost:5001/api/demo-classes";
+
   const statuses = ["Scheduled","Completed","Cancelled","No Show"];
-  let usingFallback = false;
+  const ENDPOINT = "/demo-classes";
   let currentDemos = [];
 
   const head = `<button class="btn btn-primary" onclick="addDemo()">${App.svg('plus')}Schedule Demo</button>`;
@@ -23,55 +24,13 @@ if(App.guard()){
   const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const unique = values => [...new Set(values.filter(Boolean))];
-  const localDemos = () => (DB.demos || []).map(mapDemo);
-  const findLocalDemo = id => (DB.demos || []).find(d => String(d.id) === String(id));
   const findCurrentDemo = id => currentDemos.find(d => String(d.id) === String(id));
-
-  function authHeaders(hasBody = false){
-    const token = localStorage.getItem('JWT_TOKEN') || '';
-    const headers = {};
-    if (hasBody) headers['Content-Type'] = 'application/json';
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
-  }
-
-  async function apiRequest(path = '', options = {}){
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
-    });
-    const text = await res.text();
-    let data = null;
-    if (text) {
-      try { data = JSON.parse(text); }
-      catch (err) { data = { message: text }; }
-    }
-    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
-    return data;
-  }
 
   function unwrapList(payload){
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.data)) return payload.data;
     if (Array.isArray(payload?.demos)) return payload.demos;
-    if (Array.isArray(payload?.demoClasses)) return payload.demoClasses;
-    if (Array.isArray(payload?.data?.demos)) return payload.data.demos;
-    if (Array.isArray(payload?.data?.demoClasses)) return payload.data.demoClasses;
     return [];
-  }
-
-  function mapDemo(item = {}){
-    return {
-      id: String(item.id ?? item.demo_id ?? item.demo_code ?? ''),
-      student: item.student || item.student_name || '',
-      course: item.course || '',
-      batch: item.batch || '',
-      teacher: item.teacher || '',
-      date: item.date || '',
-      time: item.time || '',
-      status: item.status || 'Scheduled',
-      feedback: item.feedback || '-'
-    };
   }
 
   function toApiPayload(d){
@@ -126,14 +85,11 @@ if(App.guard()){
 
   async function loadDemos(){
     try {
-      const payload = await apiRequest();
-      usingFallback = false;
-      renderTable(unwrapList(payload).map(mapDemo));
+      const payload = await API.get(ENDPOINT);
+      renderTable(unwrapList(payload));
     } catch (err) {
-      console.warn('Demo classes API unavailable, showing local data:', err);
-      usingFallback = true;
-      renderTable(localDemos());
-      App.toast('Demo classes API unavailable. Showing local data.', 'info');
+      App.toast(err.message || 'Failed to load demos','err');
+      renderTable([]);
     }
   }
 
@@ -149,22 +105,23 @@ if(App.guard()){
     });
   }
 
-  function optionList(values, selected){
-    return unique(values).map(v => `<option ${selected===v?'selected':''}>${esc(v)}</option>`).join('');
+  function datalistOptions(id, values){
+    return `<datalist id="${id}">${unique(values).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
   }
 
   function demoForm(x){
-    const students = ['Rahul Sharma', ...DB.enquiries.map(e=>e.name), ...currentDemos.map(d=>d.student)];
-    const courses = ['Class 9 Mathematics', ...DB.courses.map(c=>c.name), ...currentDemos.map(d=>d.course)];
-    const batches = ['Alpha Math Warriors', ...DB.batches.map(b=>b.name), ...currentDemos.map(d=>d.batch)];
-    const teachers = ['Anjali Das', ...DB.teachers.map(t=>t.name), ...currentDemos.map(d=>d.teacher)];
+    // Suggestions are pulled from demos already loaded from the API — no static/dummy lists.
+    const students = unique(currentDemos.map(d=>d.student));
+    const courses = unique(currentDemos.map(d=>d.course));
+    const batches = unique(currentDemos.map(d=>d.batch));
+    const teachers = unique(currentDemos.map(d=>d.teacher));
     return `<div class="form-grid">
-      <div><label>Student / Enquiry</label><select id="d_stu">${optionList(students, x?.student)}</select></div>
-      <div><label>Course</label><select id="d_course">${optionList(courses, x?.course)}</select></div>
-      <div><label>Batch</label><select id="d_batch">${optionList(batches, x?.batch)}</select></div>
-      <div><label>Teacher</label><select id="d_teacher">${optionList(teachers, x?.teacher)}</select></div>
-      <div><label>Date</label><input type="date" id="d_date" value="${esc(x?.date || '2026-07-02')}"></div>
-      <div><label>Time</label><input id="d_time" value="${esc(x?.time || '04:30 PM')}"></div>
+      <div><label>Student / Enquiry</label><input id="d_stu" list="dl_stu" value="${esc(x?.student || '')}" placeholder="Student name">${datalistOptions('dl_stu', students)}</div>
+      <div><label>Course</label><input id="d_course" list="dl_course" value="${esc(x?.course || '')}" placeholder="Course name">${datalistOptions('dl_course', courses)}</div>
+      <div><label>Batch</label><input id="d_batch" list="dl_batch" value="${esc(x?.batch || '')}" placeholder="Batch name">${datalistOptions('dl_batch', batches)}</div>
+      <div><label>Teacher</label><input id="d_teacher" list="dl_teacher" value="${esc(x?.teacher || '')}" placeholder="Teacher name">${datalistOptions('dl_teacher', teachers)}</div>
+      <div><label>Date</label><input type="date" id="d_date" value="${esc(x?.date || '')}"></div>
+      <div><label>Time</label><input id="d_time" value="${esc(x?.time || '')}" placeholder="e.g. 04:30 PM"></div>
       <div><label>Status</label><select id="d_status">${statuses.map(s=>`<option ${x?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
       <div class="full"><label>Feedback</label><textarea id="d_feedback" rows="2">${esc(x?.feedback || '-')}</textarea></div>
     </div>`;
@@ -177,16 +134,10 @@ if(App.guard()){
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Schedule Demo</button>`,
     onOpen:box=>box.querySelector('#sv').onclick=async()=>{
       const demo = readForm(box);
-      if (!demo.student) return App.toast('Select student','err');
-      if (!demo.course) return App.toast('Select course','err');
+      if (!demo.student) return App.toast('Enter student name','err');
+      if (!demo.course) return App.toast('Enter course','err');
       try {
-        if (usingFallback) {
-          DB.demos.unshift({id:'DM-'+(301+DB.demos.length), ...demo});
-          App.closeModal();
-          renderTable(localDemos());
-          return App.toast('Demo scheduled locally','ok');
-        }
-        await apiRequest('', { method:'POST', body:JSON.stringify(toApiPayload(demo)) });
+        await API.post(ENDPOINT, toApiPayload(demo));
         App.closeModal();
         await loadDemos();
         App.toast('Demo scheduled','ok');
@@ -205,13 +156,7 @@ if(App.guard()){
       feedback: x.feedback && x.feedback !== '-' ? x.feedback : 'Student participated well and was highly responsive.'
     };
     try {
-      if (usingFallback) {
-        const local = findLocalDemo(id);
-        if (local) Object.assign(local, completed);
-        renderTable(localDemos());
-        return App.toast('Demo marked completed locally','ok');
-      }
-      await apiRequest(`/${encodeURIComponent(x.id)}`, { method:'PUT', body:JSON.stringify(toApiPayload(completed)) });
+      await API.put(`${ENDPOINT}/${encodeURIComponent(x.id)}`, toApiPayload(completed));
       await loadDemos();
       App.toast('Demo marked completed','ok');
     } catch (err) {
@@ -223,16 +168,7 @@ if(App.guard()){
     const x = findCurrentDemo(id);
     if (!x) return App.toast('Demo class not found', 'err');
     try {
-      if (usingFallback) {
-        const local = findLocalDemo(id);
-        if (local) local.status = 'Completed';
-        renderTable(localDemos());
-        App.toast('Demo converted locally','ok');
-        location.href = 'admissions.html';
-        return;
-      }
-      await apiRequest(`/${encodeURIComponent(x.id)}/convert`, { method:'POST' });
-      await loadDemos();
+      await API.post(`${ENDPOINT}/${encodeURIComponent(x.id)}/convert`, {});
       App.toast('Demo converted to admission','ok');
       location.href = 'admissions.html';
     } catch (err) {
