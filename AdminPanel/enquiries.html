@@ -36,12 +36,10 @@ if(App.guard()){
 
   const findCurrentEnquiry = id => currentEnquiries.find(e => String(e.id) === String(id));
 
-  // Match an enquiry's free-text course_interest to a real course row.
   const findMatchingCourse = (courseName) =>
     courses.find(c => (c.course_name || '').trim().toLowerCase() === (courseName || '').trim().toLowerCase());
 
-  // Backend already returns frontend-shaped fields (see mapToFrontend), this
-  // just guards against any missing keys so the UI never throws.
+
   function mapEnquiry(item = {}){
     return {
       id: item.id || '', name: item.name || 'Unnamed Student', parent: item.parent || '',
@@ -161,8 +159,7 @@ if(App.guard()){
 
   function eForm(x){
     const courseNames = unique(courses.map(c => c.course_name));
-    // Status editable here, but 'Converted' is intentionally excluded —
-    // that transition only happens through the Convert flow.
+    
     const editableStatuses = STATUSES.filter(s => s !== 'Converted');
     return `<div class="form-grid">
       <div><label>Student Name</label><input id="e_name" value="${esc(x?.name || '')}"></div>
@@ -217,10 +214,7 @@ if(App.guard()){
     });
   };
 
-  // --- Convert flow -----------------------------------------------------
-  // Only asks for what the enquiry doesn't already have: Batch, Fee Type,
-  // Fee Amount, Admission Date, Fee Status. Course comes from the enquiry
-  // itself and is used (read-only) to filter which batches are shown.
+
 
   function convertForm(x, matchedCourse){
     if (!matchedCourse) {
@@ -230,14 +224,12 @@ if(App.guard()){
       </div>`;
     }
 
-    // batchController's mapToFrontend returns `course` as the course NAME
-    // (falling back to the raw course_id only if its join didn't resolve) —
-    // there is no `course_id` field on the batch objects the API returns.
+ 
     const matchingBatches = batches.filter(b =>
       (b.course && b.course === matchedCourse.course_name) ||
       String(b.course) === String(matchedCourse.id)
     );
-    // batchController's mapToFrontend returns the label as `name`.
+  
     const batchOptions = matchingBatches.length
       ? matchingBatches.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')
       : '';
@@ -272,8 +264,7 @@ if(App.guard()){
         const feeTypeSel = box.querySelector('#cv_feetype');
         const feeAmountInput = box.querySelector('#cv_feeamount');
 
-        // Auto-fill fee amount from the course's fee table when the fee
-        // type changes; the counselor can still edit it manually.
+
         const refreshFeeAmount = () => {
           const field = FEE_FIELD_BY_TYPE[feeTypeSel.value];
           if (field && matchedCourse[field] != null) feeAmountInput.value = matchedCourse[field];
@@ -292,9 +283,7 @@ if(App.guard()){
           if (!feeAmount) return App.toast('Enter a fee amount','err');
 
           try {
-            // Only the admission-specific fields are sent — the backend
-            // reads the rest (name, mobile, parent, class, course) straight
-            // off the enquiry record and merges them in.
+          
             await API.post(`/enquiries/${encodeURIComponent(x.id)}/convert`, {
               batchId, feeType, feeAmount, feeStatus, admissionDate
             });

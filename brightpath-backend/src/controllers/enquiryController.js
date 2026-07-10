@@ -37,7 +37,7 @@ const mapToDatabase = (f) => ({
     date: f.date || null
 });
 
-// "ENQ-42" -> 42, with validation. Returns null if not a valid id.
+
 const parseId = (param) => {
     const raw = String(param).replace("ENQ-", "");
     const id = Number(raw);
@@ -136,7 +136,7 @@ exports.convertEnquiry = async (req, res) => {
             });
         }
 
-        // Prevent duplicate conversion
+        // to prevent duplicate conversion
         const existing = await db.query(
             "SELECT id FROM admissions WHERE mobile = $1",
             [enquiry.mobile]

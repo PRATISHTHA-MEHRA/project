@@ -37,11 +37,6 @@ const getAdmissions = async (req, res) => {
     }
 };
 
-/**
- * Resolves course_id from either payload.courseId or payload.course (name).
- * Throws instead of falling back to "the first course in the table" —
- * a wrong/missing course must be a visible error, not a silent guess.
- */
 async function resolveCourseId(payload) {
     if (payload.courseId) {
         const result = await db.query("SELECT id FROM courses WHERE id = $1", [payload.courseId]);
@@ -56,11 +51,6 @@ async function resolveCourseId(payload) {
     throw new Error("Course is required");
 }
 
-/**
- * Resolves batch_id from either payload.batchId or payload.batch (name),
- * always scoped to the given course so a batch can't be attached to the
- * wrong course by accident.
- */
 async function resolveBatchId(payload, courseId) {
     if (payload.batchId) {
         const result = await db.query(
@@ -81,16 +71,8 @@ async function resolveBatchId(payload, courseId) {
     throw new Error("Batch is required");
 }
 
-/**
- * Core admission-creation logic. Requires a COMPLETE payload:
- *   name, mobile, parent, cls, (course or courseId), (batch or batchId),
- *   feeType, feeAmt, admission (optional -> defaults to today), feeStatus (optional -> defaults to Paid)
- *
- * No hardcoded fallback values for course/batch/fee — callers (the HTTP
- * handler below, or enquiryController's conversion flow) must supply
- * everything needed. This is exported so enquiryController can call it
- * directly, in-process, instead of making an HTTP request to itself.
- */
+
+
 async function createAdmissionRecord(payload) {
     if (!payload.name) throw new Error("Student name is required");
     if (!payload.mobile) throw new Error("Mobile number is required");
@@ -139,6 +121,6 @@ const createAdmission = async (req, res) => {
 module.exports = {
     getAdmissions,
     createAdmission,
-    createAdmissionRecord, // used internally by enquiryController for enquiry -> admission conversion
-    mapToFrontend           // used internally by enquiryController to shape the admission in its response
+    createAdmissionRecord, 
+    mapToFrontend           
 };
