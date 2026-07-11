@@ -54,15 +54,15 @@ if(App.guard()){
 
   function mapBatch(item = {}){
     return {
-      id: String(item.id ?? item.batch_id ?? ''),
-      name: item.batch_name || item.name || '',
+      id: String(item.id ?? ''),
+      name: item.batch_name || '',
       subject: item.subject || '',
-      teacherId: item.teacher_id != null ? String(item.teacher_id) : (item.teacherId != null ? String(item.teacherId) : ''),
-      teacher: item.teacher_name || item.teacher || '',
+    teacherId: item.teacher_id != null ? String(item.teacher_id) : '',
+      teacher: item.teacher_name || '',
       days: item.days || '',
-      st: item.start_time || item.st || '',
-      et: item.end_time || item.et || '',
-      cur: asNum(item.current_students ?? item.cur ?? item.students ?? 0)
+      st: item.start_time || '',
+      et: item.end_time || '',
+      cur: asNum(item.current_students ?? 0)
     };
   }
 
@@ -85,22 +85,22 @@ if(App.guard()){
   }
 
   function mapTeacher(item = {}){
-    const id = item.id ?? item.teacher_id ?? item.teacher_code ?? '';
-    const name = item.teacher_name || item.name || 'Unnamed Teacher';
+    const id = item.id ??'';
+    const name = item.teacher_name || 'Unnamed Teacher';
     const subjects = splitSubjects(item.subjects);
-    const exp = item.experience ?? item.exp ?? '';
+    const exp = item.experience ??  '';
     return {
       id: String(id),
-      teacher_code: String(item.teacher_code ?? item.code ?? id ?? ''),
+      teacher_code: String(item.teacher_code ?? ''),
       name,
       mobile: item.mobile || '',
       email: item.email || '',
-      qual: item.qualification || item.qual || '',
+      qual: item.qualification ||  '',
       exp: exp === '' ? '' : String(exp).includes('yr') ? String(exp) : `${exp} yrs`,
       experience: asNum(exp),
       subjects,
-      payType: item.payment_type || item.payType || '',
-      joined: item.joining_date || item.joined || '',
+      payType: item.payment_type  || '',
+      joined: item.joining_date ||  '',
       status: item.status || 'Active',
       batches: asNum(item.batches ?? batchesForTeacher({ id: String(id), name }).length)
     };

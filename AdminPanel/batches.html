@@ -138,12 +138,10 @@ if(App.guard()){
   async function getBatch(id){
     return mapBatch(unwrapOne(await API.get(`${ENDPOINT}/${encodeURIComponent(id)}`)));
   }
-
-  async function enrolledStudents(batch){
-    const students = await API.get("/students");
-    return students.filter(
-        s => String(s.batch_id) === String(batch.id)
-    );
+async function enrolledStudents(batch){
+  const payload = await API.get("/students");
+  const students = unwrapList(payload); // or a students-specific unwrap if the shape differs
+  return students.filter(s => String(s.batch_id) === String(batch.id));
 }
 
   async function showBatchModal(x){
