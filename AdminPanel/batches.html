@@ -7,14 +7,14 @@
 <link rel="stylesheet" href="assets/css/admin-style.css">
 </head>
 <body>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
-  const API_BASE = "http://localhost:5001/api/batches";
+  const ENDPOINT = "/batches";
   const types = ["Regular","Crash Course","Weekend","Online","Hybrid"];
   const statuses = ["Active","Upcoming","Completed"];
-  let usingFallback = false;
   let currentBatches = [];
 
   const head = `<button class="btn btn-primary" onclick="addBatch()">${App.svg('plus')}Add Batch</button>`;
@@ -25,32 +25,7 @@ if(App.guard()){
   const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const asNum = v => Number(v ?? 0) || 0;
   const unique = values => [...new Set(values.filter(Boolean))];
-  const localBatches = () => (DB.batches || []).map(mapBatch);
-  const findLocalBatch = id => (DB.batches || []).find(b => String(b.id) === String(id));
   const findCurrentBatch = id => currentBatches.find(b => String(b.id) === String(id));
-
-  function authHeaders(hasBody = false){
-    const token = localStorage.getItem('JWT_TOKEN') || '';
-    const headers = {};
-    if (hasBody) headers['Content-Type'] = 'application/json';
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
-  }
-
-  async function apiRequest(path = '', options = {}){
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
-    });
-    const text = await res.text();
-    let data = null;
-    if (text) {
-      try { data = JSON.parse(text); }
-      catch (err) { data = { message: text }; }
-    }
-    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
-    return data;
-  }
 
   function unwrapOne(payload){
     return payload?.data?.batch || payload?.data || payload?.batch || payload;
@@ -152,29 +127,28 @@ if(App.guard()){
 
   async function loadBatches(){
     try {
-      const payload = await apiRequest();
-      usingFallback = false;
+      const payload = await API.get(ENDPOINT);
       renderTable(unwrapList(payload).map(mapBatch));
     } catch (err) {
-      console.warn('Batches API unavailable, showing local data:', err);
-      usingFallback = true;
-      renderTable(localBatches());
-      App.toast('Batches API unavailable. Showing local data.', 'info');
+      App.toast(err.message || 'Failed to load batches','err');
+      renderTable([]);
     }
   }
 
   async function getBatch(id){
-    if (usingFallback) return mapBatch(findLocalBatch(id));
-    return mapBatch(unwrapOne(await apiRequest(`/${encodeURIComponent(id)}`)));
+    return mapBatch(unwrapOne(await API.get(`${ENDPOINT}/${encodeURIComponent(id)}`)));
   }
 
-  function enrolledStudents(batch){
-    return (DB.students || []).filter(s => s.batch === batch.name);
-  }
+  async function enrolledStudents(batch){
+    const students = await API.get("/students");
+    return students.filter(
+        s => String(s.batch_id) === String(batch.id)
+    );
+}
 
-  function showBatchModal(x){
+  async function showBatchModal(x){
     if (!x || !x.id) return App.toast('Batch not found', 'err');
-    const studs = enrolledStudents(x);
+   const studs = await enrolledStudents(x);
     App.modal({size:'xl',title:esc(x.name),sub:`${esc(x.id)} - ${esc(x.course)}`,
       body:`<div class="dl cols-3"><div class="it"><div class="k">Teacher</div><div class="v">${esc(x.teacher)}</div></div>
         <div class="it"><div class="k">Classroom</div><div class="v">${esc(x.room)}</div></div><div class="it"><div class="k">Type</div><div class="v">${esc(x.type)}</div></div>
@@ -224,13 +198,7 @@ if(App.guard()){
       const batch = readForm(box);
       if (!batch.name) return App.toast('Enter batch name','err');
       try {
-        if (usingFallback) {
-          DB.batches.unshift({id:'B-'+(110+DB.batches.length), ...batch});
-          App.closeModal();
-          renderTable(localBatches());
-          return App.toast('Batch created locally','ok');
-        }
-        await apiRequest('', { method:'POST', body:JSON.stringify(toApiPayload(batch)) });
+        await API.post(ENDPOINT, toApiPayload(batch));
         App.closeModal();
         await loadBatches();
         App.toast('Batch created','ok');
@@ -250,14 +218,7 @@ if(App.guard()){
           const batch = readForm(box);
           if (!batch.name) return App.toast('Enter batch name','err');
           try {
-            if (usingFallback) {
-              const local = findLocalBatch(id);
-              if (local) Object.assign(local, batch);
-              App.closeModal();
-              renderTable(localBatches());
-              return App.toast('Batch updated locally','ok');
-            }
-            await apiRequest(`/${encodeURIComponent(x.id)}`, { method:'PUT', body:JSON.stringify(toApiPayload(batch)) });
+            await API.put(`${ENDPOINT}/${encodeURIComponent(x.id)}`, toApiPayload(batch));
             App.closeModal();
             await loadBatches();
             App.toast('Batch updated','ok');
@@ -276,13 +237,7 @@ if(App.guard()){
     const label = x ? `${esc(x.name)} (${esc(x.id)})` : esc(id);
     App.confirmModal(`Delete batch <b>${label}</b>?`, async()=>{
       try {
-        if (usingFallback) {
-          const i = (DB.batches || []).findIndex(b => String(b.id) === String(id));
-          if (i > -1) DB.batches.splice(i, 1);
-          renderTable(localBatches());
-          return App.toast('Batch deleted locally','ok');
-        }
-        await apiRequest(`/${encodeURIComponent(id)}`, { method:'DELETE' });
+        await API.delete(`${ENDPOINT}/${encodeURIComponent(id)}`);
         await loadBatches();
         App.toast('Batch deleted','ok');
       } catch (err) {

@@ -17,7 +17,13 @@
 
     <script>
       if (App.guard()) {
+        const ENDPOINT = "/teacher-payments";
+        const MONTH = "May 2026"; 
         let paymentRows = [];
+
+        const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+        const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const unique = values => [...new Set(values.filter(Boolean))];
 
         const head = `
           <button class="btn btn-primary" onclick="addPay()">
@@ -45,7 +51,7 @@
 
             <div class="kpi">
               <div class="top">
-                <span class="label">Paid (May)</span>
+                <span class="label">Paid (${esc(MONTH)})</span>
                 <span class="ic b-green">${App.svg("check")}</span>
               </div>
               <div class="val" id="totPaid">₹0</div>
@@ -74,7 +80,7 @@
         async function loadTeacherPayments() {
           try {
             const res = await API.get(
-              "/teacher-payments/dashboard?month=May%202026",
+              `${ENDPOINT}/dashboard?month=${encodeURIComponent(MONTH)}`,
             );
 
             const metrics = res.metrics || {};
@@ -88,7 +94,8 @@
             renderPaymentTable(paymentRows);
           } catch (err) {
             console.error(err);
-            App.toast(err.message, "error");
+            App.toast(err.message || "Failed to load teacher payments", "err");
+            renderPaymentTable([]);
           }
         }
 
@@ -108,7 +115,12 @@
               {
                 label: "Month",
                 key: "month",
-                options: ["May 2026"],
+                // Derived from whatever's actually loaded, instead of a
+                // hardcoded single-month list, so new months show up here
+                // automatically once vouchers exist for them.
+                options: unique(rows.map(r => r.month)).length
+                  ? unique(rows.map(r => r.month))
+                  : [MONTH],
               },
             ],
 
@@ -116,18 +128,18 @@
               {
                 key: "teacher",
                 label: "Teacher",
-                render: (r) => App.whoCell(r.teacher, r.id),
+                render: (r) => App.whoCell(esc(r.teacher), esc(r.id)),
               },
               {
                 key: "payType",
                 label: "Type",
-                render: (r) => `<span class="chip">${r.payType}</span>`,
+                render: (r) => `<span class="chip">${esc(r.payType)}</span>`,
               },
               {
                 key: "taken",
                 label: "Classes",
                 num: true,
-                render: (r) => `${r.taken}/${r.assigned}`,
+                render: (r) => `${esc(r.taken)}/${esc(r.assigned)}`,
               },
               {
                 key: "gross",
@@ -156,13 +168,13 @@
               {
                 key: "status",
                 label: "Status",
-                render: (r) => App.badge(r.status),
+                render: (r) => App.badge(esc(r.status)),
               },
             ],
 
             actions: (r) => `
-              ${App.actBtn("eye", "Statement", `onclick="stmt('${r.id}')"`)}
-              ${App.actBtn("payment", "Pay", `onclick="pay('${r.id}')"`)}
+              ${App.actBtn("eye", "Statement", `onclick="stmt('${jsStr(r.id)}')"`)}
+              ${App.actBtn("payment", "Pay", `onclick="pay('${jsStr(r.id)}')"`)}
               ${App.actBtn("print", "Voucher", `onclick="App.toast('Voucher printed','ok')"`)}
             `,
           });
@@ -175,13 +187,13 @@
         // PAYMENT STATEMENT MODAL
         // ===============================
         window.stmt = function (id) {
-          const t = paymentRows.find((x) => x.id === id);
-          if (!t) return;
+          const t = paymentRows.find((x) => String(x.id) === String(id));
+          if (!t) return App.toast("Payment record not found", "err");
 
           App.modal({
             size: "xl",
-            title: t.teacher + " · Payment Statement",
-            sub: `${t.id} · ${t.month}`,
+            title: esc(t.teacher) + " · Payment Statement",
+            sub: `${esc(t.id)} · ${esc(t.month)}`,
 
             foot: `
               <button class="btn btn-light" data-close>Close</button>
@@ -195,27 +207,27 @@
               <div class="dl cols-3">
                 <div class="it">
                   <div class="k">Payment Type</div>
-                  <div class="v">${t.payType}</div>
+                  <div class="v">${esc(t.payType)}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Classes Assigned</div>
-                  <div class="v num">${t.assigned}</div>
+                  <div class="v num">${esc(t.assigned)}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Classes Taken</div>
-                  <div class="v num">${t.taken}</div>
+                  <div class="v num">${esc(t.taken)}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Cancelled</div>
-                  <div class="v num">${t.cancelled || 0}</div>
+                  <div class="v num">${esc(t.cancelled || 0)}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Student Count</div>
-                  <div class="v num">${t.students || 0}</div>
+                  <div class="v num">${esc(t.students || 0)}</div>
                 </div>
 
                 <div class="it">
@@ -259,7 +271,7 @@
 
                 <div class="it">
                   <div class="k">Status</div>
-                  <div class="v">${App.badge(t.status)}</div>
+                  <div class="v">${App.badge(esc(t.status))}</div>
                 </div>
               </div>
             `,
@@ -270,24 +282,24 @@
         // RECORD PAYMENT PATCH
         // ===============================
         window.pay = async function (id) {
-          const t = paymentRows.find((x) => x.id === id);
-          if (!t) return;
+          const t = paymentRows.find((x) => String(x.id) === String(id));
+          if (!t) return App.toast("Payment record not found", "err");
 
           App.modal({
             size: "lg",
             title: "Record Payment",
-            sub: `${t.teacher} · ${t.month}`,
+            sub: `${esc(t.teacher)} · ${esc(t.month)}`,
 
             body: `
               <div class="form-grid">
                 <div>
                   <label>Payable Amount (₹)</label>
-                  <input class="num" value="${t.net}" disabled>
+                  <input class="num" value="${esc(t.net)}" disabled>
                 </div>
 
                 <div>
                   <label>Paid Amount (₹)</label>
-                  <input class="num" id="paidAmount" value="${t.balance}">
+                  <input class="num" id="paidAmount" value="${esc(t.balance)}">
                 </div>
 
                 <div>
@@ -311,7 +323,7 @@
 
                 <div>
                   <label>Voucher Number</label>
-                  <input id="voucher" value="VCH-${t.id}">
+                  <input id="voucher" value="VCH-${esc(t.id)}">
                 </div>
 
                 <div class="full">
@@ -329,7 +341,7 @@
             onOpen: (box) => {
               box.querySelector("#savePayment").onclick = async () => {
                 try {
-                  await API.patch(`/teacher-payments/pay/${id}`, {
+                  await API.patch(`${ENDPOINT}/pay/${encodeURIComponent(id)}`, {
                     paidAmount: Number(box.querySelector("#paidAmount").value),
                     mode: box.querySelector("#payMode").value,
                     txn: box.querySelector("#txn").value,
@@ -342,7 +354,7 @@
                   App.toast("Payment recorded successfully", "ok");
                   loadTeacherPayments();
                 } catch (err) {
-                  App.toast(err.message, "error");
+                  App.toast(err.message || "Failed to record payment", "err");
                 }
               };
             },
@@ -366,7 +378,7 @@
 
                 <div>
                   <label>Month</label>
-                  <input id="month" value="May 2026">
+                  <input id="month" value="${esc(MONTH)}">
                 </div>
 
                 <div>
@@ -417,9 +429,12 @@
 
             onOpen: (box) => {
               box.querySelector("#addPayment").onclick = async () => {
+                const teacherName = box.querySelector("#teacherName").value.trim();
+                if (!teacherName) return App.toast("Enter teacher name", "err");
+
                 try {
-                  await API.post("/teacher-payments/add", {
-                    teacher: box.querySelector("#teacherName").value,
+                  await API.post(`${ENDPOINT}/add`, {
+                    teacher: teacherName,
                     month: box.querySelector("#month").value,
                     gross: Number(box.querySelector("#gross").value),
                     paid: Number(box.querySelector("#paid").value),
@@ -434,7 +449,7 @@
                   App.toast("Payment voucher created", "ok");
                   loadTeacherPayments();
                 } catch (err) {
-                  App.toast(err.message, "error");
+                  App.toast(err.message || "Failed to create voucher", "err");
                 }
               };
             },

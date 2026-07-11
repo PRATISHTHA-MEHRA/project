@@ -7,31 +7,51 @@
 <link rel="stylesheet" href="assets/css/admin-style.css">
 </head>
 <body>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
-  const API_BASE = "http://localhost:5001/api/teachers";
-  const requestedId = new URLSearchParams(location.search).get('id') || DB.teachers[0].id;
-
+  const TEACHERS_ENDPOINT = "/teachers";
+  const BATCHES_ENDPOINT = "/batches";
+  const PAYMENTS_ENDPOINT = "/teacher-payments";
+  const MONTH = "May 2026";
   const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const asNum = v => Number(v ?? 0) || 0;
   const splitSubjects = v => Array.isArray(v) ? v : String(v || '').split(',').map(x => x.trim()).filter(Boolean);
 
-  async function apiRequest(path = ''){
-    const res = await fetch(`${API_BASE}${path}`);
-    const text = await res.text();
-    let data = null;
-    if (text) {
-      try { data = JSON.parse(text); }
-      catch (err) { data = { message: text }; }
-    }
-    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
-    return data;
-  }
-
   function unwrapOne(payload){
     return payload?.data?.teacher || payload?.data || payload?.teacher || payload;
+  }
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.teachers)) return payload.teachers;
+    if (Array.isArray(payload?.data?.teachers)) return payload.data.teachers;
+    return [];
+  }
+
+  function unwrapBatchList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.batches)) return payload.batches;
+    if (Array.isArray(payload?.data?.batches)) return payload.data.batches;
+    return [];
+  }
+
+  function mapBatch(item = {}){
+    return {
+      id: String(item.id ?? item.batch_id ?? ''),
+      name: item.batch_name || item.name || '',
+      subject: item.subject || '',
+      teacherId: item.teacher_id != null ? String(item.teacher_id) : (item.teacherId != null ? String(item.teacherId) : ''),
+      teacher: item.teacher_name || item.teacher || '',
+      days: item.days || '',
+      st: item.start_time || item.st || '',
+      et: item.end_time || item.et || '',
+      cur: asNum(item.current_students ?? item.cur ?? item.students ?? 0)
+    };
   }
 
   function mapTeacher(item = {}){
@@ -54,30 +74,61 @@ if(App.guard()){
     };
   }
 
-  function fallbackTeacher(id){
-    return mapTeacher((DB.teachers || []).find(x => String(x.id) === String(id) || String(x.teacher_code) === String(id)) || DB.teachers[0]);
+  async function resolveTeacherId(){
+    const paramId = new URLSearchParams(location.search).get('id');
+    if (paramId) return paramId;
+    // No id in the URL — fall back to the first teacher from the live list.
+    const list = unwrapList(await API.get(TEACHERS_ENDPOINT));
+    if (list.length) return list[0].id ?? list[0].teacher_id ?? list[0].teacher_code;
+    return null;
   }
 
-  async function loadTeacher(id){
+  async function loadTeacher(){
+    const id = await resolveTeacherId();
+    if (!id) {
+      App.toast('No teachers found', 'err');
+      setTimeout(() => location.href = 'teachers.html', 1200);
+      return null;
+    }
+    return mapTeacher(unwrapOne(await API.get(`${TEACHERS_ENDPOINT}/${encodeURIComponent(id)}`)));
+  }
+
+  async function loadBatchesForTeacher(t){
+    const norm = s => String(s || '').trim().toLowerCase();
     try {
-      return mapTeacher(unwrapOne(await apiRequest(`/${encodeURIComponent(id)}`)));
+      const payload = await API.get(BATCHES_ENDPOINT);
+      const all = unwrapBatchList(payload).map(mapBatch);
+      return all.filter(b =>
+        (b.teacherId && b.teacherId === String(t.id)) || (b.teacher && norm(b.teacher) === norm(t.name))
+      );
     } catch (err) {
-      console.warn('Teacher API unavailable, showing local profile:', err);
-      App.toast('Teacher API unavailable. Showing local profile.', 'info');
-      return fallbackTeacher(id);
+      console.warn('Could not load batches:', err);
+      return [];
     }
   }
 
-  function paymentSummary(t){
-    const exact = (DB.tpayments || []).find(p => String(p.teacherId) === String(t.teacher_code) || String(p.teacherId) === String(t.id));
-    return exact || (DB.tpayments || []).find(p => p.teacher === t.name) || {
-      net:0, status:'Pending', taken:0, students:0, cancelled:0, gross:0, ded:0, adv:0, paid:0, balance:0
-    };
+  
+  const normName = s => String(s || '').trim().toLowerCase();
+
+  async function loadPayments(t){
+    const empty = { net:0, status:'Pending', taken:0, students:0, cancelled:0, gross:0, ded:0, adv:0, paid:0, balance:0, payType:'' };
+    try {
+      const res = await API.get(`${PAYMENTS_ENDPOINT}/dashboard?month=${encodeURIComponent(MONTH)}`);
+      const payments = res.payments || [];
+      const teacherPayments = payments.filter(p => normName(p.teacher) === normName(t.name));
+      const current = teacherPayments.find(p => p.month === MONTH) || teacherPayments[0] || empty;
+      const history = teacherPayments.slice().sort((a, b) =>
+        String(b.month || '').localeCompare(String(a.month || '')) || String(b.date || '').localeCompare(String(a.date || ''))
+      );
+
+      return { current, history };
+    } catch (err) {
+      console.warn('Could not load payments:', err);
+      return { current: empty, history: [] };
+    }
   }
 
-  function render(t){
-    const tp = paymentSummary(t);
-    const batches = (DB.batches || []).filter(b => b.teacher === t.name);
+  function render(t, tp, batches, history){
     const head = `<button class="btn btn-light" onclick="App.toast('Statement downloaded','ok')">${App.svg('download')}Statement</button><button class="btn btn-primary" onclick="location.href='teachers.html'">Back to list</button>`;
     const c = App.layout('teachers', t.name, [`<a href="teachers.html">Teachers</a>`, t.teacher_code || t.id], head);
     const initials = t.name.split(' ').map(w=>w[0]).join('');
@@ -87,12 +138,12 @@ if(App.guard()){
         <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
         <div style="flex:1"><h3 style="font-size:22px">${esc(t.name)}</h3><div class="meta">${esc(t.teacher_code)} - ${esc(t.qual)} - ${esc(t.exp)}</div>
           <div class="chips" style="margin-top:9px">${App.badge(esc(t.status))} <span class="chip">${esc(t.payType)}</span> ${t.subjects.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div></div>
-        <div style="text-align:right"><div class="t-sub">Net Payable (May)</div><div class="num" style="font-size:24px;font-weight:600">${App.money(tp.net)}</div>${App.badge(tp.status)}</div>
+        <div style="text-align:right"><div class="t-sub">Net Payable (${esc(MONTH)})</div><div class="num" style="font-size:24px;font-weight:600">${App.money(tp.net)}</div>${App.badge(esc(tp.status))}</div>
       </div></div></div>
 
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
         <div class="kpi"><div class="top"><span class="label">Assigned Batches</span><span class="ic b-brand">${App.svg('batch')}</span></div><div class="val">${batches.length}</div></div>
-        <div class="kpi"><div class="top"><span class="label">Classes Taken (May)</span><span class="ic b-blue">${App.svg('timetable')}</span></div><div class="val">${asNum(tp.taken)}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Classes Taken (${esc(MONTH)})</span><span class="ic b-blue">${App.svg('timetable')}</span></div><div class="val">${asNum(tp.taken)}</div></div>
         <div class="kpi"><div class="top"><span class="label">Students</span><span class="ic b-violet">${App.svg('students')}</span></div><div class="val">${asNum(tp.students)}</div></div>
         <div class="kpi"><div class="top"><span class="label">Cancelled</span><span class="ic b-amber">${App.svg('x')}</span></div><div class="val">${asNum(tp.cancelled)}</div></div>
       </div>
@@ -101,7 +152,7 @@ if(App.guard()){
         <div class="card"><div class="card-head"><h3>Assigned Batches & Timetable</h3></div><div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Batch</th><th>Subject</th><th>Days</th><th>Time</th><th class="num">Students</th></tr></thead>
           <tbody>${batches.map(b=>`<tr><td class="t-main">${esc(b.name)}</td><td>${esc(b.subject)}</td><td>${esc(b.days)}</td><td>${esc(b.st)}</td><td class="num">${esc(b.cur)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No batches</td></tr>'}</tbody></table></div></div>
-        <div class="card"><div class="card-head"><h3>Payment Statement (May 2026)</h3></div><div class="card-body">
+        <div class="card"><div class="card-head"><h3>Payment Statement (${esc(MONTH)})</h3></div><div class="card-body">
           <div class="dl"><div class="it"><div class="k">Payment Type</div><div class="v">${esc(t.payType)}</div></div>
             <div class="it"><div class="k">Gross Payable</div><div class="v num">${App.money(tp.gross)}</div></div>
             <div class="it"><div class="k">Deductions</div><div class="v num">- ${App.money(tp.ded)}</div></div>
@@ -111,17 +162,21 @@ if(App.guard()){
         </div></div>
       </div>
 
-      <div class="grid-2 mb16">
-        <div class="card"><div class="card-head"><h3>Payment History</h3></div><div class="tbl-wrap"><table class="tbl">
+      <div class="card mb16"><div class="card-head"><h3>Payment History</h3></div><div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Month</th><th class="num">Gross</th><th class="num">Net</th><th class="num">Paid</th><th>Status</th></tr></thead>
-          <tbody>${['Feb 2026','Mar 2026','Apr 2026','May 2026'].map((m,i)=>`<tr><td>${m}</td><td class="num">${App.money(tp.gross-i*500)}</td><td class="num">${App.money(tp.net-i*500)}</td><td class="num">${App.money(i<3?tp.net-i*500:tp.paid)}</td><td>${App.badge(i<3?'Paid':tp.status)}</td></tr>`).join('')}</tbody></table></div></div>
-        <div class="card"><div class="card-head"><h3>Leave History</h3></div><div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Date</th><th>Type</th><th>Reason</th><th>Status</th></tr></thead>
-          <tbody>${[['2026-05-12','Casual','Personal work','Approved'],['2026-04-03','Sick','Fever','Approved'],['2026-03-21','Casual','Family event','Approved']].map(l=>`<tr><td>${l[0]}</td><td>${l[1]}</td><td>${l[2]}</td><td>${App.badge(l[3])}</td></tr>`).join('')}</tbody></table></div></div>
-      </div>`;
+          <tbody>${history.length ? history.map(p=>`<tr><td>${esc(p.month || '-')}</td><td class="num">${App.money(p.gross)}</td><td class="num">${App.money(p.net)}</td><td class="num">${App.money(p.paid)}</td><td>${App.badge(esc(p.status || 'Pending'))}</td></tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No payment history</td></tr>'}</tbody></table></div></div>`;
   }
 
-  loadTeacher(requestedId).then(render).catch(err => App.toast(err.message || 'Failed to load teacher profile', 'err'));
+  (async () => {
+    try {
+      const t = await loadTeacher();
+      if (!t) return;
+      const [{ current: tp, history }, batches] = await Promise.all([loadPayments(t), loadBatchesForTeacher(t)]);
+      render(t, tp, batches, history);
+    } catch (err) {
+      App.toast(err.message || 'Failed to load teacher profile', 'err');
+    }
+  })();
 }
 </script>
 </body></html>
