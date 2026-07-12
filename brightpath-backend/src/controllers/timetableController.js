@@ -1,26 +1,53 @@
 const Timetable = require("../models/timetableModel");
 
+const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const WEEK_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // Mon-Sat working week
+const WEEK_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+
+function matchesDay(scheduleDays, abbr) {
+    if (!scheduleDays) return false;
+    const normalized = scheduleDays.trim();
+
+    if (normalized === 'Mon-Sat') return abbr !== 'Sun';
+    if (normalized === 'Mon-Fri') return !['Sat', 'Sun'].includes(abbr);
+    if (normalized === 'Daily' || normalized === 'All Days') return true;
+
+    return normalized.split(',').map(d => d.trim()).includes(abbr);
+}
+
+function todayISO() {
+    return new Date().toISOString().slice(0, 10);
+}
+
 exports.getTimetable = async (req, res) => {
     try {
-        const { view, date } = req.query; // view parameters: 'today', 'weekly', 'teacher', 'batch', 'room'
-        const targetDate = date || "2026-06-07";
-        
-        // Convert target date string to locate day of the week
-        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        const parsedDay = dayNames[new Date(targetDate).getDay()];
-        const shortDay = parsedDay.slice(0, 3); // e.g., 'Sat'
+        const { view, date } = req.query; // view: 'today' | 'weekly' | anything else (raw list)
+        const targetDate = date || todayISO();
+
+        const dayIndex = new Date(`${targetDate}T00:00:00`).getDay();
+        const dayAbbr = DAY_ABBR[dayIndex];
+        const dayFull = DAY_FULL[dayIndex];
 
         const allSlots = await Timetable.getMasterSchedules();
 
         // 1. TODAY'S FILTERING LOGIC
         if (view === "today") {
-            const filtered = allSlots.filter(s => 
-                s.days === "Mon-Sat" || s.days.includes(shortDay)
-            );
-            return res.status(200).json({ success: true, date: targetDate, day: parsedDay, data: filtered });
+            const filtered = allSlots.filter(s => matchesDay(s.days, dayAbbr));
+            return res.status(200).json({ success: true, date: targetDate, day: dayFull, data: filtered });
         }
 
-        // 2. MASTER UNGROUPED RAW ARRAY (For UI custom loops)
+        // 2. WEEKLY LOGIC — grouped by day so the frontend doesn't re-derive schedule matching
+        if (view === "weekly") {
+            const grouped = WEEK_FULL.map((dayName, i) => ({
+                day: dayName,
+                classes: allSlots.filter(s => matchesDay(s.days, WEEK_ABBR[i]))
+            }));
+            return res.status(200).json({ success: true, date: targetDate, data: grouped });
+        }
+
+        // 3. MASTER UNGROUPED RAW ARRAY (teacher-wise / batch-wise / room-wise views group this client-side)
         res.status(200).json({
             success: true,
             view: view || "all",
@@ -33,23 +60,3 @@ exports.getTimetable = async (req, res) => {
     }
 };
 
-exports.patchSlotStatus = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { status } = req.body;
-
-        const allowedStatuses = ['Scheduled', 'Completed', 'Cancelled', 'Rescheduled', 'Teacher Absent', 'Holiday'];
-        if (!allowedStatuses.includes(status)) {
-            return res.status(400).json({ success: false, message: "Invalid timetable status variant flag." });
-        }
-
-        const updated = await Timetable.updateSlotStatus(id, status);
-        if (!updated) {
-            return res.status(404).json({ success: false, message: "Timetable slot not found." });
-        }
-
-        res.status(200).json({ success: true, data: updated });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-};

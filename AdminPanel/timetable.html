@@ -8,6 +8,7 @@
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
@@ -18,41 +19,82 @@ if(App.guard()){
         <button class="active" data-v="today">Today</button><button data-v="weekly">Weekly</button>
         <button data-v="teacher">Teacher-wise</button><button data-v="batch">Batch-wise</button><button data-v="room">Classroom-wise</button>
       </div><div class="grow"></div>
-      <input type="date" class="filter-sel" value="2026-06-07" style="min-width:150px">
-    </div><div id="ttBody" style="padding:18px"></div></div>`;
+      <input type="date" class="filter-sel" id="ttDate" value="${new Date().toISOString().slice(0,10)}" style="min-width:150px">
+    </div><div id="ttBody" style="padding:18px"><div class="tt-slot" style="color:var(--ink-4)">Loading timetable…</div></div></div>`;
 
-  const statuses=['Scheduled','Completed','Cancelled','Rescheduled','Teacher Absent','Holiday'];
+
+  function unwrapList(res){ return Array.isArray(res?.data) ? res.data : (res?.data ? [res.data] : []); }
+  function unwrapOne(res){ return res?.data ?? null; }
+
+  let currentView='today';
+  let currentSlots=[]; 
+  const dateInput=document.getElementById('ttDate');
+
   function slot(cl){ return `<div class="tt-slot"><div class="tt-time">${cl.st} – ${cl.et}</div>
     <div class="tt-info"><b>${cl.batch}</b> · ${cl.subject} <div class="m">${cl.teacher} · ${cl.room} · ${cl.students} students</div></div>
     ${App.badge(cl.status)}
     <div class="act" style="margin-left:10px">${App.actBtn('eye','View',`onclick="viewClass('${cl.id}')"`)}${App.actBtn('calendar','Reschedule',`onclick="App.toast('Reschedule request sent','ok')"`)}</div></div>`; }
 
-  const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  function buildClasses(){
-    const arr=[];
-    DB.batches.filter(b=>b.status==='Active').forEach(b=>{ arr.push({id:b.id,batch:b.name,subject:b.subject,teacher:b.teacher,room:b.room,st:b.st,et:b.et,students:b.cur,days:b.days,status:'Scheduled'}); });
-    return arr;
-  }
-  const all=buildClasses();
+  function emptyRow(msg){ return `<div class="tt-slot" style="color:var(--ink-4)">${msg}</div>`; }
 
-  function render(v){
+  async function load(v){
+    currentView=v;
     const host=document.getElementById('ttBody');
-    if(v==='today'){
-      host.innerHTML=`<div class="tt-day"><div class="dh">Saturday, 07 June 2026 <span class="t-sub">${DB.today.length} classes</span></div>${DB.today.map(slot).join('')}</div>`;
-    } else if(v==='weekly'){
-      host.innerHTML=`<div class="tt-grid">${days.map(d=>{ const cls=all.filter(c=>c.days.includes(d.slice(0,3))||c.days.includes('Mon-')||c.days==='Mon-Sat'); return `<div class="tt-day"><div class="dh">${d} <span class="t-sub">${cls.length} classes</span></div>${cls.length?cls.map(slot).join(''):'<div class="tt-slot" style="color:var(--ink-4)">No classes scheduled</div>'}</div>`; }).join('')}</div>`;
-    } else if(v==='teacher'){
-      host.innerHTML=`<div class="tt-grid">${DB.teachers.filter(t=>t.status==='Active').map(t=>{ const cls=all.filter(c=>c.teacher===t.name); return cls.length?`<div class="tt-day"><div class="dh">${t.name} <span class="t-sub">${cls.length} classes</span></div>${cls.map(slot).join('')}</div>`:''; }).join('')}</div>`;
-    } else if(v==='batch'){
-      host.innerHTML=`<div class="tt-grid">${all.map(c=>`<div class="tt-day"><div class="dh">${c.batch} <span class="t-sub">${c.days}</span></div>${slot(c)}</div>`).join('')}</div>`;
-    } else {
-      host.innerHTML=`<div class="tt-grid">${DB.classrooms.map(r=>{ const cls=all.filter(c=>c.room===r); return `<div class="tt-day"><div class="dh">${r} <span class="t-sub">${cls.length} classes</span></div>${cls.length?cls.map(slot).join(''):'<div class="tt-slot" style="color:var(--ink-4)">Room free</div>'}</div>`; }).join('')}</div>`;
+    host.innerHTML=emptyRow('Loading timetable…');
+    const date=dateInput.value;
+
+    try{
+      if(v==='today'){
+        const res=await API.get(`/timetable?view=today&date=${date}`);
+        const rows=unwrapList(res);
+        currentSlots=rows;
+        const dayLabel=res?.day ? `${res.day}, ${formatDate(date)}` : formatDate(date);
+        host.innerHTML=`<div class="tt-day"><div class="dh">${dayLabel} <span class="t-sub">${rows.length} classes</span></div>${rows.length?rows.map(slot).join(''):emptyRow('No classes scheduled')}</div>`;
+
+      } else if(v==='weekly'){
+        const res=await API.get(`/timetable?view=weekly&date=${date}`);
+        const groups=Array.isArray(res?.data)?res.data:[];
+        currentSlots=groups.flatMap(g=>g.classes);
+        host.innerHTML=`<div class="tt-grid">${groups.map(g=>`<div class="tt-day"><div class="dh">${g.day} <span class="t-sub">${g.classes.length} classes</span></div>${g.classes.length?g.classes.map(slot).join(''):emptyRow('No classes scheduled')}</div>`).join('')}</div>`;
+
+      } else {
+        // teacher / batch / room views group the same raw slot list client-side
+        const res=await API.get(`/timetable?date=${date}`);
+        const all=unwrapList(res);
+        currentSlots=all;
+
+        if(v==='teacher'){
+          const teachers=[...new Set(all.map(c=>c.teacher))];
+          host.innerHTML=`<div class="tt-grid">${teachers.map(t=>{ const cls=all.filter(c=>c.teacher===t); return `<div class="tt-day"><div class="dh">${t} <span class="t-sub">${cls.length} classes</span></div>${cls.map(slot).join('')}</div>`; }).join('')||emptyRow('No teachers scheduled')}</div>`;
+
+        } else if(v==='batch'){
+          host.innerHTML=`<div class="tt-grid">${all.map(c=>`<div class="tt-day"><div class="dh">${c.batch} <span class="t-sub">${c.days}</span></div>${slot(c)}</div>`).join('')||emptyRow('No batches scheduled')}</div>`;
+
+        } else { // room
+          const rooms=[...new Set(all.map(c=>c.room))];
+          host.innerHTML=`<div class="tt-grid">${rooms.map(r=>{ const cls=all.filter(c=>c.room===r); return `<div class="tt-day"><div class="dh">${r} <span class="t-sub">${cls.length} classes</span></div>${cls.length?cls.map(slot).join(''):emptyRow('Room free')}</div>`; }).join('')||emptyRow('No rooms in use')}</div>`;
+        }
+      }
+    }catch(err){
+      host.innerHTML=emptyRow('Could not load timetable.');
+      App.toast(err.message || 'Failed to load timetable','err');
     }
   }
-  render('today');
-  document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); render(b.dataset.v); });
 
-  window.viewClass=id=>{ const cl=DB.today.find(c=>c.id===id)||all.find(c=>c.id===id);
+  function formatDate(iso){
+    const d=new Date(`${iso}T00:00:00`);
+    return d.toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'});
+  }
+
+  load('today');
+  document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); load(b.dataset.v); });
+  dateInput.onchange=()=>load(currentView);
+
+
+
+  window.viewClass=id=>{
+    const cl=currentSlots.find(c=>c.id===id);
+    if(!cl) return;
     App.modal({size:'md',title:cl.batch,sub:cl.subject,
       body:`<div class="dl cols-2"><div class="it"><div class="k">Teacher</div><div class="v">${cl.teacher}</div></div>
         <div class="it"><div class="k">Room</div><div class="v">${cl.room}</div></div>
