@@ -1,6 +1,6 @@
 const db = require("../config/db");
 
-const getAggregatedSummary = async () => {
+const getAggregatedSummary = async (selectedDate) => {
     const query = `
         SELECT 
             s.id,
@@ -16,17 +16,20 @@ const getAggregatedSummary = async () => {
                 ELSE ROUND((SUM(CASE WHEN al.status IN ('Present', 'Late') THEN 1 ELSE 0 END)::NUMERIC / COUNT(al.id)::NUMERIC) * 100)
             END::INT as pct,
             (
-                SELECT status FROM attendance_logs 
-                WHERE student_id = s.id::TEXT 
-                ORDER BY attendance_date DESC, id DESC LIMIT 1
-            ) as last_status
+                -- Status for the specific date the admin has selected in the UI,
+                -- NOT just whichever log happens to be most recent overall.
+                SELECT status FROM attendance_logs
+                WHERE student_id = s.id::TEXT
+                AND attendance_date = $1::DATE
+                ORDER BY id DESC LIMIT 1
+            ) as day_status
         FROM students s
         LEFT JOIN batches b ON s.batch_id = b.id     -- Resolves s.batch_name does not exist error
         LEFT JOIN attendance_logs al ON s.id::TEXT = al.student_id 
         GROUP BY s.id, s.student_name, b.batch_name, s.class_name
         ORDER BY s.id ASC;
     `;
-    const result = await db.query(query);
+    const result = await db.query(query, [selectedDate]);
     return result.rows;
 };
 

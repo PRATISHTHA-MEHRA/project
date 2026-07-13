@@ -6,8 +6,8 @@ exports.getAttendanceDashboard = async (req, res) => {
     try {
         const todayDate = req.query.date || new Date().toISOString().split('T')[0];
         
-        // 1. Fetch table rows data
-        const rows = await Attendance.getAggregatedSummary();
+        // 1. Fetch table rows data, scoped to the selected date
+        const rows = await Attendance.getAggregatedSummary(todayDate);
         
         // 2. Fetch header KPI card details
         const kpi = await Attendance.getDailyKPIs(todayDate);
@@ -23,11 +23,12 @@ exports.getAttendanceDashboard = async (req, res) => {
             late: r.late,
             leave: r.leave,
             pct: r.pct,
-            last: r.last_status || "Present" // Default fallback if no records are added yet
+            last: r.day_status || "Not Marked" 
         }));
 
         res.status(200).json({
             success: true,
+            date: todayDate,
             kpis: {
                 overallAttendance: kpi.overall_pct !== null ? `${kpi.overall_pct}%` : "87%", // Fallback to mockup standard
                 presentToday: kpi.present_today !== null ? kpi.present_today : 204,
@@ -47,7 +48,7 @@ exports.getStudentHistory = async (req, res) => {
         const historyLogs = await Attendance.getRecentLogsByStudent(studentId);
         
         const formattedHistory = historyLogs.map(h => ({
-            date: h.attendance_date.toISOString().split('T')[0],
+              date: h.attendance_date.toISOString().split('T')[0],
             batch: h.batch_name,
             status: h.status
         }));

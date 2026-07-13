@@ -231,7 +231,8 @@ const App = (function () {
     "Scheduled":"b-blue","Cancelled":"b-red","Rescheduled":"b-violet","Teacher Absent":"b-red","Holiday":"b-slate",
     "New":"b-blue","Contacted":"b-violet","Demo Scheduled":"b-amber","Demo Completed":"b-violet","Interested":"b-brand",
     "Converted":"b-green","Lost":"b-red","No Show":"b-red","Result Published":"b-green","Closed":"b-slate",
-    "Approved":"b-green","Rejected":"b-red","Present":"b-green","Absent":"b-red","Late":"b-amber","Leave":"b-blue"
+    "Approved":"b-green","Rejected":"b-red","Present":"b-green","Absent":"b-red","Late":"b-amber","Leave":"b-blue",
+    "Not Marked":"b-slate"
   };
   function badge(text){ return `<span class="badge ${BMAP[text]||'b-slate'}"><span class="pip"></span>${text}</span>`; }
   function money(n){ return '₹' + Number(n||0).toLocaleString('en-IN'); }
@@ -240,7 +241,8 @@ const App = (function () {
   function whoCell(name, sub){ return `<div class="who-cell">${avatar(name)}<div><div class="t-main">${name}</div>${sub?`<div class="t-sub">${sub}</div>`:''}</div></div>`; }
 
   /* ---------- TABLE ENGINE ---------- */
-  /* config: {columns:[{key,label,num,render(row)}], rows, searchKeys, filters:[{label,key,options}], actions(row), pageSize, empty} */
+  /* config: {columns:[{key,label,num,render(row)}], rows, searchKeys, filters:[{label,key,options}], actions(row), pageSize, empty,
+     dateFilter, dateValue (preset the date input's value), onDateChange(dateStr) (called when the date input changes — use this to refetch server-side date-scoped data)} */
   function table(mount, cfg){
     const state={ q:'', filters:{}, page:1, ps:cfg.pageSize||10, sortKey:null, sortDir:1 };
     const el = typeof mount==='string'?document.getElementById(mount):mount;
@@ -249,7 +251,7 @@ const App = (function () {
       <div class="toolbar">
         <div class="search-in">${svg('search')}<input type="text" placeholder="${cfg.searchPlaceholder||'Search…'}" id="tblSearch"></div>
         ${(cfg.filters||[]).map(f=>`<select class="filter-sel" data-fk="${f.key}"><option value="">${f.label}</option>${f.options.map(o=>`<option>${o}</option>`).join('')}</select>`).join('')}
-        ${cfg.dateFilter?`<input type="date" class="filter-sel" id="tblDate" style="min-width:150px">`:''}
+        ${cfg.dateFilter?`<input type="date" class="filter-sel" id="tblDate" style="min-width:150px" value="${cfg.dateValue||''}">`:''}
         <div class="grow"></div>
         ${cfg.toolbarRight||''}
       </div>`;
@@ -295,6 +297,10 @@ const App = (function () {
     el.innerHTML = `<div class="card">${toolbar}<div class="tbl-host"></div></div>`;
     el.querySelector('#tblSearch').addEventListener('input',e=>{ state.q=e.target.value; state.page=1; render(); });
     el.querySelectorAll('[data-fk]').forEach(s=>s.addEventListener('change',e=>{ state.filters[e.target.dataset.fk]=e.target.value; state.page=1; render(); }));
+    if(cfg.dateFilter){
+      const dateInput = el.querySelector('#tblDate');
+      if(dateInput && cfg.onDateChange){ dateInput.addEventListener('change', e=>cfg.onDateChange(e.target.value)); }
+    }
     render();
     return { refresh:render, state };
   }
