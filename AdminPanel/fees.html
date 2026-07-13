@@ -8,38 +8,76 @@
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
+  let currentRows = [];
+  let selectedDate = new Date().toISOString().slice(0, 10);
+
   const head=`<button class="btn btn-light" onclick="App.toast('Day-book exported','ok')">${App.svg('download')}Export</button><button class="btn btn-primary" onclick="collect()">${App.svg('plus')}Collect Fee</button>`;
   const c=App.layout('fees','Fee Collection',[`<span>Finance</span>`,'Fee Collection'],head);
-  const todayTotal=DB.fees.filter(f=>f.date==='2026-06-07').reduce((a,f)=>a+f.paid,0);
-  const monthTotal=DB.fees.reduce((a,f)=>a+f.paid,0);
-  c.innerHTML=`<div class="kpi-grid">
-    <div class="kpi"><div class="top"><span class="label">Today's Collection</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(58400)}</div></div>
-    <div class="kpi"><div class="top"><span class="label">This Month</span><span class="ic b-brand">${App.svg('fees')}</span></div><div class="val">${App.money(monthTotal)}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Receipts Issued</span><span class="ic b-blue">${App.svg('print')}</span></div><div class="val">${DB.fees.length}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Discounts Given</span><span class="ic b-amber">${App.svg('money')}</span></div><div class="val">${App.money(DB.fees.reduce((a,f)=>a+f.discount,0))}</div></div>
-  </div><div id="tbl"></div>`;
 
-  App.table('tbl',{
-    rows:DB.fees, searchKeys:['id','student','batch','txn'], searchPlaceholder:'Search receipts, students…', pageSize:10, dateFilter:true,
-    filters:[{label:'Fee Type',key:'feeType',options:DB.feeTypes},{label:'Mode',key:'mode',options:DB.modes}],
-    columns:[
-      {key:'id',label:'Receipt',render:r=>`<span class="t-id">${r.id}</span>`},
-      {key:'student',label:'Student',render:r=>App.whoCell(r.student,r.batch)},
-      {key:'feeType',label:'Fee',render:r=>`<div>${r.feeType.replace(' Fee','')}</div><div class="t-sub">${r.period}</div>`},
-      {key:'due',label:'Due',num:true,render:r=>App.money(r.due)},
-      {key:'discount',label:'Disc.',num:true,render:r=>r.discount?'-'+App.money(r.discount):'—'},
-      {key:'paid',label:'Paid',num:true,render:r=>`<b>${App.money(r.paid)}</b>`},
-      {key:'mode',label:'Mode',render:r=>`<span class="chip">${r.mode}</span>`},
-      {key:'date',label:'Date'}
-    ],
-    actions:r=>`${App.actBtn('eye','View Receipt',`onclick="receipt('${r.id}')"`)}${App.actBtn('print','Print',`onclick="App.toast('Receipt sent to printer','ok')"`)}`
+  // --- response shape helpers -------------------------------------------
+  // /fees/dashboard -> { success, metrics: { todaysCollection, thisMonth, receiptsIssued, discountsGiven }, feesList: [...] }
+  const mapMetrics = m => ({
+    todaysCollection: m?.todaysCollection ?? 0,
+    thisMonth: m?.thisMonth ?? 0,
+    receiptsIssued: m?.receiptsIssued ?? 0,
+    discountsGiven: m?.discountsGiven ?? 0
   });
-  const find=id=>DB.fees.find(f=>f.id===id);
+
+  function renderDashboard(metrics, rows) {
+    currentRows = rows;
+
+    c.innerHTML=`<div class="kpi-grid">
+      <div class="kpi"><div class="top"><span class="label">Today's Collection</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(metrics.todaysCollection)}</div></div>
+      <div class="kpi"><div class="top"><span class="label">This Month</span><span class="ic b-brand">${App.svg('fees')}</span></div><div class="val">${App.money(metrics.thisMonth)}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Receipts Issued</span><span class="ic b-blue">${App.svg('print')}</span></div><div class="val">${metrics.receiptsIssued}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Discounts Given</span><span class="ic b-amber">${App.svg('money')}</span></div><div class="val">${App.money(metrics.discountsGiven)}</div></div>
+    </div><div id="tbl"></div>`;
+
+    App.table('tbl',{
+      rows: currentRows,
+      searchKeys:['id','student','batch','txn'],
+      searchPlaceholder:'Search receipts, students…',
+      pageSize:10,
+      dateFilter:true,
+      dateValue: selectedDate,
+      onDateChange: async (newDate) => {
+        selectedDate = newDate;
+        await loadDashboard(selectedDate);
+      },
+      filters:[{label:'Fee Type',key:'feeType',options:DB.feeTypes},{label:'Mode',key:'mode',options:DB.modes}],
+      columns:[
+        {key:'id',label:'Receipt',render:r=>`<span class="t-id">${r.id}</span>`},
+        {key:'student',label:'Student',render:r=>App.whoCell(r.student,r.batch)},
+        {key:'feeType',label:'Fee',render:r=>`<div>${r.feeType.replace(' Fee','')}</div><div class="t-sub">${r.period}</div>`},
+        {key:'due',label:'Due',num:true,render:r=>App.money(r.due)},
+        {key:'discount',label:'Disc.',num:true,render:r=>r.discount?'-'+App.money(r.discount):'—'},
+        {key:'paid',label:'Paid',num:true,render:r=>`<b>${App.money(r.paid)}</b>`},
+        {key:'mode',label:'Mode',render:r=>`<span class="chip">${r.mode}</span>`},
+        {key:'date',label:'Date'}
+      ],
+      actions:r=>`${App.actBtn('eye','View Receipt',`onclick="receipt('${r.id}')"`)}${App.actBtn('print','Print',`onclick="App.toast('Receipt sent to printer','ok')"`)}`
+    });
+  }
+
+  async function loadDashboard(dateStr) {
+    const date = dateStr || selectedDate;
+    try {
+      const res = await API.get(`/fees/dashboard?date=${date}`);
+      renderDashboard(mapMetrics(res.metrics), res.feesList || []);
+    } catch (err) {
+      App.toast(err.message || 'Failed to load fee dashboard', 'err');
+      renderDashboard(mapMetrics({}), []);
+    }
+  }
+
+  const find = id => currentRows.find(f => f.id === id);
 
   window.receipt=id=>{ const f=find(id);
+    if (!f) return App.toast('Receipt not found', 'err');
     App.modal({size:'lg',title:'Fee Receipt',sub:f.id,
       foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-primary" onclick="App.toast('Receipt printed','ok')">${App.svg('print')}Print Receipt</button>`,
       body:`<div class="receipt">
@@ -76,11 +114,38 @@ if(App.guard()){
         <div class="full"><label>Remarks</label><input id="cf_rem"></div></div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cf_save">Collect & Generate</button>`,
       onOpen:b=>{ const sel=b.querySelector('#cf_stu'); const sync=()=>{ const o=sel.selectedOptions[0]; b.querySelector('#cf_due').value=o.dataset.amt; b.querySelector('#cf_paid').value=o.dataset.amt; b.querySelector('#cf_ft').value=o.dataset.ft; }; sel.onchange=sync; sync();
-        b.querySelector('#cf_save').onclick=()=>{ const o=sel.selectedOptions[0];
-          DB.fees.unshift({id:'RCP-'+(24001+DB.fees.length),student:o.textContent.split(' · ')[0],studentId:o.textContent.split(' · ')[1],batch:o.dataset.b,feeType:b.querySelector('#cf_ft').value,period:b.querySelector('#cf_period').value,due:+b.querySelector('#cf_due').value,paid:+b.querySelector('#cf_paid').value,discount:+b.querySelector('#cf_disc').value,fine:+b.querySelector('#cf_fine').value,mode:b.querySelector('#cf_mode').value,txn:b.querySelector('#cf_txn').value,collectedBy:'Anand Kulkarni',date:'2026-06-07',balance:0,remarks:b.querySelector('#cf_rem').value});
-          App.closeModal();location.reload(); }; }
+        b.querySelector('#cf_save').onclick=async ()=>{ const o=sel.selectedOptions[0];
+          const payload = {
+            studentId: o.textContent.split(' · ')[1],
+            student: o.textContent.split(' · ')[0],
+            batch: o.dataset.b,
+            feeType: b.querySelector('#cf_ft').value,
+            period: b.querySelector('#cf_period').value,
+            due: +b.querySelector('#cf_due').value,
+            discount: +b.querySelector('#cf_disc').value,
+            fine: +b.querySelector('#cf_fine').value,
+            paid: +b.querySelector('#cf_paid').value,
+            mode: b.querySelector('#cf_mode').value,
+            txn: b.querySelector('#cf_txn').value,
+            collectedBy: App.me().name || 'Admin',
+            date: new Date().toISOString().slice(0, 10),
+            balance: 0,
+            remarks: b.querySelector('#cf_rem').value
+          };
+          try {
+            await API.post('/fees/collect', payload);
+            App.closeModal();
+            selectedDate = payload.date;
+            await loadDashboard(selectedDate);
+            App.toast('Fee collected & receipt generated', 'ok');
+          } catch(err) {
+            App.toast(err.message || 'Failed to collect fee', 'err');
+          }
+        }; }
     });
   };
+
+  loadDashboard();
 }
 </script>
 </body></html>

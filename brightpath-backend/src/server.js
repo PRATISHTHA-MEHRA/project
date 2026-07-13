@@ -42,7 +42,7 @@ app.use("/api/admissions", admissionRoutes);
 app.use("/api/enquiries", enquiryRoutes);
 app.use("/api/demo-classes", demoRoutes);
 app.use("/api/attendance", attendanceRoutes);
-app.use("/api/finance", feeRoutes);
+app.use("/api/fees", feeRoutes);
 app.use("/api/teacher-payments", require("./routes/teacherPaymentRoutes"));
 app.use("/api/timetable", require("./routes/timetableRoutes"));
 app.use("/api/exams", require("./routes/examRoutes"));
