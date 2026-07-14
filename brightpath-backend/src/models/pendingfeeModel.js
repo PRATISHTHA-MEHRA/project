@@ -57,8 +57,7 @@ const saveCallNoteTransaction = async (feeId, data) => {
     }
 };
 
-// Reconciles student_pending_fees after a fee receipt is collected.
-// receipt: { studentId, studentName, batch, feeType, period, balance }
+
 const syncPendingBalance = async (receipt) => {
     const existing = await db.query(
         `SELECT id FROM student_pending_fees
@@ -68,9 +67,7 @@ const syncPendingBalance = async (receipt) => {
     );
 
     if (existing.rows.length > 0) {
-        // Update the existing pending record to reflect what's actually still owed.
-        // A balance of 0 naturally drops out of getPendingFeesList's WHERE due_amount > 0 filter,
-        // so no separate "mark as resolved" step is needed.
+        
         await db.query(
             `UPDATE student_pending_fees SET due_amount = $1 WHERE id = $2`,
             [receipt.balance, existing.rows[0].id]
@@ -79,8 +76,7 @@ const syncPendingBalance = async (receipt) => {
     }
 
     if (receipt.balance > 0) {
-        // No prior pending record for this student/fee/period, but this payment fell short —
-        // create one so the shortfall shows up in Pending Fees.
+        
         const parentRes = await db.query(
             `SELECT parent_mobile FROM students WHERE student_code = $1 LIMIT 1`,
             [receipt.studentId]

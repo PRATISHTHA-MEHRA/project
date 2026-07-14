@@ -64,9 +64,7 @@ exports.collectFees = async (req, res) => {
             remarks
         });
 
-        // Keep the Pending Fees list in sync with what this receipt actually settled.
-        // A failure here shouldn't fail the receipt itself — the payment was already recorded —
-        // so it's logged rather than thrown.
+      
         try {
             await PendingFee.syncPendingBalance({
                 studentId,

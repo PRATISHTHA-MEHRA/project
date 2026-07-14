@@ -18,8 +18,7 @@ if(App.guard()){
   const head=`<button class="btn btn-light" onclick="App.toast('Day-book exported','ok')">${App.svg('download')}Export</button><button class="btn btn-primary" onclick="collect()">${App.svg('plus')}Collect Fee</button>`;
   const c=App.layout('fees','Fee Collection',[`<span>Finance</span>`,'Fee Collection'],head);
 
-  // --- response shape helpers -------------------------------------------
-  // /fees/dashboard -> { success, metrics: { todaysCollection, thisMonth, receiptsIssued, discountsGiven }, feesList: [...] }
+
   const mapMetrics = m => ({
     todaysCollection: m?.todaysCollection ?? 0,
     thisMonth: m?.thisMonth ?? 0,
