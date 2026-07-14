@@ -1,4 +1,4 @@
-const Fee = require("../models/feeModel");
+const Fee = require("../models/pendingfeeModel");
 
 exports.getPendingFeesSummary = async (req, res) => {
     try {

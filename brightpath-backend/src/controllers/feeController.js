@@ -1,4 +1,5 @@
 const Fee = require("../models/feeModel");
+const PendingFee = require("../models/pendingfeeModel");
 
 // 1. MAKE SURE THIS IS EXPORTED PROPERLY
 exports.getFeeDashboard = async (req, res) => {
@@ -62,6 +63,22 @@ exports.collectFees = async (req, res) => {
             balance,
             remarks
         });
+
+        // Keep the Pending Fees list in sync with what this receipt actually settled.
+        // A failure here shouldn't fail the receipt itself — the payment was already recorded —
+        // so it's logged rather than thrown.
+        try {
+            await PendingFee.syncPendingBalance({
+                studentId,
+                studentName: student,
+                batch,
+                feeType,
+                period,
+                balance
+            });
+        } catch (syncErr) {
+            console.error("Pending-fee sync failed for receipt", newReceipt?.id, ":", syncErr.message);
+        }
         
         res.status(201).json({ 
             success: true, 

@@ -93,16 +93,27 @@ if(App.guard()){
           <div class="receipt-line"><span class="k">Payment Mode</span><span class="v">${f.mode}${f.txn?' · '+f.txn:''}</span></div>
           <div class="receipt-line"><span class="k">Collected By</span><span class="v">${f.collectedBy}</span></div>
           <div class="receipt-total"><span>Total Paid</span><span class="v">${App.money(f.paid)}</span></div>
-          <div style="display:flex;justify-content:flex-end;margin-top:14px"><span class="stamp">PAID</span></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px"><span class="stamp">${f.balance>0?'PARTIALLY PAID':'PAID'}</span></div>
         </div>
         <div class="receipt-foot"><span>This is a computer-generated receipt.</span><span>Balance: ${App.money(f.balance)}</span></div>
       </div>`
     }); };
 
-  window.collect=()=>{
+  window.collect=async ()=>{
+    let students = [];
+    try {
+      const res = await API.get('/students');
+      students = res?.data || [];
+    } catch (err) {
+      App.toast(err.message || 'Failed to load student list', 'err');
+    }
+    if (!students.length) students = DB.students.map(s => ({ // last-resort fallback if /students is unreachable
+      student_name: s.name, student_code: s.id, batch_name: s.batch, fee_type: s.feeType, fee_amount: s.feeAmt
+    }));
+
     App.modal({size:'lg',title:'Collect Fee',sub:'Generate a new fee receipt',
       body:`<div class="form-grid">
-        <div class="full"><label>Student</label><select id="cf_stu">${DB.students.map(s=>`<option data-amt="${s.feeAmt}" data-ft="${s.feeType}" data-b="${s.batch}">${s.name} · ${s.id}</option>`).join('')}</select></div>
+        <div class="full"><label>Student</label><select id="cf_stu">${students.map(s=>`<option data-amt="${s.fee_amount ?? 0}" data-ft="${s.fee_type ?? ''}" data-b="${s.batch_name ?? ''}" data-sid="${s.student_code ?? s.id}">${s.student_name} · ${s.student_code ?? s.id}</option>`).join('')}</select></div>
         <div><label>Fee Type</label><select id="cf_ft">${DB.feeTypes.map(f=>`<option>${f}</option>`).join('')}</select></div>
         <div><label>Fee Period</label><input id="cf_period" value="Jun 2026"></div>
         <div><label>Due Amount (₹)</label><input class="num" id="cf_due" value="2200"></div>
@@ -113,23 +124,26 @@ if(App.guard()){
         <div><label>Transaction ID</label><input id="cf_txn" placeholder="Ref no."></div>
         <div class="full"><label>Remarks</label><input id="cf_rem"></div></div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cf_save">Collect & Generate</button>`,
-      onOpen:b=>{ const sel=b.querySelector('#cf_stu'); const sync=()=>{ const o=sel.selectedOptions[0]; b.querySelector('#cf_due').value=o.dataset.amt; b.querySelector('#cf_paid').value=o.dataset.amt; b.querySelector('#cf_ft').value=o.dataset.ft; }; sel.onchange=sync; sync();
+      onOpen:b=>{ const sel=b.querySelector('#cf_stu'); const sync=()=>{ const o=sel.selectedOptions[0]; b.querySelector('#cf_due').value=o.dataset.amt; b.querySelector('#cf_paid').value=o.dataset.amt; if (o.dataset.ft) b.querySelector('#cf_ft').value=o.dataset.ft; }; sel.onchange=sync; sync();
         b.querySelector('#cf_save').onclick=async ()=>{ const o=sel.selectedOptions[0];
+          const due=+b.querySelector('#cf_due').value, discount=+b.querySelector('#cf_disc').value,
+                fine=+b.querySelector('#cf_fine').value, paid=+b.querySelector('#cf_paid').value;
+          const balance = Math.max(0, (due - discount + fine) - paid);
           const payload = {
-            studentId: o.textContent.split(' · ')[1],
+            studentId: o.dataset.sid,
             student: o.textContent.split(' · ')[0],
             batch: o.dataset.b,
             feeType: b.querySelector('#cf_ft').value,
             period: b.querySelector('#cf_period').value,
-            due: +b.querySelector('#cf_due').value,
-            discount: +b.querySelector('#cf_disc').value,
-            fine: +b.querySelector('#cf_fine').value,
-            paid: +b.querySelector('#cf_paid').value,
+            due: due,
+            discount: discount,
+            fine: fine,
+            paid: paid,
             mode: b.querySelector('#cf_mode').value,
             txn: b.querySelector('#cf_txn').value,
             collectedBy: App.me().name || 'Admin',
             date: new Date().toISOString().slice(0, 10),
-            balance: 0,
+            balance: balance,
             remarks: b.querySelector('#cf_rem').value
           };
           try {
