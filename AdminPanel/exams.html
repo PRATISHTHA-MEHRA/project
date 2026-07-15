@@ -8,26 +8,86 @@
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
+  let examsList = [];
+  let courseNames = [];
+  let batchNames = [];
+  let teacherNames = [];
+
+  // Backend wraps list responses as { success: true, data: [...] }.
+  // This also tolerates a raw array or a few other common envelope keys,
+  // so it won't break if a particular endpoint's shape ends up slightly different.
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    if (Array.isArray(payload?.result)) return payload.result;
+    return [];
+  }
+
+  // Different modules' /api endpoints don't all use the same field name for
+  // their "display name" — this tries the likely candidates in order so the
+  // dropdowns populate regardless of which one the real response uses.
+  function nameOf(row, keys){
+    for(const k of keys){ if(row && row[k]) return row[k]; }
+    return '';
+  }
+
   const head=`<button class="btn btn-primary" onclick="addExam()">${App.svg('plus')}Create Test</button>`;
   const c=App.layout('exams','Exams & Tests',[`<span>Assessment</span>`,'Exams'],head);
   c.innerHTML=`<div id="tbl"></div>`;
-  App.table('tbl',{
-    rows:DB.exams, searchKeys:['id','name','course','batch','subject'], searchPlaceholder:'Search tests…', pageSize:9, dateFilter:true,
-    filters:[{label:'Batch',key:'batch',options:[...new Set(DB.exams.map(e=>e.batch))]},{label:'Status',key:'status',options:['Scheduled','Completed','Result Published']}],
-    columns:[
-      {key:'name',label:'Test',render:r=>`<div class="t-main">${r.name}</div><div class="t-sub">${r.id} · ${r.subject}</div>`},
-      {key:'batch',label:'Batch / Course',render:r=>`<div>${r.batch}</div><div class="t-sub">${r.course}</div>`},
-      {key:'teacher',label:'Teacher',render:r=>App.whoCell(r.teacher)},
-      {key:'date',label:'Test Date'},
-      {key:'total',label:'Marks',num:true,render:r=>`${r.total} <span class="t-sub">(pass ${r.pass})</span>`},
-      {key:'status',label:'Status',render:r=>App.badge(r.status)}
-    ],
-    actions:r=>`${App.actBtn('eye','View',`onclick="viewEx('${r.id}')"`)}${App.actBtn('marks','Add Marks',`onclick="location.href='marks.html'"`)}${App.actBtn('edit','Edit',`onclick="editEx('${r.id}')"`)}`
-  });
-  const find=id=>DB.exams.find(e=>e.id===id);
+
+  function renderTable(){
+    App.table('tbl',{
+      rows:examsList, searchKeys:['id','name','course','batch','subject'], searchPlaceholder:'Search tests…', pageSize:9, dateFilter:true,
+      filters:[{label:'Batch',key:'batch',options:[...new Set(examsList.map(e=>e.batch))]},{label:'Status',key:'status',options:['Scheduled','Completed','Result Published']}],
+      columns:[
+        {key:'name',label:'Test',render:r=>`<div class="t-main">${r.name}</div><div class="t-sub">${r.id} · ${r.subject}</div>`},
+        {key:'batch',label:'Batch / Course',render:r=>`<div>${r.batch}</div><div class="t-sub">${r.course}</div>`},
+        {key:'teacher',label:'Teacher',render:r=>App.whoCell(r.teacher)},
+        {key:'date',label:'Test Date'},
+        {key:'total',label:'Marks',num:true,render:r=>`${r.total} <span class="t-sub">(pass ${r.pass})</span>`},
+        {key:'status',label:'Status',render:r=>App.badge(r.status)}
+      ],
+      actions:r=>`${App.actBtn('eye','View',`onclick="viewEx('${r.id}')"`)}${App.actBtn('marks','Add Marks',`onclick="location.href='marks.html'"`)}${App.actBtn('edit','Edit',`onclick="editEx('${r.id}')"`)}`
+    });
+  }
+
+  async function loadExams(){
+    try{
+      const res = await API.get('/exams');
+      examsList = unwrapList(res);
+    }catch(err){
+      App.toast(err.message || 'Failed to load exams','err');
+      examsList = [];
+    }
+    renderTable();
+  }
+
+  async function loadFormOptions(){
+    try{
+      const [coursesRes, batchesRes, teachersRes] = await Promise.all([
+        API.get('/courses'), API.get('/batches'), API.get('/teachers')
+      ]);
+      courseNames  = unwrapList(coursesRes).map(r=>nameOf(r,['name','courseName','course_name'])).filter(Boolean);
+      batchNames   = unwrapList(batchesRes).map(r=>nameOf(r,['name','batchName','batch_name'])).filter(Boolean);
+      teacherNames = unwrapList(teachersRes).map(r=>nameOf(r,['name','teacherName','teacher_name'])).filter(Boolean);
+    }catch(err){
+      App.toast('Failed to load courses/batches/teachers — falling back to sample list','err');
+      courseNames  = DB.courses.map(c=>c.name);
+      batchNames   = DB.batches.map(b=>b.name);
+      teacherNames = DB.teachers.map(t=>t.name);
+    }
+  }
+
+  loadExams();
+  loadFormOptions();
+
+  const find=id=>examsList.find(e=>e.id===id);
+
   window.viewEx=id=>{ const x=find(id);
     App.modal({size:'md',title:x.name,sub:x.id,
       body:`<div class="dl cols-2"><div class="it"><div class="k">Course</div><div class="v">${x.course}</div></div>
@@ -37,24 +97,68 @@ if(App.guard()){
         <div class="it"><div class="k">Status</div><div class="v">${App.badge(x.status)}</div></div></div>
       <div class="sec-title">Syllabus</div><p style="color:var(--ink-2)">${x.syllabus}</p>`,
       foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-primary" onclick="App.closeModal();location.href='marks.html'">View Marks</button>` }); };
+
+  function optionList(names, selected){
+    return names.map(n=>`<option ${selected===n?'selected':''}>${n}</option>`).join('');
+  }
+
   function exForm(x){ return `<div class="form-grid">
     <div class="full"><label>Test Name</label><input id="x_name" value="${x?x.name:''}"></div>
-    <div><label>Course</label><select id="x_course">${DB.courses.map(c=>`<option ${x&&x.course===c.name?'selected':''}>${c.name}</option>`).join('')}</select></div>
-    <div><label>Batch</label><select id="x_batch">${DB.batches.map(b=>`<option ${x&&x.batch===b.name?'selected':''}>${b.name}</option>`).join('')}</select></div>
+    <div><label>Course</label><select id="x_course">${optionList(courseNames, x?x.course:null)}</select></div>
+    <div><label>Batch</label><select id="x_batch">${optionList(batchNames, x?x.batch:null)}</select></div>
     <div><label>Subject</label><input id="x_sub" value="${x?x.subject:''}"></div>
-    <div><label>Teacher</label><select id="x_teacher">${DB.teachers.map(t=>`<option ${x&&x.teacher===t.name?'selected':''}>${t.name}</option>`).join('')}</select></div>
+    <div><label>Teacher</label><select id="x_teacher">${optionList(teacherNames, x?x.teacher:null)}</select></div>
     <div><label>Test Date</label><input type="date" id="x_date" value="${x?x.date:'2026-06-15'}"></div>
     <div><label>Total Marks</label><input class="num" id="x_total" value="${x?x.total:'100'}"></div>
     <div><label>Passing Marks</label><input class="num" id="x_pass" value="${x?x.pass:'33'}"></div>
     <div><label>Status</label><select id="x_status">${['Scheduled','Completed','Result Published'].map(s=>`<option ${x&&x.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
     <div class="full"><label>Syllabus</label><input id="x_syll" value="${x?x.syllabus:''}"></div></div>`; }
+
+  function readExForm(b){
+    return {
+      name: b.querySelector('#x_name').value.trim(),
+      course: b.querySelector('#x_course').value,
+      batch: b.querySelector('#x_batch').value,
+      subject: b.querySelector('#x_sub').value,
+      teacher: b.querySelector('#x_teacher').value,
+      date: b.querySelector('#x_date').value,
+      total: +b.querySelector('#x_total').value,
+      pass: +b.querySelector('#x_pass').value,
+      status: b.querySelector('#x_status').value,
+      syllabus: b.querySelector('#x_syll').value
+    };
+  }
+
   window.addExam=()=>App.modal({size:'lg',title:'Create Test',body:exForm(null),
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Create Test</button>`,
-    onOpen:b=>b.querySelector('#sv').onclick=()=>{ const n=b.querySelector('#x_name').value.trim(); if(!n)return App.toast('Enter test name','err');
-      DB.exams.unshift({id:'EX-'+(2001+DB.exams.length),name:n,course:b.querySelector('#x_course').value,batch:b.querySelector('#x_batch').value,subject:b.querySelector('#x_sub').value,teacher:b.querySelector('#x_teacher').value,date:b.querySelector('#x_date').value,total:+b.querySelector('#x_total').value,pass:+b.querySelector('#x_pass').value,syllabus:b.querySelector('#x_syll').value,status:b.querySelector('#x_status').value});
-      App.closeModal();location.reload(); }});
+    onOpen:b=>b.querySelector('#sv').onclick=async ()=>{
+      const payload = readExForm(b);
+      if(!payload.name) return App.toast('Enter test name','err');
+      if(!payload.date) return App.toast('Pick a test date','err');
+      try{
+        await API.post('/exams', payload);
+        App.closeModal();
+        App.toast('Test created','ok');
+        loadExams();
+      }catch(err){
+        App.toast(err.message || 'Failed to create test','err');
+      }
+    }});
+
   window.editEx=id=>{ const x=find(id); App.modal({size:'lg',title:'Edit Test',sub:x.id,body:exForm(x),
-    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Test updated','ok')">Save Changes</button>`}); };
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+    onOpen:b=>b.querySelector('#sv').onclick=async ()=>{
+      const payload = readExForm(b);
+      if(!payload.name) return App.toast('Enter test name','err');
+      try{
+        await API.put(`/exams/${x.id}`, payload);
+        App.closeModal();
+        App.toast('Test updated','ok');
+        loadExams();
+      }catch(err){
+        App.toast(err.message || 'Failed to update test','err');
+      }
+    }}); };
 }
 </script>
 </body></html>
