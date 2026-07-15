@@ -260,6 +260,7 @@ const App = (function () {
       let r=cfg.rows.slice();
       if(state.q){ const q=state.q.toLowerCase(); r=r.filter(row=>(cfg.searchKeys||Object.keys(row)).some(k=>String(row[k]??'').toLowerCase().includes(q))); }
       Object.entries(state.filters).forEach(([k,v])=>{ if(v) r=r.filter(row=>String(row[k])===v); });
+      if(state.dateFilter){ r=r.filter(row=>row.date===state.dateFilter); }
       if(state.sortKey){ r.sort((a,b)=>{ const x=a[state.sortKey],y=b[state.sortKey]; return (x>y?1:x<y?-1:0)*state.sortDir; }); }
       return r;
     }
@@ -299,7 +300,12 @@ const App = (function () {
     el.querySelectorAll('[data-fk]').forEach(s=>s.addEventListener('change',e=>{ state.filters[e.target.dataset.fk]=e.target.value; state.page=1; render(); }));
     if(cfg.dateFilter){
       const dateInput = el.querySelector('#tblDate');
-      if(dateInput && cfg.onDateChange){ dateInput.addEventListener('change', e=>cfg.onDateChange(e.target.value)); }
+      if(dateInput){
+        dateInput.addEventListener('change', e=>{
+          if(cfg.onDateChange){ cfg.onDateChange(e.target.value); }
+          else { state.dateFilter=e.target.value; state.page=1; render(); }
+        });
+      }
     }
     render();
     return { refresh:render, state };

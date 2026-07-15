@@ -8,67 +8,154 @@
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
+  let currentIncome = [];
+  let currentExpense = [];
+
   const head=`<button class="btn btn-light" onclick="addInc()">${App.svg('plus')}Add Income</button><button class="btn btn-primary" onclick="addExp()">${App.svg('plus')}Add Expense</button>`;
   const c=App.layout('income-expense','Income & Expense',[`<span>Finance</span>`,'Income & Expense'],head);
-  const totInc=DB.dash.monthlyIncome, totExp=DB.dash.monthlyExpenses, net=totInc-totExp;
 
-  c.innerHTML=`<div class="kpi-grid">
-    <div class="kpi"><div class="top"><span class="label">Total Income</span><span class="ic b-green">${App.svg('trending')}</span></div><div class="val">${App.money(totInc)}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Total Expenses</span><span class="ic b-red">${App.svg('money')}</span></div><div class="val">${App.money(totExp)}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('rupee')}</span></div><div class="val">${App.money(net)}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Profit Margin</span><span class="ic b-amber">${App.svg('reports')}</span></div><div class="val">${Math.round(net/totInc*100)}%</div></div>
-  </div>
+  const incCats = ["Monthly Fees","Quarterly Fees","Semi-Annual Fees","Annual Fees","Admission Fees","Study Material Sales","Test Series Fees","Other Income"];
+  const expCats = ["Rent","Electricity","Internet","Staff Salary","Teacher Salary","Marketing","Stationery","Furniture","Software","Maintenance","Miscellaneous"];
 
-  <div class="grid-32 mb16">
-    <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month trend (₹ in '000)</div></div>
-      <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Income</div><div class="lg"><span class="sw bar-amber"></span>Expense</div></div></div>
-      <div class="card-body">${App.barChart(DB.charts.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
-    <div class="card"><div class="card-head"><h3>Profit & Loss (May)</h3></div><div class="card-body">
-      <div class="pl-line plus"><span>Total Fee Collection</span><span class="v">${App.money(842500)}</span></div>
-      <div class="pl-line plus"><span>+ Other Income</span><span class="v">${App.money(125500)}</span></div>
-      <div class="pl-line minus"><span>− Teacher Payments</span><span class="v">${App.money(298000)}</span></div>
-      <div class="pl-line minus"><span>− Staff Salary</span><span class="v">${App.money(95000)}</span></div>
-      <div class="pl-line minus"><span>− Rent</span><span class="v">${App.money(85000)}</span></div>
-      <div class="pl-line minus"><span>− Other Expenses</span><span class="v">${App.money(134000)}</span></div>
-      <div class="pl-line total"><span>= Net Profit</span><span class="v">${App.money(net)}</span></div>
-    </div></div>
-  </div>
+  function renderDashboard(kpis, trend, pl, income, expense) {
+    currentIncome = income;
+    currentExpense = expense;
 
-  <div class="tabs" id="ieTabs"><div class="tab active" data-t="inc">Income (${DB.income.length})</div><div class="tab" data-t="exp">Expenses (${DB.expense.length})</div></div>
-  <div class="tab-pane active" data-p="inc"><div id="incTbl"></div></div>
-  <div class="tab-pane" data-p="exp"><div id="expTbl"></div></div>`;
+    c.innerHTML=`<div class="kpi-grid">
+      <div class="kpi"><div class="top"><span class="label">Total Income</span><span class="ic b-green">${App.svg('trending')}</span></div><div class="val">${App.money(kpis.totalIncome)}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Total Expenses</span><span class="ic b-red">${App.svg('money')}</span></div><div class="val">${App.money(kpis.totalExpense)}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('rupee')}</span></div><div class="val">${App.money(kpis.netProfit)}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Profit Margin</span><span class="ic b-amber">${App.svg('reports')}</span></div><div class="val">${kpis.profitMargin}%</div></div>
+    </div>
 
-  document.querySelectorAll('#ieTabs .tab').forEach(t=>t.onclick=()=>{ document.querySelectorAll('#ieTabs .tab').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active')); t.classList.add('active'); document.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active'); });
+    <div class="grid-32 mb16">
+      <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month trend (₹ in '000)</div></div>
+        <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Income</div><div class="lg"><span class="sw bar-amber"></span>Expense</div></div></div>
+        <div class="card-body">${trend.length ? App.barChart(trend.map(x=>({m:x.m,a:Math.round(x.inc/1000),b:Math.round(x.exp/1000)})),{stacked:true}) : '<div class="p16 t-sub">No data for the last 6 months yet.</div>'}</div></div>
+      <div class="card"><div class="card-head"><h3>Profit & Loss (this month)</h3></div><div class="card-body">
+        <div class="pl-line plus"><span>Total Fee Collection</span><span class="v">${App.money(pl.feeCollection)}</span></div>
+        <div class="pl-line plus"><span>+ Other Income</span><span class="v">${App.money(pl.otherIncome)}</span></div>
+        <div class="pl-line minus"><span>− Teacher Payments</span><span class="v">${App.money(pl.teacherPayments)}</span></div>
+        <div class="pl-line minus"><span>− Staff Salary</span><span class="v">${App.money(pl.staffSalary)}</span></div>
+        <div class="pl-line minus"><span>− Rent</span><span class="v">${App.money(pl.rent)}</span></div>
+        <div class="pl-line minus"><span>− Other Expenses</span><span class="v">${App.money(pl.otherExpenses)}</span></div>
+        <div class="pl-line total"><span>= Net Profit</span><span class="v">${App.money(pl.netProfit)}</span></div>
+      </div></div>
+    </div>
 
-  App.table('incTbl',{ rows:DB.income, searchKeys:['id','category','desc'], searchPlaceholder:'Search income…', pageSize:8, dateFilter:true,
-    filters:[{label:'Category',key:'category',options:["Monthly Fees","Quarterly Fees","Semi-Annual Fees","Annual Fees","Admission Fees","Study Material Sales","Test Series Fees","Other Income"]}],
-    columns:[{key:'id',label:'ID',render:r=>`<span class="t-id">${r.id}</span>`},{key:'date',label:'Date'},{key:'category',label:'Category',render:r=>`<span class="chip">${r.category}</span>`},{key:'desc',label:'Description'},{key:'mode',label:'Mode'},{key:'amount',label:'Amount',num:true,render:r=>`<b style="color:var(--green)">${App.money(r.amount)}</b>`}],
-    actions:r=>`${App.actBtn('eye','View',`onclick="App.toast('Income entry ${r.id}','info')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="App.toast('Deleted','ok')"`)}` });
+    <div class="tabs" id="ieTabs"><div class="tab active" data-t="inc">Income (${currentIncome.length})</div><div class="tab" data-t="exp">Expenses (${currentExpense.length})</div></div>
+    <div class="tab-pane active" data-p="inc"><div id="incTbl"></div></div>
+    <div class="tab-pane" data-p="exp"><div id="expTbl"></div></div>`;
 
-  App.table('expTbl',{ rows:DB.expense, searchKeys:['id','category','desc','vendor'], searchPlaceholder:'Search expenses…', pageSize:8, dateFilter:true,
-    filters:[{label:'Category',key:'category',options:["Rent","Electricity","Internet","Staff Salary","Teacher Salary","Marketing","Stationery","Furniture","Software","Maintenance","Miscellaneous"]}],
-    columns:[{key:'id',label:'ID',render:r=>`<span class="t-id">${r.id}</span>`},{key:'date',label:'Date'},{key:'category',label:'Category',render:r=>`<span class="chip">${r.category}</span>`},{key:'desc',label:'Description'},{key:'vendor',label:'Vendor'},{key:'amount',label:'Amount',num:true,render:r=>`<b style="color:var(--red)">${App.money(r.amount)}</b>`}],
-    actions:r=>`${App.actBtn('edit','Edit',`onclick="App.toast('Edit ${r.id}','info')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="App.toast('Deleted','ok')"`)}` });
+    document.querySelectorAll('#ieTabs .tab').forEach(t=>t.onclick=()=>{ document.querySelectorAll('#ieTabs .tab').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active')); t.classList.add('active'); document.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active'); });
+
+    App.table('incTbl',{ rows:currentIncome, searchKeys:['id','category','desc'], searchPlaceholder:'Search income…', pageSize:8, dateFilter:true,
+      filters:[{label:'Category',key:'category',options:incCats}],
+      columns:[{key:'id',label:'ID',render:r=>`<span class="t-id">${r.id}</span>`},{key:'date',label:'Date'},{key:'category',label:'Category',render:r=>`<span class="chip">${r.category}</span>`},{key:'desc',label:'Description'},{key:'mode',label:'Mode'},{key:'amount',label:'Amount',num:true,render:r=>`<b style="color:var(--green)">${App.money(r.amount)}</b>`}],
+      actions:r=>`${App.actBtn('eye','View',`onclick="viewIncome('${r.id}')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="deleteIncome('${r.id}')"`)}` });
+
+    App.table('expTbl',{ rows:currentExpense, searchKeys:['id','category','desc','vendor'], searchPlaceholder:'Search expenses…', pageSize:8, dateFilter:true,
+      filters:[{label:'Category',key:'category',options:expCats}],
+      columns:[{key:'id',label:'ID',render:r=>`<span class="t-id">${r.id}</span>`},{key:'date',label:'Date'},{key:'category',label:'Category',render:r=>`<span class="chip">${r.category}</span>`},{key:'desc',label:'Description'},{key:'vendor',label:'Vendor'},{key:'amount',label:'Amount',num:true,render:r=>`<b style="color:var(--red)">${App.money(r.amount)}</b>`}],
+      actions:r=>`${App.actBtn('edit','Edit',`onclick="editExpense('${r.id}')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="deleteExpense('${r.id}')"`)}` });
+  }
+
+  async function loadDashboard() {
+    try {
+      const res = await API.get('/income-expense/dashboard');
+      renderDashboard(res.kpis, res.trend || [], res.pl, res.income || [], res.expense || []);
+    } catch (err) {
+      App.toast(err.message || 'Failed to load income & expense data', 'err');
+      renderDashboard({totalIncome:0,totalExpense:0,netProfit:0,profitMargin:0}, [], {feeCollection:0,otherIncome:0,teacherPayments:0,staffSalary:0,rent:0,otherExpenses:0,netProfit:0}, [], []);
+    }
+  }
+
+  window.viewIncome = id => {
+    const r = currentIncome.find(x=>x.id===id);
+    if (!r) return App.toast('Entry not found', 'err');
+    App.modal({size:'sm', title:'Income Entry', sub:r.id,
+      body:`<div class="dl cols-2"><div class="it"><div class="k">Date</div><div class="v">${r.date}</div></div>
+        <div class="it"><div class="k">Category</div><div class="v">${r.category}</div></div>
+        <div class="it"><div class="k">Mode</div><div class="v">${r.mode||'—'}</div></div>
+        <div class="it"><div class="k">Amount</div><div class="v num">${App.money(r.amount)}</div></div>
+        <div class="it full"><div class="k">Description</div><div class="v">${r.desc||'—'}</div></div></div>`
+    });
+  };
+
+  window.deleteIncome = id => {
+    App.confirmModal('Delete this income entry? This cannot be undone.', async () => {
+      try {
+        await API.delete(`/income-expense/income/${encodeURIComponent(id)}`);
+        await loadDashboard();
+        App.toast('Income entry deleted', 'ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to delete income entry', 'err');
+      }
+    }, { danger:true, yes:'Delete' });
+  };
+
+  window.deleteExpense = id => {
+    App.confirmModal('Delete this expense entry? This cannot be undone.', async () => {
+      try {
+        await API.delete(`/income-expense/expense/${encodeURIComponent(id)}`);
+        await loadDashboard();
+        App.toast('Expense entry deleted', 'ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to delete expense entry', 'err');
+      }
+    }, { danger:true, yes:'Delete' });
+  };
 
   window.addInc=()=>App.modal({size:'md',title:'Add Income',
-    body:`<div class="form-grid"><div><label>Category</label><select>${["Monthly Fees","Admission Fees","Study Material Sales","Test Series Fees","Other Income"].map(c=>`<option>${c}</option>`).join('')}</select></div>
-      <div><label>Date</label><input type="date" value="2026-06-07"></div>
-      <div class="full"><label>Description</label><input></div>
-      <div><label>Amount (₹)</label><input class="num" value="0"></div>
-      <div><label>Mode</label><select>${DB.modes.map(m=>`<option>${m}</option>`).join('')}</select></div></div>`,
-    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Income added','ok')">Save</button>`});
+    body:`<div class="form-grid"><div><label>Category</label><select id="ai_cat">${["Monthly Fees","Admission Fees","Study Material Sales","Test Series Fees","Other Income"].map(cat=>`<option>${cat}</option>`).join('')}</select></div>
+      <div><label>Date</label><input type="date" id="ai_date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="full"><label>Description</label><input id="ai_desc"></div>
+      <div><label>Amount (₹)</label><input class="num" id="ai_amt" value="0"></div>
+      <div><label>Mode</label><select id="ai_mode">${DB.modes.map(m=>`<option>${m}</option>`).join('')}</select></div></div>`,
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="ai_save">Save</button>`,
+    onOpen:b=>{ b.querySelector('#ai_save').onclick=async ()=>{
+      const payload = { date:b.querySelector('#ai_date').value, category:b.querySelector('#ai_cat').value, description:b.querySelector('#ai_desc').value, mode:b.querySelector('#ai_mode').value, amount:+b.querySelector('#ai_amt').value };
+      try { await API.post('/income-expense/income', payload); App.closeModal(); await loadDashboard(); App.toast('Income added','ok'); }
+      catch(err){ App.toast(err.message || 'Failed to add income', 'err'); }
+    }; }});
 
   window.addExp=()=>App.modal({size:'md',title:'Add Expense',
-    body:`<div class="form-grid"><div><label>Category</label><select>${["Rent","Electricity","Internet","Staff Salary","Marketing","Stationery","Maintenance","Miscellaneous"].map(c=>`<option>${c}</option>`).join('')}</select></div>
-      <div><label>Date</label><input type="date" value="2026-06-07"></div>
-      <div class="full"><label>Description</label><input></div>
-      <div><label>Vendor</label><input></div>
-      <div><label>Amount (₹)</label><input class="num" value="0"></div>
-      <div><label>Mode</label><select>${DB.modes.map(m=>`<option>${m}</option>`).join('')}</select></div></div>`,
-    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Expense added','ok')">Save</button>`});
+    body:`<div class="form-grid"><div><label>Category</label><select id="ae_cat">${["Rent","Electricity","Internet","Staff Salary","Teacher Salary","Marketing","Stationery","Maintenance","Miscellaneous"].map(cat=>`<option>${cat}</option>`).join('')}</select></div>
+      <div><label>Date</label><input type="date" id="ae_date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="full"><label>Description</label><input id="ae_desc"></div>
+      <div><label>Vendor</label><input id="ae_vendor"></div>
+      <div><label>Amount (₹)</label><input class="num" id="ae_amt" value="0"></div>
+      <div><label>Mode</label><select id="ae_mode">${DB.modes.map(m=>`<option>${m}</option>`).join('')}</select></div></div>`,
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="ae_save">Save</button>`,
+    onOpen:b=>{ b.querySelector('#ae_save').onclick=async ()=>{
+      const payload = { date:b.querySelector('#ae_date').value, category:b.querySelector('#ae_cat').value, description:b.querySelector('#ae_desc').value, vendor:b.querySelector('#ae_vendor').value, mode:b.querySelector('#ae_mode').value, amount:+b.querySelector('#ae_amt').value };
+      try { await API.post('/income-expense/expense', payload); App.closeModal(); await loadDashboard(); App.toast('Expense added','ok'); }
+      catch(err){ App.toast(err.message || 'Failed to add expense', 'err'); }
+    }; }});
+
+  window.editExpense = id => {
+    const r = currentExpense.find(x=>x.id===id);
+    if (!r) return App.toast('Entry not found', 'err');
+    App.modal({size:'md',title:'Edit Expense',sub:r.id,
+      body:`<div class="form-grid"><div><label>Category</label><select id="ee_cat">${expCats.map(cat=>`<option ${cat===r.category?'selected':''}>${cat}</option>`).join('')}</select></div>
+        <div><label>Date</label><input type="date" id="ee_date" value="${r.date}"></div>
+        <div class="full"><label>Description</label><input id="ee_desc" value="${r.desc||''}"></div>
+        <div><label>Vendor</label><input id="ee_vendor" value="${r.vendor||''}"></div>
+        <div><label>Amount (₹)</label><input class="num" id="ee_amt" value="${r.amount}"></div>
+        <div><label>Mode</label><select id="ee_mode">${DB.modes.map(m=>`<option ${m===r.mode?'selected':''}>${m}</option>`).join('')}</select></div></div>`,
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="ee_save">Save Changes</button>`,
+      onOpen:b=>{ b.querySelector('#ee_save').onclick=async ()=>{
+        const payload = { date:b.querySelector('#ee_date').value, category:b.querySelector('#ee_cat').value, description:b.querySelector('#ee_desc').value, vendor:b.querySelector('#ee_vendor').value, mode:b.querySelector('#ee_mode').value, amount:+b.querySelector('#ee_amt').value };
+        try { await API.put(`/income-expense/expense/${encodeURIComponent(id)}`, payload); App.closeModal(); await loadDashboard(); App.toast('Expense updated','ok'); }
+        catch(err){ App.toast(err.message || 'Failed to update expense', 'err'); }
+      }; }});
+  };
+
+  loadDashboard();
 }
 </script>
 </body></html>

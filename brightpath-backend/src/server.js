@@ -20,6 +20,7 @@ const timetableRoutes = require("./routes/timetableRoutes");
 const examRoutes = require("./routes/examRoutes");
 const marksRoutes = require("./routes/marksRoutes");
 const pendingFeeRoutes = require("./routes/pendingfeeRoutes");
+const incomeExpenseRoutes = require("./routes/incomeExpenseRoutes");
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use("/api/timetable", require("./routes/timetableRoutes"));
 app.use("/api/exams", require("./routes/examRoutes"));
 app.use("/api/marks", require("./routes/marksRoutes"));
 app.use("/api/pending-fees", require("./routes/pendingfeeRoutes"));
+app.use("/api/income-expense", incomeExpenseRoutes);
 
 const PORT = process.env.PORT || 5001;
 
