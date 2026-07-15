@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>API Documentation — BrightPath Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#10181c;
+    --muted:#5b6670;
+    --line:#e2e6e8;
+    --panel:#111b1d;
+    --panel-line:#22302f;
+    --panel-text:#a9b7b6;
+    --panel-text-dim:#63716f;
+    --accent:#0d9488;
+    --accent-dark:#0b7c72;
+    --accent-soft:#e4f5f2;
+    --bg:#fbfbfa;
+    --get:#2563eb;
+    --post:#16a34a;
+    --put:#c2760c;
+    --delete:#d64545;
+    --patch:#7c3aed;
+    --tag-auth-bg:#fdeceb;
+    --tag-auth-text:#c1362b;
+    --tag-key-bg:#e4f5f2;
+    --tag-key-text:#0b7c72;
+    --tag-none-bg:#eef0f1;
+    --tag-none-text:#5b6670;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+  }
+  h1,h2,h3,.brand{font-family:"Space Grotesk",sans-serif;}
+
+  .layout{
+    display:grid;
+    grid-template-columns:270px 1fr;
+    min-height:100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    background:var(--panel);
+    color:var(--panel-text);
+    position:sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+    padding:26px 20px 40px;
+    border-right:1px solid var(--panel-line);
+  }
+  .brand{
+    color:#fff;
+    font-size:1.1rem;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .brand .dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--accent);
+    display:inline-block;
+  }
+  .brand-tag{
+    display:inline-block;
+    font-size:.68rem;
+    font-weight:600;
+    letter-spacing:.04em;
+    color:var(--accent);
+    background:rgba(13,148,136,.15);
+    border:1px solid rgba(13,148,136,.35);
+    border-radius:20px;
+    padding:2px 9px;
+    margin:10px 0 22px;
+  }
+  #sidebarSearch{
+    width:100%;
+    padding:9px 12px;
+    border-radius:7px;
+    border:1px solid var(--panel-line);
+    background:#0c1516;
+    color:#e8ebeb;
+    font-size:.85rem;
+    margin-bottom:22px;
+    outline:none;
+  }
+  #sidebarSearch::placeholder{color:var(--panel-text-dim);}
+  .nav-group-label{
+    font-size:.7rem;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--panel-text-dim);
+    margin:18px 0 8px;
+  }
+  .navlist{list-style:none;margin:0;padding:0;}
+  .navlist li a{
+    display:block;
+    padding:7px 10px;
+    border-radius:6px;
+    color:var(--panel-text);
+    text-decoration:none;
+    font-size:.87rem;
+    margin-bottom:2px;
+  }
+  .navlist li a:hover{background:#182525;color:#fff;}
+
+  /* ---------- Main content ---------- */
+  main{padding:48px 60px 100px;max-width:920px;}
+
+  .page-title{font-size:2.1rem;font-weight:700;margin:0 0 6px;}
+  .page-sub{color:var(--muted);margin:0 0 34px;font-size:1rem;}
+
+  .callout{
+    border:1px solid var(--line);
+    border-left:4px solid var(--accent);
+    background:#fff;
+    border-radius:8px;
+    padding:16px 20px;
+    margin-bottom:30px;
+    font-size:.9rem;
+    line-height:1.6;
+    color:var(--muted);
+  }
+  .callout code{
+    font-family:"JetBrains Mono",monospace;
+    background:var(--bg);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:1px 6px;
+    font-size:.85em;
+    color:var(--ink);
+  }
+
+  /* ---------- Auth section ---------- */
+  .section-heading{
+    font-size:1.3rem;
+    margin:0 0 14px;
+  }
+  .auth-panel{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:24px 26px;
+    margin-bottom:44px;
+    background:#fff;
+  }
+  .auth-rule{
+    display:flex;
+    gap:16px;
+    padding:14px 0;
+    border-top:1px solid var(--line);
+  }
+  .auth-rule:first-child{border-top:none;padding-top:0;}
+  .auth-rule .rule-name{
+    flex:0 0 140px;
+    font-weight:600;
+    font-size:.92rem;
+  }
+  .auth-rule .rule-desc{
+    color:var(--muted);
+    font-size:.9rem;
+    line-height:1.6;
+  }
+  .auth-rule code{
+    font-family:"JetBrains Mono",monospace;
+    background:var(--bg);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:1px 6px;
+    font-size:.85em;
+    color:var(--ink);
+  }
+
+  /* ---------- TOC ---------- */
+  .toc{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:24px 26px;
+    margin-bottom:48px;
+    background:#fff;
+  }
+  .toc-col-label{
+    font-size:.72rem;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0 0 8px;
+  }
+  .toc-group{margin-bottom:18px;}
+  .toc-group:last-child{margin-bottom:0;}
+  .toc-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+    gap:5px 20px;
+  }
+  .toc-grid a{
+    color:var(--accent-dark);
+    text-decoration:none;
+    font-weight:600;
+    font-size:.92rem;
+    padding:3px 0;
+  }
+  .toc-grid a:hover{text-decoration:underline;}
+
+  /* ---------- Module / endpoint blocks ---------- */
+  .module{
+    padding-top:38px;
+    border-top:1px solid var(--line);
+    margin-top:38px;
+    scroll-margin-top:24px;
+  }
+  .module:first-of-type{border-top:none;margin-top:0;}
+  .module-head{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:4px;
+  }
+  .module-head h2{font-size:1.3rem;margin:0;}
+  .module-file{
+    font-family:"JetBrains Mono",monospace;
+    font-size:.74rem;
+    color:var(--muted);
+    background:var(--bg);
+    border:1px solid var(--line);
+    border-radius:5px;
+    padding:2px 8px;
+  }
+  .module-note{
+    color:var(--muted);
+    font-size:.88rem;
+    margin:0 0 18px;
+  }
+
+  .endpoint{
+    display:flex;
+    gap:16px;
+    padding:16px 0;
+    border-top:1px solid var(--line);
+  }
+  .module .endpoint:first-of-type{border-top:none;}
+
+  .method{
+    font-family:"JetBrains Mono",monospace;
+    font-weight:600;
+    font-size:.78rem;
+    width:64px;
+    flex:0 0 64px;
+    padding-top:2px;
+  }
+  .method.GET{color:var(--get);}
+  .method.POST{color:var(--post);}
+  .method.PUT{color:var(--put);}
+  .method.DELETE{color:var(--delete);}
+  .method.PATCH{color:var(--patch);}
+
+  .endpoint-body{flex:1;min-width:0;}
+  .endpoint-top{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:10px;
+    margin-bottom:6px;
+  }
+  .path{
+    font-family:"JetBrains Mono",monospace;
+    font-size:.92rem;
+    word-break:break-all;
+  }
+  .tag{
+    font-size:.7rem;
+    font-weight:600;
+    padding:3px 9px;
+    border-radius:20px;
+  }
+  .tag.auth{background:var(--tag-auth-bg);color:var(--tag-auth-text);}
+  .tag.key{background:var(--tag-key-bg);color:var(--tag-key-text);}
+  .tag.none{background:var(--tag-none-bg);color:var(--tag-none-text);}
+
+  .desc{margin:0;color:var(--muted);font-size:.92rem;line-height:1.55;}
+
+  footer{
+    padding:30px 60px 60px;
+    color:var(--muted);
+    font-size:.85rem;
+    border-top:1px solid var(--line);
+    margin-top:20px;
+  }
+
+  @media (max-width: 860px){
+    .layout{grid-template-columns:1fr;}
+    .sidebar{position:relative;height:auto;}
+    main{padding:32px 22px 80px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span>BrightPath API</div>
+    <span class="brand-tag">v1.0</span>
+
+    <input type="text" id="sidebarSearch" placeholder="Filter by method, path, module…">
+
+    <div class="nav-group-label">Common APIs</div>
+    <ul class="navlist">
+      <li><a href="#common">Auth &amp; Demo</a></li>
+    </ul>
+
+    <div class="nav-group-label">Modules</div>
+    <ul class="navlist">
+      <li><a href="#courses">Courses</a></li>
+      <li><a href="#teachers">Teachers</a></li>
+      <li><a href="#students">Students</a></li>
+      <li><a href="#batches">Batches</a></li>
+      <li><a href="#admissions">Admissions</a></li>
+      <li><a href="#enquiry">Enquiry</a></li>
+      <li><a href="#attendance">Attendance</a></li>
+      <li><a href="#fees">Fees</a></li>
+      <li><a href="#teacher-payments">Teacher Payments</a></li>
+      <li><a href="#timetable">Timetable</a></li>
+      <li><a href="#exams">Exams</a></li>
+      <li><a href="#marks">Marks</a></li>
+      <li><a href="#pending-fees">Pending Fees</a></li>
+      <li><a href="#income-expense">Income &amp; Expense</a></li>
+    </ul>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main>
+    <h1 class="page-title">API Documentation</h1>
+    <p class="page-sub">BrightPath Admin — every module, endpoint, and auth requirement in one reference.</p>
+
+    <!-- ================= AUTH REQUIREMENTS ================= -->
+    <h2 class="section-heading">🔑 Authentication Requirements</h2>
+    <div class="auth-panel">
+      <div class="auth-rule">
+        <div class="rule-name">Auth Token</div>
+        <div class="rule-desc">
+          Required for almost every endpoint in this doc. Send as an <code>Authorization: Bearer &lt;token&gt;</code>
+          header. The token is a JWT, stored client-side in <code>localStorage</code> as <code>JWT_TOKEN</code>,
+          and identifies the signed-in admin user. Routes marked <span class="tag auth">Auth Required</span> below
+          use this.
+        </div>
+      </div>
+      <div class="auth-rule">
+        <div class="rule-name">No Auth</div>
+        <div class="rule-desc">
+          Public endpoints that don't require a token — currently <code>POST /api/auth/login</code> (to obtain a
+          token) and <code>GET /api/timetable</code> (the only route in this backend with no <code>auth</code>
+          middleware). Marked <span class="tag none">No Auth</span> below.
+        </div>
+      </div>
+      <div class="auth-rule">
+        <div class="rule-name">API Key</div>
+        <div class="rule-desc">
+          Not currently used by any route in this backend — every protected route relies on the JWT auth
+          middleware only. Kept here in case a front-facing/guest surface is added later that needs a separate
+          <code>api-key</code> header or query parameter.
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= TABLE OF CONTENTS ================= -->
+    <h2 class="section-heading">📑 Table of Contents</h2>
+    <div class="toc">
+      <div class="toc-group">
+        <p class="toc-col-label">Common APIs</p>
+        <div class="toc-grid">
+          <a href="#common">Auth &amp; Demo</a>
+        </div>
+      </div>
+      <div class="toc-group">
+        <p class="toc-col-label">Modules</p>
+        <div class="toc-grid">
+          <a href="#courses">Courses</a>
+          <a href="#teachers">Teachers</a>
+          <a href="#students">Students</a>
+          <a href="#batches">Batches</a>
+          <a href="#admissions">Admissions</a>
+          <a href="#enquiry">Enquiry</a>
+          <a href="#attendance">Attendance</a>
+          <a href="#fees">Fees</a>
+          <a href="#teacher-payments">Teacher Payments</a>
+          <a href="#timetable">Timetable</a>
+          <a href="#exams">Exams</a>
+          <a href="#marks">Marks</a>
+          <a href="#pending-fees">Pending Fees</a>
+          <a href="#income-expense">Income &amp; Expense</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= COMMON APIS ================= -->
+    <div class="module" id="common">
+      <div class="module-head"><h2>Common APIs</h2><span class="module-file">routes/authRoutes.js · routes/demoRoutes.js</span></div>
+      <p class="module-note">Shared/utility endpoints used across the platform rather than tied to one admin object.</p>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/auth/login</span>
+            <span class="tag none">No Auth</span>
+          </div>
+          <p class="desc">Log in and receive a JWT to use for all subsequent authenticated requests.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/demo</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of booked demo sessions.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/demo</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new demo session booking.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/demo/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Update a demo session (e.g. reschedule, change status).</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/demo/:id/convert</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Convert a demo session into an admission.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- COURSES -->
+    <div class="module" id="courses">
+      <div class="module-head"><h2>Courses</h2><span class="module-file">routes/courseRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/courses</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of all courses.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/courses/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get a single course by ID.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/courses</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new course.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/courses/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Update an existing course.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method DELETE">DELETE</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/courses/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Delete a course.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEACHERS -->
+    <div class="module" id="teachers">
+      <div class="module-head"><h2>Teachers</h2><span class="module-file">routes/teacherRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teachers</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of all teachers.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teachers/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get a single teacher by ID.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teachers</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new teacher.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teachers/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Update an existing teacher.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method DELETE">DELETE</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teachers/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Delete a teacher.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- STUDENTS -->
+    <div class="module" id="students">
+      <div class="module-head"><h2>Students</h2><span class="module-file">routes/studentRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/students</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of all students.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/students/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get a single student by ID.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/students</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new student.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/students/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Update an existing student.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method DELETE">DELETE</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/students/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Delete a student.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- BATCHES -->
+    <div class="module" id="batches">
+      <div class="module-head"><h2>Batches</h2><span class="module-file">routes/batchRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/batches</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of all batches.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/batches/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get a single batch by ID.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/batches</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new batch.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/batches/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Update an existing batch.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method DELETE">DELETE</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/batches/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Delete a batch.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMISSIONS -->
+    <div class="module" id="admissions">
+      <div class="module-head"><h2>Admissions</h2><span class="module-file">routes/admissionRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/admissions</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of all admissions.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/admissions</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new admission.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ENQUIRY -->
+    <div class="module" id="enquiry">
+      <div class="module-head"><h2>Enquiry</h2><span class="module-file">routes/enquiryRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/enquiries</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of all enquiries.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/enquiries/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get a single enquiry by ID.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/enquiries</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new enquiry.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/enquiries/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Update an existing enquiry.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method DELETE">DELETE</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/enquiries/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Delete an enquiry.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/enquiries/:id/convert</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Convert an enquiry into an admission.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ATTENDANCE -->
+    <div class="module" id="attendance">
+      <div class="module-head"><h2>Attendance</h2><span class="module-file">routes/attendanceRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/attendance/dashboard</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get attendance KPIs and daily records for a given date.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/attendance/student/:studentId</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get a single student's attendance history.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/attendance/submit</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Submit/save attendance for a batch on a given date.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/attendance/roster</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the student roster for a batch.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- FEES -->
+    <div class="module" id="fees">
+      <div class="module-head"><h2>Fees</h2><span class="module-file">routes/feeRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/fees/dashboard</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get fee collection KPIs and the fees list for a given date.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/fees/collect</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Record a fee payment/receipt.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEACHER PAYMENTS -->
+    <div class="module" id="teacher-payments">
+      <div class="module-head"><h2>Teacher Payments</h2><span class="module-file">routes/teacherPaymentRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teacher-payments/dashboard</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get teacher payment KPIs and voucher list.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teacher-payments/add</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Add a new payment voucher for a teacher.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PATCH">PATCH</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/teacher-payments/pay/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Update payment details for a voucher (e.g. mark as paid).</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TIMETABLE -->
+    <div class="module" id="timetable">
+      <div class="module-head"><h2>Timetable</h2><span class="module-file">routes/timetableRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/timetable?view=today|weekly&amp;date=YYYY-MM-DD</span>
+            <span class="tag none">No Auth</span>
+          </div>
+          <p class="desc">Get the timetable for today or the week, built from Active batches with start/end time and days set.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXAMS -->
+    <div class="module" id="exams">
+      <div class="module-head"><h2>Exams</h2><span class="module-file">routes/examRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/exams</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of all exams.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/exams</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Create a new exam.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/exams/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Edit an existing exam.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MARKS -->
+    <div class="module" id="marks">
+      <div class="module-head"><h2>Marks</h2><span class="module-file">routes/marksRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/marks</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the list of marks.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/marks/bulk</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Submit marks for multiple students at once.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PENDING FEES -->
+    <div class="module" id="pending-fees">
+      <div class="module-head"><h2>Pending Fees</h2><span class="module-file">routes/pendingfeeRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/pending-fees</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get the pending fees summary list.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/pending-fees/bulk-reminder</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Trigger bulk reminders for overdue fees.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/pending-fees/:id/notes</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Add a follow-up call note to a pending fee record.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- INCOME & EXPENSE -->
+    <div class="module" id="income-expense">
+      <div class="module-head"><h2>Income &amp; Expense</h2><span class="module-file">routes/incomeExpenseRoutes.js</span></div>
+
+      <div class="endpoint">
+        <div class="method GET">GET</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/income-expense/dashboard</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Get KPIs, 6-month trend, P&amp;L breakdown, and full income/expense lists for a given month.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/income-expense/income</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Add a new income entry.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method POST">POST</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/income-expense/expense</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Add a new expense entry.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method PUT">PUT</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/income-expense/expense/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Edit an existing expense entry.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method DELETE">DELETE</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/income-expense/income/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Delete an income entry.</p>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method DELETE">DELETE</div>
+        <div class="endpoint-body">
+          <div class="endpoint-top">
+            <span class="path">/api/income-expense/expense/:id</span>
+            <span class="tag auth">Auth Required</span>
+          </div>
+          <p class="desc">Delete an expense entry.</p>
+        </div>
+      </div>
+    </div>
+
+    <footer>&copy; 2026 BrightPath Admin — API Documentation</footer>
+  </main>
+</div>
+
+<script>
+  document.getElementById('sidebarSearch').addEventListener('input', function (e) {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.module').forEach(function (mod) {
+      let anyVisible = false;
+      mod.querySelectorAll('.endpoint').forEach(function (row) {
+        const match = row.textContent.toLowerCase().includes(q);
+        row.style.display = match ? '' : 'none';
+        if (match) anyVisible = true;
+      });
+      const modText = mod.querySelector('h2').textContent.toLowerCase();
+      mod.style.display = (q === '' || anyVisible || modText.includes(q)) ? '' : 'none';
+    });
+  });
+</script>
+
+</body>
+</html>
