@@ -11,12 +11,13 @@
 
 <body>
   <script src="assets/js/admin-data.js"></script>
+  <script src="assets/js/api.js"></script>
   <script src="assets/js/admin-app.js"></script>
   <script>
     if (App.guard()) {
-      const API_MARKS = "http://localhost:5001/api/marks";
-      let usingMarksFallback = false;
       let currentMarks = [];
+      let examsList = [];
+      let studentsList = [];
 
       // Sanitization utility helpers
       const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -24,50 +25,38 @@
       const asNum = v => Number(v ?? 0) || 0;
       const unique = values => [...new Set(values.filter(Boolean))];
 
-      function authHeaders(hasBody = false) {
-        const token = localStorage.getItem('JWT_TOKEN') || '';
-        const headers = {};
-        if (hasBody) headers['Content-Type'] = 'application/json';
-        if (token) headers.Authorization = `Bearer ${token}`;
-        return headers;
-      }
-
-      async function marksApiRequest(path = '', options = {}) {
-        const res = await fetch(`${API_MARKS}${path}`, {
-          ...options,
-          headers: { ...authHeaders(Boolean(options.body)), ...(options.headers || {}) }
-        });
-        const text = await res.text();
-        let data = null;
-        if (text) {
-          try { data = JSON.parse(text); }
-          catch (err) { data = { message: text }; }
-        }
-        if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
-        return data;
-      }
-
-      function unwrapMarks(payload) {
-        if (Array.isArray(payload)) return payload;
-        if (Array.isArray(payload?.data)) return payload.data;
-        if (Array.isArray(payload?.marks)) return payload.marks;
-        if (Array.isArray(payload?.data?.marks)) return payload.data.marks;
-        return [];
-      }
+      function unwrapList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data?.data)) return payload.data.data;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  return [];
+}
 
       function mapMark(item = {}) {
         return {
-          examId: item.examId || item.id || '',
-          exam: item.examName || item.exam || '',
-          batch: item.batch || '',
-          subject: item.subject || '',
-          total: asNum(item.total || 100),
-          studentId: item.studentId || item.student_id || item.student?.id || '',
-          student: item.studentName || item.student_name || (item.student && item.student.name) || item.student || 'Unknown',
-          obtained: asNum(item.obtained ?? item.score ?? 0),
+          examId: item.examId || item.exam_id || '',
+          exam: item.exam || item.examName || item.exam_name || '',
+          batch: item.batch || item.batch_name || '',
+          subject: item.subject || item.subject_name || '',
+          total: asNum(item.total ?? item.total_marks ?? 100),
+          // NOTE: getMarksWithRankings doesn't currently SELECT student_id, so this
+          // will be blank until the backend query adds it — see message below.
+          studentId: item.studentId || item.student_id || '',
+          student: item.student || item.student_name || 'Unknown',
+          obtained: asNum(item.obtained ?? item.marks_obtained ?? 0),
           remarks: item.remarks || '',
           rank: item.rank || 0,
           grade: item.grade || ''
+        };
+      }
+
+      function normStudent(s = {}) {
+        return {
+          id: s.student_code || s.studentId || s.id || '',
+          name: s.student_name || s.name || s.studentName || '',
+          batch: s.batch_name || s.batch || '',
+          course: s.course_name || s.course || ''
         };
       }
 
@@ -76,6 +65,13 @@
       }
 
       function calcPct(m) { return m.total ? Math.round(m.obtained / m.total * 100) : 0; }
+
+      function studentsForExam(exam) {
+        if (!exam) return [];
+        return studentsList.filter(s =>
+          s.batch === exam.batch && (!exam.course || s.course === exam.course)
+        );
+      }
 
       function renderMarksPage(rows) {
         currentMarks = rows;
@@ -106,25 +102,35 @@
             { key: 'grade', label: 'Grade', render: r => `<span class="badge ${r.grade && r.grade.startsWith('A') ? 'b-green' : r.grade && r.grade.startsWith('B') ? 'b-blue' : 'b-amber'}"><span class="pip"></span>${esc(r.grade || '-')}</span>` },
             { key: 'remarks', label: 'Remark' }
           ],
-          actions: r => `${App.actBtn('eye', 'View', `onclick="viewMark('${jsStr(r.studentId)}','${jsStr(r.examId)}')"`)}${App.actBtn('edit', 'Edit', "App.toast('Edit marks','info')")}`
+          actions: r => `${App.actBtn('eye', 'View', `onclick="viewMark('${jsStr(r.examId)}','${jsStr(r.student)}')"`)}${App.actBtn('edit', 'Edit', "App.toast('Edit marks','info')")}`
         });
       }
 
       async function loadMarks() {
         try {
-          const payload = await marksApiRequest('');
-          usingMarksFallback = false;
-          renderMarksPage(unwrapMarks(payload).map(mapMark));
+          const res = await API.get('/marks');
+          renderMarksPage(unwrapList(res).map(mapMark));
         } catch (err) {
           console.warn('Marks API unavailable, showing local data:', err);
-          usingMarksFallback = true;
           renderMarksPage(fallbackMarks());
-          App.toast('Marks API unavailable. Showing local data.', 'info');
+          App.toast(err.message || 'Marks API unavailable. Showing local data.', 'info');
         }
       }
 
-      window.viewMark = (studentId, examId) => {
-        const m = currentMarks.find(x => String(x.studentId) === String(studentId) && String(x.examId) === String(examId));
+      async function loadFormData() {
+        try {
+          const [examsRes, studentsRes] = await Promise.all([API.get('/exams'), API.get('/students')]);
+          examsList = unwrapList(examsRes);
+          studentsList = unwrapList(studentsRes).map(normStudent);
+        } catch (err) {
+          App.toast('Failed to load exams/students — falling back to sample list', 'err');
+          examsList = DB.exams || [];
+          studentsList = (DB.students || []).map(normStudent);
+        }
+      }
+
+      window.viewMark = (examId, studentName) => {
+        const m = currentMarks.find(x => String(x.examId) === String(examId) && x.student === studentName);
         if (!m) return App.toast('Marks not found', 'err');
         App.modal({
           size: 'md', title: esc(m.student) + ' · ' + esc(m.exam), sub: esc(m.batch),
@@ -138,62 +144,63 @@
       };
 
       window.addMarks = () => {
-        const exam = (DB.exams && DB.exams[0]) || { name: 'Unit Test', batch: 'Default', total: 100, id: 'EX-000', subject: 'General' };
-        const studs = (DB.students || []).filter(s => s.batch === exam.batch).slice(0, 20);
-        
+        if (!examsList.length) return App.toast('No exams found — create a test first', 'err');
+
+        function studentRowsHtml(exam) {
+          const studs = studentsForExam(exam);
+          if (!studs.length) return `<tr><td colspan="3" style="text-align:center;color:var(--ink-2)">No students found for ${esc(exam.batch)}</td></tr>`;
+          return studs.map(s => `<tr data-stu="${esc(s.id)}" data-name="${esc(s.name)}"><td>${App.whoCell(esc(s.name), esc(s.id))}</td><td><input class="num m-obt" style="width:80px;padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" value="${Math.round((exam.total || 100) * 0.7)}"></td><td><input class="m-remark" style="padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" placeholder="Optional remark"></td></tr>`).join('');
+        }
+
+        const examOptionsHtml = examsList.map(e => `<option value="${esc(e.id)}">${esc(e.name)} · ${esc(e.batch)}</option>`).join('');
+        const initialExam = examsList[0];
+
         App.modal({
           size: 'lg',
           title: 'Enter Marks (Bulk)',
-          sub: 'Enter scores for students and submit',
+          sub: 'Pick a test, then enter scores for its students',
           body: `<div class="form-grid" style="margin-bottom:16px">
-<div><label>Test Name</label><input id="m_exam" value="${esc(exam.name)} · ${esc(exam.batch)}" disabled></div>
-<div><label>Total Marks</label><input id="m_total" class="num" value="${esc(exam.total)}" disabled></div>
+<div><label>Test</label><select id="m_exam">${examOptionsHtml}</select></div>
+<div><label>Total Marks</label><input id="m_total" class="num" value="${esc(initialExam.total)}" disabled></div>
 </div>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Student</th><th style="width:120px">Marks</th><th>Remark</th></tr></thead>
-<tbody>${studs.map(s => `<tr data-stu="${esc(s.id)}"><td>${App.whoCell(esc(s.name), esc(s.id))}</td><td><input class="num m-obt" style="width:80px;padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" value="${Math.round((exam.total || 100) * 0.7)}"></td><td><input class="m-remark" style="padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" placeholder="Optional remark"></td></tr>`).join('')}</tbody></table></div>`,
+<tbody id="m_rows">${studentRowsHtml(initialExam)}</tbody></table></div>`,
           foot: `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveMarksBtn">Save & Publish</button>`,
           onOpen: box => {
+            const examSelect = box.querySelector('#m_exam');
+            const totalInput = box.querySelector('#m_total');
+            const rowsBody = box.querySelector('#m_rows');
+
+            examSelect.onchange = () => {
+              const exam = examsList.find(e => String(e.id) === examSelect.value);
+              totalInput.value = exam.total;
+              rowsBody.innerHTML = studentRowsHtml(exam);
+            };
+
             box.querySelector('#saveMarksBtn').onclick = async () => {
-              const rows = [...box.querySelectorAll('tbody tr')].map(tr => {
-                const id = tr.getAttribute('data-stu');
-                const nameText = tr.querySelector('.who .name') ? tr.querySelector('.who .name').textContent : id;
-                const obtained = asNum(tr.querySelector('.m-obt').value);
-                const remark = tr.querySelector('.m-remark').value.trim();
-                return { studentId: id, studentName: nameText, obtained, remarks: remark };
-              });
-              
+              const exam = examsList.find(e => String(e.id) === examSelect.value);
+              const rows = [...box.querySelectorAll('#m_rows tr[data-stu]')].map(tr => ({
+                studentId: tr.getAttribute('data-stu'),
+                studentName: tr.getAttribute('data-name'),
+                obtained: asNum(tr.querySelector('.m-obt').value),
+                remarks: tr.querySelector('.m-remark').value.trim()
+              }));
+              if (!rows.length) return App.toast('No students to save marks for', 'err');
+
               const payload = {
-                examId: exam.id || `EX-${Date.now()}`,
-                examName: exam.name || 'Exam',
+                examId: exam.id,
+                examName: exam.name,
                 batch: exam.batch,
-                subject: exam.subject || 'General',
-                total: asNum(exam.total || 100),
+                subject: exam.subject,
+                total: asNum(exam.total),
                 scores: rows
               };
 
               try {
-                if (usingMarksFallback) {
-                  const created = payload.scores.map(s => ({
-                    examId: payload.examId,
-                    exam: payload.examName,
-                    batch: payload.batch,
-                    subject: payload.subject,
-                    total: payload.total,
-                    studentId: s.studentId,
-                    student: s.studentName,
-                    obtained: s.obtained,
-                    remarks: s.remarks,
-                    grade: '', rank: 0
-                  }));
-                  currentMarks.unshift(...created.map(mapMark));
-                  App.closeModal();
-                  renderMarksPage(currentMarks);
-                  return App.toast('Marks saved locally', 'ok');
-                }
-                await marksApiRequest('/bulk', { method: 'POST', body: JSON.stringify(payload) });
+                await API.post('/marks/bulk', payload);
                 App.closeModal();
-                await loadMarks();
                 App.toast('Marks saved & result published', 'ok');
+                loadMarks();
               } catch (err) {
                 App.toast(err.message || 'Failed to save marks', 'err');
               }
@@ -202,6 +209,7 @@
         });
       };
 
+      loadFormData();
       loadMarks();
     }
   </script>

@@ -17,9 +17,7 @@ if(App.guard()){
   let batchNames = [];
   let teacherNames = [];
 
-  // Backend wraps list responses as { success: true, data: [...] }.
-  // This also tolerates a raw array or a few other common envelope keys,
-  // so it won't break if a particular endpoint's shape ends up slightly different.
+
   function unwrapList(payload){
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.data)) return payload.data;
@@ -28,9 +26,6 @@ if(App.guard()){
     return [];
   }
 
-  // Different modules' /api endpoints don't all use the same field name for
-  // their "display name" — this tries the likely candidates in order so the
-  // dropdowns populate regardless of which one the real response uses.
   function nameOf(row, keys){
     for(const k of keys){ if(row && row[k]) return row[k]; }
     return '';

@@ -8,50 +8,150 @@
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
+  let homeworkList = [];
+  let batchNames = [];
+  let teacherNames = [];
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    if (Array.isArray(payload?.result)) return payload.result;
+    return [];
+  }
+
+  function nameOf(row, keys){
+    for(const k of keys){ if(row && row[k]) return row[k]; }
+    return '';
+  }
+
   const head=`<button class="btn btn-primary" onclick="addHw()">${App.svg('plus')}Assign Homework</button>`;
   const c=App.layout('homework','Homework',[`<span>Assessment</span>`,'Homework'],head);
   c.innerHTML=`<div id="tbl"></div>`;
-  App.table('tbl',{
-    rows:DB.homework, searchKeys:['id','batch','subject','teacher','title'], searchPlaceholder:'Search homework…', pageSize:9, dateFilter:true,
-    filters:[{label:'Batch',key:'batch',options:[...new Set(DB.homework.map(h=>h.batch))]},{label:'Status',key:'status',options:['Active','Closed','Overdue']}],
-    columns:[
-      {key:'title',label:'Homework',render:r=>`<div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.subject}</div>`},
-      {key:'batch',label:'Batch',render:r=>App.whoCell(r.teacher,r.batch)},
-      {key:'due',label:'Due Date'},
-      {key:'submitted',label:'Submitted',num:true,render:r=>`<span style="color:var(--green)">${r.submitted}</span>`},
-      {key:'pending',label:'Pending',num:true,render:r=>`<span style="color:var(--red)">${r.pending}</span>`},
-      {key:'prog',label:'Progress',render:r=>`<div class="pct-cell"><div class="progress"><span style="width:${Math.round(r.submitted/(r.submitted+r.pending)*100)}%"></span></div><span class="num">${Math.round(r.submitted/(r.submitted+r.pending)*100)}%</span></div>`},
-      {key:'status',label:'Status',render:r=>App.badge(r.status)}
-    ],
-    actions:r=>`${App.actBtn('eye','View',`onclick="viewHw('${r.id}')"`)}${App.actBtn('edit','Edit',`onclick="App.toast('Edit homework','info')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="delHw('${r.id}')"`)}`
-  });
-  const find=id=>DB.homework.find(h=>h.id===id);
+
+  function renderTable(){
+    App.table('tbl',{
+      rows:homeworkList, searchKeys:['id','batch','subject','teacher','title'], searchPlaceholder:'Search homework…', pageSize:9, dateFilter:true,
+      filters:[{label:'Batch',key:'batch',options:[...new Set(homeworkList.map(h=>h.batch))]},{label:'Status',key:'status',options:['Active','Closed','Overdue']}],
+      columns:[
+        {key:'title',label:'Homework',render:r=>`<div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.subject}</div>`},
+        {key:'batch',label:'Batch',render:r=>App.whoCell(r.teacher,r.batch)},
+        {key:'due',label:'Due Date'},
+        {key:'submitted',label:'Submitted',num:true,render:r=>`<span style="color:var(--green)">${r.submitted}</span>`},
+        {key:'pending',label:'Pending',num:true,render:r=>`<span style="color:var(--red)">${r.pending}</span>`},
+        {key:'prog',label:'Progress',render:r=>{const t=r.submitted+r.pending; const pct=t?Math.round(r.submitted/t*100):0; return `<div class="pct-cell"><div class="progress"><span style="width:${pct}%"></span></div><span class="num">${pct}%</span></div>`;}},
+        {key:'status',label:'Status',render:r=>App.badge(r.status)}
+      ],
+      actions:r=>`${App.actBtn('eye','View',`onclick="viewHw('${r.id}')"`)}${App.actBtn('edit','Edit',`onclick="editHw('${r.id}')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="delHw('${r.id}')"`)}`
+    });
+  }
+
+  async function loadHomework(){
+    try{
+      const res = await API.get('/homework');
+      homeworkList = unwrapList(res);
+    }catch(err){
+      App.toast(err.message || 'Failed to load homework','err');
+      homeworkList = [];
+    }
+    renderTable();
+  }
+
+  async function loadFormOptions(){
+    try{
+      const [batchesRes, teachersRes] = await Promise.all([
+        API.get('/batches'), API.get('/teachers')
+      ]);
+      batchNames   = unwrapList(batchesRes).map(r=>nameOf(r,['name','batchName','batch_name'])).filter(Boolean);
+      teacherNames = unwrapList(teachersRes).map(r=>nameOf(r,['name','teacherName','teacher_name'])).filter(Boolean);
+    }catch(err){
+      App.toast('Failed to load batches/teachers — falling back to sample list','err');
+      batchNames   = DB.batches.map(b=>b.name);
+      teacherNames = DB.teachers.map(t=>t.name);
+    }
+  }
+
+  loadHomework();
+  loadFormOptions();
+
+  const find=id=>homeworkList.find(h=>h.id===id);
+
   window.viewHw=id=>{ const h=find(id);
     App.modal({size:'lg',title:h.title,sub:`${h.id} · ${h.batch}`,
-      body:`<div class="dl cols-3"><div class="it"><div class="k">Subject</div><div class="v">${h.subject}</div></div>
-        <div class="it"><div class="k">Teacher</div><div class="v">${h.teacher}</div></div><div class="it"><div class="k">Due Date</div><div class="v">${h.due}</div></div>
+      body:`<div class="dl cols-3"><div class="it"><div class="k">Subject</div><div class="v">${h.subject||'—'}</div></div>
+        <div class="it"><div class="k">Teacher</div><div class="v">${h.teacher||'—'}</div></div><div class="it"><div class="k">Due Date</div><div class="v">${h.due||'—'}</div></div>
         <div class="it"><div class="k">Submitted</div><div class="v num">${h.submitted}</div></div><div class="it"><div class="k">Pending</div><div class="v num">${h.pending}</div></div>
         <div class="it"><div class="k">Status</div><div class="v">${App.badge(h.status)}</div></div></div>
-      <div class="sec-title">Description</div><p style="color:var(--ink-2)">${h.desc}</p>
-      <div class="sec-title">Attachment</div><div class="chips"><span class="chip">${App.svg('material')} worksheet_${h.id}.pdf</span></div>
-      <div class="sec-title">Submission Status</div>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Student</th><th>Status</th><th>Checked</th></tr></thead>
-      <tbody>${DB.students.filter(s=>s.batch===h.batch).slice(0,6).map((s,i)=>`<tr><td>${App.whoCell(s.name)}</td><td>${App.badge(i<4?'Completed':'Pending')}</td><td>${i<3?App.svg('check'):'—'}</td></tr>`).join('')}</tbody></table></div>`,
+      <div class="sec-title">Description</div><p style="color:var(--ink-2)">${h.desc||'—'}</p>`,
       foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Homework marked checked','ok')">Mark Checked</button>` }); };
-  window.delHw=id=>{ const h=find(id); App.confirmModal(`Delete homework <b>${h.title}</b>?`,()=>{DB.homework.splice(DB.homework.indexOf(h),1);location.reload();},{danger:true,yes:'Delete'}); };
-  window.addHw=()=>App.modal({size:'lg',title:'Assign Homework',
-    body:`<div class="form-grid">
-      <div><label>Batch</label><select>${DB.batches.map(b=>`<option>${b.name}</option>`).join('')}</select></div>
-      <div><label>Subject</label><input value="Mathematics"></div>
-      <div><label>Teacher</label><select>${DB.teachers.map(t=>`<option>${t.name}</option>`).join('')}</select></div>
-      <div><label>Due Date</label><input type="date" value="2026-06-15"></div>
-      <div class="full"><label>Title</label><input placeholder="e.g. Practice Set 4"></div>
-      <div class="full"><label>Description</label><textarea rows="3"></textarea></div>
-      <div class="full"><label>Attachment</label><input type="file"></div></div>`,
-    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Homework assigned & students notified','ok')">Assign</button>`});
+
+  window.delHw=id=>{ const h=find(id);
+    App.confirmModal(`Delete homework <b>${h.title}</b>?`,async ()=>{
+      try{
+        await API.delete(`/homework/${h.id}`);
+        App.toast('Homework deleted','ok');
+        loadHomework();
+      }catch(err){ App.toast(err.message || 'Failed to delete homework','err'); }
+    },{danger:true,yes:'Delete'});
+  };
+
+  function optionList(names, selected){
+    return names.map(n=>`<option ${selected===n?'selected':''}>${n}</option>`).join('');
+  }
+
+  function hwForm(h){ return `<div class="form-grid">
+    <div><label>Batch</label><select id="h_batch">${optionList(batchNames, h?h.batch:null)}</select></div>
+    <div><label>Subject</label><input id="h_subject" value="${h?h.subject:'Mathematics'}"></div>
+    <div><label>Teacher</label><select id="h_teacher">${optionList(teacherNames, h?h.teacher:null)}</select></div>
+    <div><label>Due Date</label><input type="date" id="h_due" value="${h?h.due:'2026-06-15'}"></div>
+    <div class="full"><label>Title</label><input id="h_title" placeholder="e.g. Practice Set 4" value="${h?h.title:''}"></div>
+    <div class="full"><label>Description</label><textarea id="h_desc" rows="3">${h?h.desc||'':''}</textarea></div>
+    <div class="full"><label>Attachment</label><input type="file" disabled title="File upload isn't wired to the backend yet"></div></div>`; }
+
+  function readHwForm(b){
+    return {
+      batch: b.querySelector('#h_batch').value,
+      subject: b.querySelector('#h_subject').value,
+      teacher: b.querySelector('#h_teacher').value,
+      due: b.querySelector('#h_due').value,
+      title: b.querySelector('#h_title').value.trim(),
+      desc: b.querySelector('#h_desc').value
+    };
+  }
+
+  window.addHw=()=>App.modal({size:'lg',title:'Assign Homework',body:hwForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Assign</button>`,
+    onOpen:b=>b.querySelector('#sv').onclick=async ()=>{
+      const payload = readHwForm(b);
+      if(!payload.title) return App.toast('Please enter a title','err');
+      try{
+        await API.post('/homework', {...payload, status:'Active', submitted:0, pending:0});
+        App.closeModal();
+        App.toast('Homework assigned & students notified','ok');
+        loadHomework();
+      }catch(err){
+        App.toast(err.message || 'Failed to assign homework','err');
+      }
+    }});
+
+  window.editHw=id=>{ const h=find(id); App.modal({size:'lg',title:'Edit Homework',sub:h.id,body:hwForm(h),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+    onOpen:b=>b.querySelector('#sv').onclick=async ()=>{
+      const payload = readHwForm(b);
+      if(!payload.title) return App.toast('Please enter a title','err');
+      try{
+        await API.put(`/homework/${h.id}`, {...payload, status:h.status});
+        App.closeModal();
+        App.toast('Homework updated','ok');
+        loadHomework();
+      }catch(err){
+        App.toast(err.message || 'Failed to update homework','err');
+      }
+    }}); };
 }
 </script>
 </body></html>

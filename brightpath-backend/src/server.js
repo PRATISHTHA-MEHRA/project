@@ -21,7 +21,8 @@ const examRoutes = require("./routes/examRoutes");
 const marksRoutes = require("./routes/marksRoutes");
 const pendingFeeRoutes = require("./routes/pendingfeeRoutes");
 const incomeExpenseRoutes = require("./routes/incomeExpenseRoutes");
-
+const homeworkRoutes=require("./routes/homeworkRoutes");
+const studyMaterialRoutes=require("./routes/studyMaterialRoutes");
 const app = express();
 
 app.use(cors());
@@ -50,6 +51,8 @@ app.use("/api/exams", require("./routes/examRoutes"));
 app.use("/api/marks", require("./routes/marksRoutes"));
 app.use("/api/pending-fees", require("./routes/pendingfeeRoutes"));
 app.use("/api/income-expense", incomeExpenseRoutes);
+app.use("/api/homework",homeworkRoutes);
+app.use("/api/study-material",studyMaterialRoutes);
 
 const PORT = process.env.PORT || 5001;
 

@@ -9,33 +9,124 @@
 <body>
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
+<script src="assets/js/api.js"></script>
 <script>
 if(App.guard()){
   const head=`<button class="btn btn-primary" onclick="addSm()">${App.svg('plus')}Upload Material</button>`;
   const c=App.layout('study-material','Study Material',[`<span>Assessment</span>`,'Study Material'],head);
   c.innerHTML=`<div id="tbl"></div>`;
-  App.table('tbl',{
-    rows:DB.studyMaterial, searchKeys:['id','title','course','subject'], searchPlaceholder:'Search material…', pageSize:9,
-    filters:[{label:'Course',key:'course',options:[...new Set(DB.studyMaterial.map(s=>s.course))]},{label:'Type',key:'type',options:['PDF','DOC','Video','Link']}],
-    columns:[
-      {key:'title',label:'Title',render:r=>`<div class="who-cell">${App.svg(r.type==='Video'?'demo':'material').replace('<svg','<svg style="width:18px;height:18px;color:var(--brand)"')}<div><div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.size}</div></div></div>`},
-      {key:'course',label:'Course',render:r=>`<div>${r.course}</div><div class="t-sub">${r.subject}</div>`},
-      {key:'type',label:'Type',render:r=>`<span class="chip">${r.type}</span>`},
-      {key:'uploadedBy',label:'Uploaded By'},
-      {key:'date',label:'Date'},
-      {key:'downloads',label:'Downloads',num:true}
-    ],
-    actions:r=>`${App.actBtn('download','Download',`onclick="App.toast('Downloading ${r.title}','ok')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="App.toast('Deleted','ok')"`)}`
+
+  function unwrapList(res){ return (res && res.data) || []; }
+  function courseName(cs){ return cs.name || cs.course_name || cs.courseName || ''; }
+  function teacherName(t){ return t.name || t.teacher_name || t.teacherName || ''; }
+
+  let currentRows = [];
+  let liveCourses = [];
+  let liveTeachers = [];
+
+  // ---- delegated click handling for row actions (robust vs. inline onclick) ----
+  document.getElementById('tbl').addEventListener('click', e=>{
+    const btn = e.target.closest('[data-action]');
+    if(!btn) return;
+    const { action, id } = btn.dataset;
+    if(action==='download') downloadSm(id);
+    else if(action==='delete') delSm(id);
   });
-  window.addSm=()=>App.modal({size:'md',title:'Upload Study Material',
-    body:`<div class="form-grid">
-      <div class="full"><label>Title</label><input placeholder="e.g. Chapter 4 Notes"></div>
-      <div><label>Course</label><select>${DB.courses.map(c=>`<option>${c.name}</option>`).join('')}</select></div>
-      <div><label>Subject</label><input></div>
-      <div><label>Type</label><select><option>PDF</option><option>DOC</option><option>Video</option><option>Link</option></select></div>
-      <div><label>Uploaded By</label><select>${DB.teachers.map(t=>`<option>${t.name}</option>`).join('')}</select></div>
-      <div class="full"><label>File</label><input type="file"></div></div>`,
-    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Material uploaded','ok')">Upload</button>`});
+
+  function renderTable(rows){
+    currentRows = rows;
+    App.table('tbl',{
+      rows, searchKeys:['id','title','course','subject'], searchPlaceholder:'Search material…', pageSize:9,
+      filters:[{label:'Course',key:'course',options:[...new Set(DB.courses.map(c=>c.name))]},{label:'Type',key:'type',options:['PDF','DOC','Video','Link']}],
+      columns:[
+        {key:'title',label:'Title',render:r=>`<div class="who-cell">${App.svg(r.type==='Video'?'demo':'material').replace('<svg','<svg style="width:18px;height:18px;color:var(--brand)"')}<div><div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.size}</div></div></div>`},
+        {key:'course',label:'Course',render:r=>`<div>${r.course||'—'}</div><div class="t-sub">${r.subject||''}</div>`},
+        {key:'type',label:'Type',render:r=>`<span class="chip">${r.type}</span>`},
+        {key:'uploadedBy',label:'Uploaded By'},
+        {key:'date',label:'Date'},
+        {key:'downloads',label:'Downloads',num:true}
+      ],
+      actions:r=>`${App.actBtn('download','Download',`data-action="download" data-id="${r.id}"`)}${App.actBtn('trash','Delete',`class="danger" data-action="delete" data-id="${r.id}"`)}`,
+      emptyTitle:'No study material found', emptyText:'Upload material for a course to see it here.'
+    });
+  }
+
+  async function loadMaterial(){
+    try{
+      const res = await API.get('/study-material');
+      renderTable(unwrapList(res));
+    }catch(err){
+      App.toast(err.message || 'Failed to load study material','err');
+      renderTable([]);
+    }
+  }
+
+  async function loadDropdownData(){
+    try{
+      const res = await API.get('/courses');
+      liveCourses = unwrapList(res);
+    }catch(err){ console.warn('Falling back to static course list:', err.message); liveCourses = []; }
+    try{
+      const res = await API.get('/teachers');
+      liveTeachers = unwrapList(res);
+    }catch(err){ console.warn('Falling back to static teacher list:', err.message); liveTeachers = []; }
+  }
+
+  const find=id=>currentRows.find(s=>s.id===id);
+
+  window.downloadSm=async id=>{
+    const sm=find(id); if(!sm) return;
+    try{
+      await API.post(`/study-material/${id}/download`, {});
+      App.toast(`Downloading ${sm.title}`,'ok');
+      loadMaterial();
+    }catch(err){ App.toast(err.message || 'Failed to download material','err'); }
+  };
+
+  window.delSm=id=>{ const sm=find(id); if(!sm) return;
+    App.confirmModal(`Delete material <b>${sm.title}</b>?`,async ()=>{
+      try{
+        await API.delete(`/study-material/${id}`);
+        App.toast('Material deleted','ok');
+        loadMaterial();
+      }catch(err){ App.toast(err.message || 'Failed to delete material','err'); }
+    },{danger:true,yes:'Delete'});
+  };
+
+  function readForm(modalEl){
+    const g=name=>modalEl.querySelector(`[name="${name}"]`).value;
+    return { title:g('title'), course:g('course'), subject:g('subject'), type:g('type'), uploadedBy:g('uploadedBy') };
+  }
+
+  window.addSm=()=>{
+    const courseOptions = (liveCourses.length ? liveCourses.map(courseName) : DB.courses.map(c=>c.name)).filter(Boolean);
+    const teacherOptions = (liveTeachers.length ? liveTeachers.map(teacherName) : DB.teachers.map(t=>t.name)).filter(Boolean);
+    App.modal({size:'md',title:'Upload Study Material',
+      body:`<div class="form-grid">
+        <div class="full"><label>Title</label><input name="title" placeholder="e.g. Chapter 4 Notes"></div>
+        <div><label>Course</label><select name="course">${courseOptions.map(n=>`<option>${n}</option>`).join('')}</select></div>
+        <div><label>Subject</label><input name="subject"></div>
+        <div><label>Type</label><select name="type"><option>PDF</option><option>DOC</option><option>Video</option><option>Link</option></select></div>
+        <div><label>Uploaded By</label><select name="uploadedBy">${teacherOptions.map(n=>`<option>${n}</option>`).join('')}</select></div>
+        <div class="full"><label>File</label><input type="file" disabled title="File upload isn't wired to the backend yet"></div></div>`,
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="smSave">Upload</button>`,
+      onOpen:back=>{
+        back.querySelector('#smSave').onclick=async ()=>{
+          const payload=readForm(back);
+          if(!payload.title){ App.toast('Please enter a title','err'); return; }
+          try{
+            await API.post('/study-material', payload);
+            App.closeModal();
+            App.toast('Material uploaded','ok');
+            loadMaterial();
+          }catch(err){ App.toast(err.message || 'Failed to upload material','err'); }
+        };
+      }
+    });
+  };
+
+  loadMaterial();
+  loadDropdownData();
 }
 </script>
 </body></html>
