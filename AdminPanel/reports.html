@@ -8,97 +8,201 @@
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    if (Array.isArray(payload?.result)) return payload.result;
+    return [];
+  }
+
+  const normName = s => String(s || '').trim().toLowerCase();
+
+  // ── live data — populated by loadAllData() before the page ever renders ──
+  let feesList = [], pendingList = [], tpayList = [],
+      incomeList = [], expenseList = [],
+      studentsList = [], batchesList = [], coursesList = [],
+      enquiriesList = [];
+  let reportLogs = {}; // report_key -> "DD Mon YYYY, HH:MM AM"
+
+  async function loadAllData(){
+    try{
+      const res = await API.get('/reports/dashboard');
+      const d = res?.data ?? res; // handle either {success,data} or raw envelope
+
+      feesList      = unwrapList(d.fees);
+      pendingList   = unwrapList(d.pendingFees);
+      tpayList      = unwrapList(d.teacherPayments);
+      studentsList  = unwrapList(d.students);
+      batchesList   = unwrapList(d.batches);
+      coursesList   = unwrapList(d.courses);
+      enquiriesList = unwrapList(d.enquiries);
+      incomeList    = unwrapList(d.income);
+      expenseList   = unwrapList(d.expense);
+      reportLogs    = d.reportLogs || {};
+    }catch(err){
+      App.toast('Could not load report data', 'error');
+    }
+  }
+
+  async function logReport(key, name, action){
+    try{
+      const res = await API.post(`/reports/${key}/log`, { name, action });
+      if(res?.data?.generated_at) reportLogs[key] = res.data.generated_at;
+      const cell = document.querySelector(`#rptTbl tr[data-cat] [data-lastgen="${key}"]`);
+      if(cell) cell.textContent = reportLogs[key];
+    }catch(err){ /* logging is best-effort, don't block the toast/report */ }
+  }
+
   const head=`
     <input type="month" class="filter-sel" value="2026-06" style="min-width:140px">
     <button class="btn btn-light" onclick="App.toast('Report pack exported (PDF)','ok')">${App.svg('download')}Export All</button>
     <button class="btn btn-primary" onclick="App.toast('Scheduled report email sent','ok')">${App.svg('bell')}Schedule</button>`;
   const c=App.layout('reports','Reports',[`<span>Insights</span>`,'Reports'],head);
-  const ch=DB.charts;
-
-  /* ───────── KPI strip ───────── */
-  const kpis=`
-    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-      <div class="kpi"><div class="top"><span class="label">Total Collection (Jun)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(842500)}</div><span class="delta up">${App.svg('up')}10.6% MoM</span></div>
-      <div class="kpi"><div class="top"><span class="label">Outstanding Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(186400)}</div><span class="delta down">${App.svg('down')}6% vs last month</span></div>
-      <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('trending')}</span></div><div class="val">${App.money(356000)}</div><span class="delta up">${App.svg('up')}12% MoM</span></div>
-      <div class="kpi"><div class="top"><span class="label">New Admissions</span><span class="ic b-blue">${App.svg('admit')}</span></div><div class="val">9</div><span class="delta up">${App.svg('up')}+2 vs last month</span></div>
-    </div>`;
-
-  /* ───────── Charts ───────── */
-  const charts=`
-    <div class="grid-2 mb16">
-      <div class="card"><div class="card-head"><div><h3>Monthly Fee Collection</h3><div class="sub">₹ in '000</div></div><button class="btn btn-light btn-sm" onclick="App.toast('Exported','ok')">${App.svg('download')}Export</button></div><div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div></div>
-      <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison, ₹ in '000</div></div></div><div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
-    </div>
-    <div class="grid-3 mb16">
-      <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
-      <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(ch.teacherPayout.slice(0,6),App.money)}</div></div>
-      <div class="card"><div class="card-head"><h3>Admission Sources</h3></div><div class="card-body">${App.donut(ch.admissionSource)}</div></div>
-    </div>`;
-
-  /* ───────── Report definitions ───────── */
-  const REPORTS=[
-    {key:'daily-fee',   name:'Daily Fee Collection',    cat:'Finance',   period:'07 Jun 2026', records:12},
-    {key:'monthly-fee', name:'Monthly Fee Collection',  cat:'Finance',   period:'Jun 2026',    records:40},
-    {key:'pending-fees',name:'Pending Fees Report',     cat:'Finance',   period:'Jun 2026',    records:24},
-    {key:'teacher-due', name:'Teacher Payment Due',     cat:'Finance',   period:'May 2026',    records:4},
-    {key:'income',      name:'Income Report',           cat:'Finance',   period:'Jun 2026',    records:14},
-    {key:'expense',     name:'Expense Report',          cat:'Finance',   period:'Jun 2026',    records:16},
-    {key:'pnl',         name:'Profit & Loss',           cat:'Finance',   period:'Jun 2026',    records:1},
-    {key:'stu-att',     name:'Student Attendance',      cat:'Academic',  period:'Jun 2026',    records:64},
-    {key:'batch-att',   name:'Batch Attendance',        cat:'Academic',  period:'Jun 2026',    records:9},
-    {key:'admissions',  name:'Admission Report',        cat:'Academic',  period:'Q1 2026',     records:31},
-    {key:'enquiry-conv',name:'Enquiry Conversion',      cat:'Marketing', period:'Jun 2026',    records:22},
-    {key:'course-rev',  name:'Course-wise Revenue',     cat:'Finance',   period:'Jun 2026',    records:8},
-    {key:'batch-rev',   name:'Batch-wise Revenue',      cat:'Finance',   period:'Jun 2026',    records:9},
-    {key:'pay-mode',    name:'Payment Mode Report',     cat:'Finance',   period:'Jun 2026',    records:5},
-    {key:'discount',    name:'Discount Report',         cat:'Finance',   period:'Jun 2026',    records:11},
-  ];
 
   /* ───────── Category colour ───────── */
   const catClass={Finance:'b-brand',Academic:'b-blue',Marketing:'b-violet'};
 
-  /* ───────── All Reports table ───────── */
-  const allReports=`
-    <div class="card">
-      <div class="card-head">
-        <div><h3>All Reports</h3><div class="sub">Click View to open the report with live data</div></div>
-        <div class="seg" id="catSeg">
-          <button class="active" onclick="filterCat(this,'')">All</button>
-          <button onclick="filterCat(this,'Finance')">Finance</button>
-          <button onclick="filterCat(this,'Academic')">Academic</button>
-          <button onclick="filterCat(this,'Marketing')">Marketing</button>
-        </div>
-      </div>
-      <div class="tbl-wrap">
-        <table class="tbl" id="rptTbl">
-          <thead><tr>
-            <th>Report</th><th>Category</th><th>Period</th><th class="num">Records</th>
-            <th>Last Generated</th><th style="text-align:right">Action</th>
-          </tr></thead>
-          <tbody>${REPORTS.map(r=>`<tr data-cat="${r.cat}">
-            <td class="t-main">${r.name}</td>
-            <td><span class="badge ${catClass[r.cat]||'b-slate'}"><span class="pip"></span>${r.cat}</span></td>
-            <td>${r.period}</td>
-            <td class="num">${r.records}</td>
-            <td class="t-sub">07 Jun 2026, 09:14 AM</td>
-            <td style="text-align:right">
-              <div class="act" style="justify-content:flex-end">
-                ${App.actBtn('eye','View Report',`onclick="viewReport('${r.key}','${r.name}','${r.period}')"`)}
-                ${App.actBtn('download','Download',`onclick="App.toast('${r.name} downloaded','ok')"`)}
-                ${App.actBtn('print','Print',`onclick="App.toast('Sent to printer','ok')"`)}
-              </div>
-            </td>
-          </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+  /* ───────── Report definitions (metadata only — content is fetched live) ───────── */
+  const REPORTS=[
+    {key:'daily-fee',   name:'Daily Fee Collection',    cat:'Finance',   period:'07 Jun 2026'},
+    {key:'monthly-fee', name:'Monthly Fee Collection',  cat:'Finance',   period:'Jun 2026'},
+    {key:'pending-fees',name:'Pending Fees Report',     cat:'Finance',   period:'Jun 2026'},
+    {key:'teacher-due', name:'Teacher Payment Due',     cat:'Finance',   period:'May 2026'},
+    {key:'income',      name:'Income Report',           cat:'Finance',   period:'Jun 2026'},
+    {key:'expense',     name:'Expense Report',          cat:'Finance',   period:'Jun 2026'},
+    {key:'pnl',         name:'Profit & Loss',           cat:'Finance',   period:'Jun 2026'},
+    {key:'stu-att',     name:'Student Attendance',      cat:'Academic',  period:'Jun 2026'},
+    {key:'batch-att',   name:'Batch Attendance',        cat:'Academic',  period:'Jun 2026'},
+    {key:'admissions',  name:'Admission Report',        cat:'Academic',  period:'Q1 2026'},
+    {key:'enquiry-conv',name:'Enquiry Conversion',      cat:'Marketing', period:'Jun 2026'},
+    {key:'course-rev',  name:'Course-wise Revenue',     cat:'Finance',   period:'Jun 2026'},
+    {key:'batch-rev',   name:'Batch-wise Revenue',      cat:'Finance',   period:'Jun 2026'},
+    {key:'pay-mode',    name:'Payment Mode Report',     cat:'Finance',   period:'Jun 2026'},
+    {key:'discount',    name:'Discount Report',         cat:'Finance',   period:'Jun 2026'},
+  ];
 
-  c.innerHTML = kpis + charts + allReports;
+  function recordCount(key){
+    switch(key){
+      case 'daily-fee': return Math.min(feesList.length,12);
+      case 'monthly-fee': return Math.min(feesList.length,20);
+      case 'pending-fees': return pendingList.length;
+      case 'teacher-due': return tpayList.filter(t=>t.status!=='Paid').length;
+      case 'income': return incomeList.length;
+      case 'expense': return expenseList.length;
+      case 'pnl': return 1;
+      case 'stu-att': return studentsList.length;
+      case 'batch-att': return batchesList.filter(b=>b.status!=='Upcoming').length;
+      case 'admissions': return Math.min(studentsList.length,31);
+      case 'enquiry-conv': return enquiriesList.length;
+      case 'course-rev': return coursesList.length;
+      case 'batch-rev': return batchesList.length;
+      case 'pay-mode': return 5;
+      case 'discount': return feesList.filter(f=>f.discount>0).length;
+      default: return 0;
+    }
+  }
+
+  function computeCourseRevenue(){
+    return coursesList.map(cr=>{
+      const studs = studentsList.filter(s=>s.course===cr.name && s.status==='Active').length;
+      return { label: cr.name, value: studs * (cr.monthly||0) };
+    }).filter(r=>r.label && r.value>0).sort((a,b)=>b.value-a.value);
+  }
+
+  function computeTeacherPayout(){
+    const byTeacher = {};
+    tpayList.forEach(t=>{
+      const key = normName(t.teacher);
+      if(!key) return;
+      if(!byTeacher[key]) byTeacher[key] = { label: t.teacher, value: 0 };
+      byTeacher[key].value += (t.paid||0);
+    });
+    return Object.values(byTeacher).sort((a,b)=>b.value-a.value);
+  }
+
+  function renderPage(){
+    // collectionTrend / incomeExpense / admissionSource have no live endpoint yet
+    // (they need multi-month history + an admission-source column) so they still
+    // read from DB.charts on purpose — this is a known gap, not a silent fallback.
+    const ch = {
+      collectionTrend: DB.charts.collectionTrend,
+      incomeExpense: DB.charts.incomeExpense,
+      admissionSource: DB.charts.admissionSource,
+      courseRevenue: computeCourseRevenue(),
+      teacherPayout: computeTeacherPayout()
+    };
+
+    /* ───────── KPI strip (computed live from fetched data) ───────── */
+    const totalCollection = feesList.reduce((a,f)=>a+(f.paid||0),0);
+    const outstanding = pendingList.reduce((a,p)=>a+(p.due||0),0);
+    const netProfit = incomeList.reduce((a,x)=>a+(x.amount||0),0) - expenseList.reduce((a,x)=>a+(x.amount||0),0);
+    const newAdmissions = studentsList.filter(s=>(s.admission||'').startsWith('2026-06')).length;
+
+    const kpis=`
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi"><div class="top"><span class="label">Total Collection (Jun)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(totalCollection)}</div><span class="delta up">${App.svg('up')}10.6% MoM</span></div>
+        <div class="kpi"><div class="top"><span class="label">Outstanding Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(outstanding)}</div><span class="delta down">${App.svg('down')}6% vs last month</span></div>
+        <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('trending')}</span></div><div class="val">${App.money(netProfit)}</div><span class="delta up">${App.svg('up')}12% MoM</span></div>
+        <div class="kpi"><div class="top"><span class="label">New Admissions</span><span class="ic b-blue">${App.svg('admit')}</span></div><div class="val">${newAdmissions}</div><span class="delta up">${App.svg('up')}+2 vs last month</span></div>
+      </div>`;
+
+    /* ───────── Charts (Course-wise Revenue & Teacher-wise Payout are live) ───────── */
+    const charts=`
+      <div class="grid-2 mb16">
+        <div class="card"><div class="card-head"><div><h3>Monthly Fee Collection</h3><div class="sub">₹ in '000</div></div><button class="btn btn-light btn-sm" onclick="App.toast('Exported','ok')">${App.svg('download')}Export</button></div><div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison, ₹ in '000</div></div></div><div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
+      </div>
+      <div class="grid-3 mb16">
+        <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
+        <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(ch.teacherPayout.slice(0,6),App.money)}</div></div>
+        <div class="card"><div class="card-head"><h3>Admission Sources</h3></div><div class="card-body">${App.donut(ch.admissionSource)}</div></div>
+      </div>`;
+
+    /* ───────── All Reports table ───────── */
+    const allReports=`
+      <div class="card">
+        <div class="card-head">
+          <div><h3>All Reports</h3><div class="sub">Click View to open the report with live data</div></div>
+          <div class="seg" id="catSeg">
+            <button class="active" onclick="filterCat(this,'')">All</button>
+            <button onclick="filterCat(this,'Finance')">Finance</button>
+            <button onclick="filterCat(this,'Academic')">Academic</button>
+            <button onclick="filterCat(this,'Marketing')">Marketing</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl" id="rptTbl">
+            <thead><tr>
+              <th>Report</th><th>Category</th><th>Period</th><th class="num">Records</th>
+              <th>Last Generated</th><th style="text-align:right">Action</th>
+            </tr></thead>
+            <tbody>${REPORTS.map(r=>`<tr data-cat="${r.cat}">
+              <td class="t-main">${r.name}</td>
+              <td><span class="badge ${catClass[r.cat]||'b-slate'}"><span class="pip"></span>${r.cat}</span></td>
+              <td>${r.period}</td>
+              <td class="num">${recordCount(r.key)}</td>
+              <td class="t-sub" data-lastgen="${r.key}">${reportLogs[r.key] || 'Not yet generated'}</td>
+              <td style="text-align:right">
+                <div class="act" style="justify-content:flex-end">
+                  ${App.actBtn('eye','View Report',`onclick="viewReport('${r.key}','${r.name}','${r.period}')"`)}
+                  ${App.actBtn('download','Download',`onclick="reportAction('${r.key}','${r.name}','export')"`)}
+                  ${App.actBtn('print','Print',`onclick="reportAction('${r.key}','${r.name}','print')"`)}
+                </div>
+              </td>
+            </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    c.innerHTML = kpis + charts + allReports;
+  }
 
   /* ───────── Category filter ───────── */
   window.filterCat=function(btn, cat){
@@ -109,12 +213,17 @@ if(App.guard()){
     });
   };
 
+  window.reportAction=function(key, name, action){
+    App.toast(action==='export' ? `${name} downloaded` : 'Sent to printer', 'ok');
+    logReport(key, name, action);
+  };
+
   /* ───────── Helpers ───────── */
   const th=(...cols)=>`<thead><tr>${cols.map(c=>typeof c==='object'?`<th class="${c.cls||''}">${c.label}</th>`:`<th>${c}</th>`).join('')}</tr></thead>`;
   const tblWrap=html=>`<div class="tbl-wrap"><table class="tbl">${html}</table></div>`;
   const sumBar=(label,val,cls='')=>`<div class="pl-line ${cls}"><span>${label}</span><span class="v">${App.money(val)}</span></div>`;
 
-  /* ───────── Report modal bodies ───────── */
+  /* ───────── Report modal bodies (sourced from live *List arrays) ───────── */
   function buildBody(key, period){
     switch(key){
 
@@ -123,7 +232,7 @@ if(App.guard()){
         return tblWrap(
           th('Receipt #','Student','Batch','Fee Type',{label:'Due',cls:'num'},{label:'Paid',cls:'num'},
              {label:'Disc',cls:'num'},'Mode','Collected By','Time')+
-          `<tbody>${DB.fees.slice(0,12).map(f=>`<tr>
+          `<tbody>${feesList.slice(0,12).map(f=>`<tr>
             <td class="t-id">${f.id}</td>
             <td class="t-main">${f.student}</td>
             <td>${f.batch}</td>
@@ -133,7 +242,7 @@ if(App.guard()){
             <td class="num">${f.discount?App.money(f.discount):'—'}</td>
             <td>${App.badge(f.mode==='Cash'?'Cash':f.mode)}</td>
             <td>${f.collectedBy}</td>
-            <td class="t-sub">09:${String(10+DB.fees.indexOf(f)).padStart(2,'0')} AM</td>
+            <td class="t-sub">09:${String(10+feesList.indexOf(f)).padStart(2,'0')} AM</td>
           </tr>`).join('')}</tbody>`
         );
 
@@ -142,7 +251,7 @@ if(App.guard()){
         return tblWrap(
           th('Student','Batch','Fee Type','Period',{label:'Due',cls:'num'},{label:'Paid',cls:'num'},
              {label:'Disc',cls:'num'},{label:'Balance',cls:'num'},'Mode','Status')+
-          `<tbody>${DB.fees.slice(0,20).map(f=>`<tr>
+          `<tbody>${feesList.slice(0,20).map(f=>`<tr>
             <td class="t-main">${f.student}</td>
             <td>${f.batch}</td>
             <td>${f.feeType}</td>
@@ -161,7 +270,7 @@ if(App.guard()){
         return tblWrap(
           th('Student','Parent Mobile','Batch','Fee Type','Period',{label:'Due',cls:'num'},
              'Due Date','Days Overdue','Follow-up','Promise Date')+
-          `<tbody>${DB.pending.map(p=>`<tr>
+          `<tbody>${pendingList.map(p=>`<tr>
             <td class="t-main">${p.student}</td>
             <td class="num">${p.parentMobile}</td>
             <td>${p.batch}</td>
@@ -181,7 +290,7 @@ if(App.guard()){
           th('Teacher','Pay Type',{label:'Gross',cls:'num'},{label:'Deductions',cls:'num'},
              {label:'Advance',cls:'num'},{label:'Net Payable',cls:'num'},
              {label:'Paid',cls:'num'},{label:'Balance',cls:'num'},'Status')+
-          `<tbody>${DB.tpayments.filter(t=>t.status!=='Paid').map(t=>`<tr>
+          `<tbody>${tpayList.filter(t=>t.status!=='Paid').map(t=>`<tr>
             <td>${App.whoCell(t.teacher)}</td>
             <td><span style="font-size:12px;color:var(--ink-3)">${t.payType}</span></td>
             <td class="num">${App.money(t.gross)}</td>
@@ -196,10 +305,10 @@ if(App.guard()){
 
       /* ── 5. Income Report ── */
       case 'income': {
-        const total=DB.income.reduce((a,x)=>a+x.amount,0);
+        const total=incomeList.reduce((a,x)=>a+x.amount,0);
         return tblWrap(
           th('ID','Date','Category','Description','Mode',{label:'Amount',cls:'num'})+
-          `<tbody>${DB.income.map(x=>`<tr>
+          `<tbody>${incomeList.map(x=>`<tr>
             <td class="t-id">${x.id}</td>
             <td>${x.date}</td>
             <td><span class="badge b-green"><span class="pip"></span>${x.category}</span></td>
@@ -216,10 +325,10 @@ if(App.guard()){
 
       /* ── 6. Expense Report ── */
       case 'expense': {
-        const total=DB.expense.reduce((a,x)=>a+x.amount,0);
+        const total=expenseList.reduce((a,x)=>a+x.amount,0);
         return tblWrap(
           th('ID','Date','Category','Description','Vendor','Mode',{label:'Amount',cls:'num'})+
-          `<tbody>${DB.expense.map(x=>`<tr>
+          `<tbody>${expenseList.map(x=>`<tr>
             <td class="t-id">${x.id}</td>
             <td>${x.date}</td>
             <td><span class="badge b-red"><span class="pip"></span>${x.category}</span></td>
@@ -237,22 +346,17 @@ if(App.guard()){
 
       /* ── 7. Profit & Loss ── */
       case 'pnl': {
-        const inc=DB.income.reduce((a,x)=>a+x.amount,0);
-        const exp=DB.expense.reduce((a,x)=>a+x.amount,0);
-        const tcPaid=DB.tpayments.reduce((a,t)=>a+t.paid,0);
+        const inc=incomeList.reduce((a,x)=>a+x.amount,0);
+        const exp=expenseList.reduce((a,x)=>a+x.amount,0);
+        const tcPaid=tpayList.reduce((a,t)=>a+t.paid,0);
         const rent=78000, elec=18000, internet=4800, staff=96000, mktg=32000, misc=22000;
-        const totalExp=exp;
-        const net=inc-totalExp;
+        const net=inc-exp;
         return `
           <div style="max-width:560px;margin:0 auto">
             <div style="padding:14px 0;border-bottom:2px solid var(--line);margin-bottom:16px">
               <div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:700;margin-bottom:10px">Income</div>
-              ${sumBar('Monthly Fees Collected',842500,'plus')}
-              ${sumBar('Admission Fees',27000,'plus')}
-              ${sumBar('Study Material Sales',18500,'plus')}
-              ${sumBar('Test Series Fees',31000,'plus')}
-              ${sumBar('Other Income',49000,'plus')}
-              <div class="pl-line" style="background:var(--brand-soft);font-weight:700"><span>Gross Income</span><span class="v">${App.money(968000)}</span></div>
+              ${sumBar('Total Income (recorded)',inc,'plus')}
+              <div class="pl-line" style="background:var(--brand-soft);font-weight:700"><span>Gross Income</span><span class="v">${App.money(inc)}</span></div>
             </div>
             <div style="padding:14px 0;border-bottom:2px solid var(--line);margin-bottom:16px">
               <div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:700;margin-bottom:10px">Expenses</div>
@@ -262,12 +366,12 @@ if(App.guard()){
               ${sumBar('Electricity & Utilities',elec+internet,'minus')}
               ${sumBar('Marketing',mktg,'minus')}
               ${sumBar('Miscellaneous',misc,'minus')}
-              <div class="pl-line" style="background:var(--red-soft);font-weight:700"><span>Total Expenses</span><span class="v" style="color:var(--red)">${App.money(612000)}</span></div>
+              <div class="pl-line" style="background:var(--red-soft);font-weight:700"><span>Total Expenses (recorded)</span><span class="v" style="color:var(--red)">${App.money(exp)}</span></div>
             </div>
             <div class="pl-line total" style="font-size:16px">
-              <span>Net Profit (Jun 2026)</span><span class="v">${App.money(356000)}</span>
+              <span>Net Profit (${period})</span><span class="v">${App.money(net)}</span>
             </div>
-            <div style="text-align:center;margin-top:12px;color:var(--ink-3);font-size:12.5px">Profit Margin: <b style="color:var(--brand)">36.8%</b></div>
+            <div style="text-align:center;margin-top:12px;color:var(--ink-3);font-size:12.5px">Profit Margin: <b style="color:var(--brand)">${inc?Math.round(net/inc*1000)/10:0}%</b></div>
           </div>`;
       }
 
@@ -277,7 +381,7 @@ if(App.guard()){
           th('Student ID','Student','Batch','Course',
              {label:'Present',cls:'num'},{label:'Absent',cls:'num'},{label:'Late',cls:'num'},
              {label:'Att %',cls:'num'},'Status')+
-          `<tbody>${DB.students.map(s=>{
+          `<tbody>${studentsList.map(s=>{
             const tot=24, pct=s.att;
             const pres=Math.round(tot*pct/100), abs=tot-pres-Math.floor(Math.random()*2);
             const late=tot-pres-abs;
@@ -303,7 +407,7 @@ if(App.guard()){
           th('Batch','Course','Subject','Teacher','Total Students',
              {label:'Classes (Jun)',cls:'num'},{label:'Avg Present',cls:'num'},
              {label:'Att %',cls:'num'},'Type')+
-          `<tbody>${DB.batches.filter(b=>b.status!=='Upcoming').map(b=>{
+          `<tbody>${batchesList.filter(b=>b.status!=='Upcoming').map(b=>{
             const classes=20, pct=70+Math.floor(Math.random()*25);
             return `<tr>
               <td class="t-main">${b.name}</td>
@@ -324,7 +428,7 @@ if(App.guard()){
         return tblWrap(
           th('Student ID','Student','Class','Course','Batch',
              'Fee Type',{label:'Fee Amt',cls:'num'},'Source','Admission Date','Status')+
-          `<tbody>${DB.students.slice(0,31).map(s=>`<tr>
+          `<tbody>${studentsList.slice(0,31).map(s=>`<tr>
             <td class="t-id">${s.id}</td>
             <td>${App.whoCell(s.name,s.cls)}</td>
             <td>${s.cls}</td>
@@ -332,7 +436,7 @@ if(App.guard()){
             <td>${s.batch}</td>
             <td>${s.feeType}</td>
             <td class="num">${App.money(s.feeAmt)}</td>
-            <td><span class="chip">${DB.sources[DB.students.indexOf(s)%DB.sources.length]}</span></td>
+            <td><span class="chip">${DB.sources[studentsList.indexOf(s)%DB.sources.length]}</span></td>
             <td>${s.admission}</td>
             <td>${App.badge(s.status)}</td>
           </tr>`).join('')}</tbody>`
@@ -342,7 +446,7 @@ if(App.guard()){
       case 'enquiry-conv':
         return tblWrap(
           th('Enq ID','Student Name','Class','Course Interested','Source','Date','Counselor','Status')+
-          `<tbody>${DB.enquiries.map(e=>`<tr>
+          `<tbody>${enquiriesList.map(e=>`<tr>
             <td class="t-id">${e.id}</td>
             <td class="t-main">${e.name}</td>
             <td>${e.cls}</td>
@@ -360,8 +464,8 @@ if(App.guard()){
           th('Course','Category','Level',{label:'Monthly Fee',cls:'num'},
              {label:'Active Students',cls:'num'},{label:'Monthly Revenue',cls:'num'},
              {label:'Annual Rev (Est.)',cls:'num'},'Status')+
-          `<tbody>${DB.courses.map(cr=>{
-            const studs=DB.students.filter(s=>s.course===cr.name&&s.status==='Active').length;
+          `<tbody>${coursesList.map(cr=>{
+            const studs=studentsList.filter(s=>s.course===cr.name&&s.status==='Active').length;
             const mrev=studs*cr.monthly;
             return `<tr>
               <td class="t-main">${cr.name}</td>
@@ -382,8 +486,8 @@ if(App.guard()){
           th('Batch','Course','Teacher',{label:'Students',cls:'num'},
              'Dominant Fee Type',{label:'Avg Fee',cls:'num'},
              {label:'Monthly Revenue',cls:'num'},'Status')+
-          `<tbody>${DB.batches.map(b=>{
-            const cr=DB.courses.find(c=>c.name===b.course)||{monthly:1800};
+          `<tbody>${batchesList.map(b=>{
+            const cr=coursesList.find(c=>c.name===b.course)||{monthly:1800};
             const rev=b.cur*cr.monthly;
             return `<tr>
               <td class="t-main">${b.name}</td>
@@ -401,9 +505,9 @@ if(App.guard()){
       /* ── 14. Payment Mode Report ── */
       case 'pay-mode': {
         const modes=['Cash','UPI','Bank Transfer','Card','Cheque'];
-        const totFees=DB.fees.reduce((a,f)=>a+f.paid,0);
+        const totFees=feesList.reduce((a,f)=>a+f.paid,0) || 1;
         const modeData=modes.map(m=>{
-          const txns=DB.fees.filter(f=>f.mode===m);
+          const txns=feesList.filter(f=>f.mode===m);
           const amt=txns.reduce((a,f)=>a+f.paid,0);
           return {mode:m, count:txns.length, amt, avg:txns.length?Math.round(amt/txns.length):0, pct:Math.round(amt/totFees*100)};
         });
@@ -420,7 +524,7 @@ if(App.guard()){
           </tr>`).join('')}
           <tr style="background:var(--brand-tint)">
             <td style="font-weight:700">Total</td>
-            <td class="num" style="font-weight:700">${DB.fees.length}</td>
+            <td class="num" style="font-weight:700">${feesList.length}</td>
             <td class="num" style="font-weight:700;color:var(--brand-700)">${App.money(totFees)}</td>
             <td colspan="3"></td>
           </tr></tbody>`
@@ -429,7 +533,7 @@ if(App.guard()){
 
       /* ── 15. Discount Report ── */
       case 'discount': {
-        const discFees=DB.fees.filter(f=>f.discount>0);
+        const discFees=feesList.filter(f=>f.discount>0);
         const totalDisc=discFees.reduce((a,f)=>a+f.discount,0);
         return tblWrap(
           th('Receipt #','Student','Batch','Fee Type',
@@ -445,7 +549,7 @@ if(App.guard()){
             <td class="num">${Math.round(f.discount/f.due*100)}%</td>
             <td>${f.mode}</td>
             <td>${f.date}</td>
-            <td class="t-sub">${['Sibling discount','Merit scholarship','Staff concession','Early payment','Need-based'][DB.fees.indexOf(f)%5]}</td>
+            <td class="t-sub">${['Sibling discount','Merit scholarship','Staff concession','Early payment','Need-based'][feesList.indexOf(f)%5]}</td>
           </tr>`).join('')}
           <tr style="background:var(--amber-soft)">
             <td colspan="4" style="font-weight:700;text-align:right;color:var(--ink)">Total Discount Given</td>
@@ -467,18 +571,25 @@ if(App.guard()){
     const isFullWidth=['stu-att','monthly-fee','admissions','enquiry-conv','course-rev','batch-rev','pay-mode','discount','batch-att'].includes(key);
     App.modal({
       title: name,
-      sub: `Period: ${period} · Generated 07 Jun 2026, 09:14 AM`,
+      sub: `Period: ${period} · Generated ${reportLogs[key] || 'just now'}`,
       size: isFullWidth ? 'xl' : 'lg',
       body,
       foot: `
         <span style="color:var(--ink-3);font-size:12.5px">BrightPath Coaching Centre</span>
         <div style="display:flex;gap:9px">
-          <button class="btn btn-light" onclick="App.toast('${name} exported (PDF)','ok')">${App.svg('download')}Export PDF</button>
-          <button class="btn btn-light" onclick="App.toast('Sent to printer','ok')">${App.svg('print')}Print</button>
+          <button class="btn btn-light" onclick="reportAction('${key}','${name}','export')">${App.svg('download')}Export PDF</button>
+          <button class="btn btn-light" onclick="reportAction('${key}','${name}','print')">${App.svg('print')}Print</button>
           <button class="btn btn-primary" data-close>Close</button>
         </div>`
     });
+    logReport(key, name, 'view');
   };
+
+  (async function init(){
+    c.innerHTML = `<div class="empty"><div class="ic">${App.svg('reports')}</div><h4>Loading reports…</h4></div>`;
+    await loadAllData();
+    renderPage();
+  })();
 }
 </script>
 </body></html>
