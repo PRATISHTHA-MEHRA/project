@@ -9,95 +9,212 @@
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
+<script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
 if(App.guard()){
+
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    if (Array.isArray(payload?.result)) return payload.result;
+    return [];
+  }
+  const normName = s => String(s || '').trim().toLowerCase();
+
+  let feesList=DB.fees, pendingList=DB.pending, tpayList=DB.tpayments,
+      incomeList=DB.income, expenseList=DB.expense, studentsList=DB.students,
+      batchesList=DB.batches, coursesList=DB.courses, enquiriesList=DB.enquiries,
+      totalTeachers=DB.dash.totalTeachers, todayClasses=DB.today,
+      attendancePct=DB.dash.attendancePct, newAdmissionsThisMonth=null;
+
+  async function loadDashboard(){
+    try{
+      const res = await API.get('/dashboard/summary');
+      const d = res?.data ?? res;
+
+      feesList     = unwrapList(d.fees).length ? unwrapList(d.fees) : DB.fees;
+      pendingList  = unwrapList(d.pendingFees).length ? unwrapList(d.pendingFees) : DB.pending;
+      tpayList     = unwrapList(d.teacherPayments).length ? unwrapList(d.teacherPayments) : DB.tpayments;
+      studentsList = unwrapList(d.students).length ? unwrapList(d.students) : DB.students;
+      batchesList  = unwrapList(d.batches).length ? unwrapList(d.batches) : DB.batches;
+      coursesList  = unwrapList(d.courses).length ? unwrapList(d.courses) : DB.courses;
+      enquiriesList= unwrapList(d.enquiries).length ? unwrapList(d.enquiries) : DB.enquiries;
+      incomeList   = unwrapList(d.income).length ? unwrapList(d.income) : DB.income;
+      expenseList  = unwrapList(d.expense).length ? unwrapList(d.expense) : DB.expense;
+      totalTeachers= d.totalTeachers || DB.dash.totalTeachers;
+      // Timetable.getMasterSchedules() live now — falls back to DB.today only if empty
+      todayClasses = (d.todayClasses && d.todayClasses.length) ? d.todayClasses : DB.today;
+      // Attendance.getDailyKPIs() live now — falls back to sample pct only if null
+      attendancePct = (d.attendancePct !== null && d.attendancePct !== undefined) ? d.attendancePct : DB.dash.attendancePct;
+      // Admission.getAdmissionStats() live now
+      newAdmissionsThisMonth = (d.newAdmissionsThisMonth !== null && d.newAdmissionsThisMonth !== undefined) ? d.newAdmissionsThisMonth : null;
+    }catch(err){
+      console.warn('Falling back to sample data — /dashboard/summary failed:', err.message);
+    }
+  }
+
+  function computeCourseRevenue(){
+    const rows = coursesList.map(cr=>{
+      const studs = studentsList.filter(s=>s.course===cr.name && s.status==='Active').length;
+      return { label: cr.name, value: studs * (cr.monthly||0) };
+    }).filter(r=>r.label && r.value>0).sort((a,b)=>b.value-a.value);
+    return rows.length ? rows : DB.charts.courseRevenue;
+  }
+
+ function computeTeacherPayout(){
+  const byTeacher = {};
+  tpayList.forEach(t=>{
+    const key = normName(t.teacher);
+    if(!key) return;
+    if(!byTeacher[key]) byTeacher[key] = { label: t.teacher, value: 0 };
+    byTeacher[key].value += Number(t.paid) || 0;   // ← Number() added here
+  });
+  const rows = Object.values(byTeacher).sort((a,b)=>b.value-a.value);
+  return rows.length ? rows : DB.charts.teacherPayout;
+}
+
+  function computeBatchCount(){
+    const rows = batchesList
+      .filter(b=>b.name && (b.cur||0) > 0)
+      .map(b=>({ label: b.name, value: b.cur }))
+      .sort((a,b)=>b.value-a.value);
+    return rows.length ? rows : DB.charts.batchCount;
+  }
+    function computeAdmissionSource(){
+    const PALETTE = ['var(--brand)','var(--blue)','var(--violet)','var(--green)','var(--amber)','var(--red)','var(--yellow)','var(--slate)'];
+    const bySource = {};
+    enquiriesList.forEach(e=>{
+      const key = normName(e.source);
+      if(!key) return;
+      if(!bySource[key]) bySource[key] = { label: e.source, count: 0 };
+      bySource[key].count += 1;
+    });
+    const rows = Object.values(bySource).sort((a,b)=>b.count-a.count);
+    const total = rows.reduce((a,r)=>a+r.count,0) || 1;
+    return rows.map((r,i)=>({
+      label: r.label,
+      value: Math.round(r.count/total*100),
+      color: PALETTE[i % PALETTE.length]
+    }));
+  }
+
   const head = `<button class="btn btn-light" onclick="App.toast('Exported dashboard snapshot (PDF)','ok')">${App.svg('download')}Export</button>
     <button class="btn btn-primary" onclick="location.href='admissions.html'">${App.svg('plus')}New Admission</button>`;
   const c = App.layout('dashboard','Welcome back, Anand 👋',null,head);
-  const d = DB.dash, ch = DB.charts;
 
-  const kpis = [
-    {l:"Total Students",v:d.totalStudents,ic:"students",col:"b-brand",dl:"+9 this month",dir:"up"},
-    {l:"Active Students",v:d.activeStudents,ic:"check",col:"b-green",dl:`${Math.round(d.activeStudents/d.totalStudents*100)}% of total`,dir:"flat"},
-    {l:"New Admissions (Jun)",v:d.newAdmissions,ic:"admit",col:"b-blue",dl:"+2 vs last month",dir:"up"},
-    {l:"Total Teachers",v:d.totalTeachers,ic:"teacher",col:"b-violet",dl:"1 on leave",dir:"flat"},
-    {l:"Active Batches",v:d.activeBatches,ic:"batch",col:"b-brand",dl:"2 upcoming",dir:"up"},
-    {l:"Today's Classes",v:d.todayClasses,ic:"timetable",col:"b-amber",dl:"2 completed",dir:"flat"},
-    {l:"Monthly Collection",v:App.money(d.monthlyCollection),ic:"rupee",col:"b-green",dl:"+10.6% MoM",dir:"up"},
-    {l:"Pending Fees",v:App.money(d.pendingFees),ic:"pending",col:"b-red",dl:"24 students",dir:"down"},
-    {l:"Teacher Payments Due",v:App.money(d.teacherPaymentsDue),ic:"payment",col:"b-amber",dl:"4 pending",dir:"flat"},
-    {l:"Monthly Income",v:App.money(d.monthlyIncome),ic:"trending",col:"b-green",dl:"+8.9% MoM",dir:"up"},
-    {l:"Monthly Expenses",v:App.money(d.monthlyExpenses),ic:"money",col:"b-slate",dl:"+3.7% MoM",dir:"down"},
-    {l:"Net Profit",v:App.money(d.netProfit),ic:"trending",col:"b-brand",dl:"36.7% margin",dir:"up"},
-  ];
+  function renderPage(){
+    // NOTE: collectionTrend, admissionSource, pendingTrend need schema support
+    // (multi-month history, admission source column) — left on sample data
+   const liveAdmissionSource = computeAdmissionSource();
+const ch = {
+  ...DB.charts,
+  courseRevenue: computeCourseRevenue(),
+  teacherPayout: computeTeacherPayout(),
+  batchCount: computeBatchCount(),
+  admissionSource: liveAdmissionSource.length ? liveAdmissionSource : DB.charts.admissionSource
+};
+    const totalStudents = studentsList.length;
+    const activeStudents = studentsList.filter(s=>s.status==='Active').length;
+    const newAdmissions = newAdmissionsThisMonth !== null ? newAdmissionsThisMonth
+      : (studentsList.filter(s=>(s.admission||'').startsWith('2026-06')).length || DB.dash.newAdmissions);
+    const activeBatches = batchesList.filter(b=>b.status==='Active' || b.status!=='Upcoming').length;
+    const monthlyCollection = feesList.reduce((a,f)=>a+(Number(f.paid)||0),0);
+const pendingFeesTotal = pendingList.reduce((a,p)=>a+(Number(p.due)||0),0);
+const teacherPaymentsDue = tpayList.filter(t=>t.status!=='Paid').reduce((a,t)=>a+(Number(t.balance)||0),0);
+const monthlyIncome = incomeList.reduce((a,x)=>a+(Number(x.amount)||0),0);
+const monthlyExpenses = expenseList.reduce((a,x)=>a+(Number(x.amount)||0),0);
+    const netProfit = monthlyIncome - monthlyExpenses;
+    const pendingEnquiries = enquiriesList.filter(e=>e.status!=='Converted' && e.status!=='Closed').length;
 
-  c.innerHTML = `
-    <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
-      ${kpis.map(k=>`<div class="kpi">
-        <div class="top"><span class="label">${k.l}</span><span class="ic ${k.col}">${App.svg(k.ic)}</span></div>
-        <div class="val">${k.v}</div>
-      </div>`).join('')}
-    </div>
+    const kpis = [
+      {l:"Total Students",v:totalStudents,ic:"students",col:"b-brand"},
+      {l:"Active Students",v:activeStudents,ic:"check",col:"b-green"},
+      {l:"New Admissions (Jun)",v:newAdmissions,ic:"admit",col:"b-blue"},
+      {l:"Total Teachers",v:totalTeachers,ic:"teacher",col:"b-violet"},
+      {l:"Active Batches",v:activeBatches,ic:"batch",col:"b-brand"},
+      {l:"Today's Classes",v:todayClasses.length,ic:"timetable",col:"b-amber"},
+      {l:"Monthly Collection",v:App.money(monthlyCollection),ic:"rupee",col:"b-green"},
+      {l:"Pending Fees",v:App.money(pendingFeesTotal),ic:"pending",col:"b-red"},
+      {l:"Teacher Payments Due",v:App.money(teacherPaymentsDue),ic:"payment",col:"b-amber"},
+      {l:"Monthly Income",v:App.money(monthlyIncome),ic:"trending",col:"b-green"},
+      {l:"Monthly Expenses",v:App.money(monthlyExpenses),ic:"money",col:"b-slate"},
+      {l:"Net Profit",v:App.money(netProfit),ic:"trending",col:"b-brand"},
+    ];
 
-    <div class="grid-32 mb16">
-      <div class="card">
-        <div class="card-head"><div><h3>Monthly Collection Trend</h3><div class="sub">Fee collection over the last 6 months (₹ in '000)</div></div>
-          <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Collected</div></div></div>
-        <div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div>
+    c.innerHTML = `
+      <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
+        ${kpis.map(k=>`<div class="kpi">
+          <div class="top"><span class="label">${k.l}</span><span class="ic ${k.col}">${App.svg(k.ic)}</span></div>
+          <div class="val">${k.v}</div>
+        </div>`).join('')}
       </div>
-      <div class="card">
-        <div class="card-head"><div><h3>Admission Sources</h3><div class="sub">This academic year</div></div></div>
-        <div class="card-body">${App.donut(ch.admissionSource)}</div>
-      </div>
-    </div>
 
-    <div class="grid-2 mb16">
-      <div class="card">
-        <div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison (₹ in '000)</div></div>
-          <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Income</div><div class="lg"><span class="sw bar-amber"></span>Expense</div></div></div>
-        <div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div><h3>Pending Fees Trend</h3><div class="sub">Outstanding dues (₹ in '000)</div></div></div>
-        <div class="card-body">${App.barChart(ch.pendingTrend,{color:'bar-red'})}</div>
-      </div>
-    </div>
-
-    <div class="grid-3 mb16">
-      <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
-      <div class="card"><div class="card-head"><h3>Batch-wise Students</h3></div><div class="card-body">${App.hbars(ch.batchCount.slice(0,6),v=>v+' students')}</div></div>
-      <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(ch.teacherPayout.slice(0,6),App.money)}</div></div>
-    </div>
-
-    <div class="grid-32">
-      <div class="card">
-        <div class="card-head"><div><h3>Today's Classes</h3><div class="sub">${DB.today.length} scheduled · ${DB.today.filter(t=>t.status==='Completed').length} completed</div></div>
-          <a class="btn btn-light btn-sm" href="timetable.html">View timetable</a></div>
-        <div class="tbl-host" id="todayTbl"></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div><h3>Quick stats</h3></div></div>
-        <div class="card-body">
-          <div style="display:flex;flex-direction:column;gap:14px">
-            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Attendance Today</span><b class="num" style="font-size:18px">${d.attendancePct}%</b></div>
-            <div class="progress"><span style="width:${d.attendancePct}%"></span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Pending Enquiries</span><b class="num" style="font-size:18px">${d.pendingEnquiries}</b></div>
-            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Fee Collection Rate</span><b class="num" style="font-size:18px">82%</b></div>
-            <div class="progress"><span style="width:82%"></span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Demo Conversion</span><b class="num" style="font-size:18px">61%</b></div>
-            <div class="progress warn"><span style="width:61%"></span></div>
-          </div>
+      <div class="grid-32 mb16">
+        <div class="card">
+          <div class="card-head"><div><h3>Monthly Collection Trend</h3><div class="sub">Fee collection over the last 6 months (₹ in '000)</div></div>
+            <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Collected</div></div></div>
+          <div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div><h3>Admission Sources</h3><div class="sub">This academic year</div></div></div>
+          <div class="card-body">${App.donut(ch.admissionSource)}</div>
         </div>
       </div>
-    </div>`;
 
-  // today classes table
-  document.getElementById('todayTbl').innerHTML = `<div class="tbl-wrap"><table class="tbl">
-    <thead><tr><th>Batch</th><th>Subject</th><th>Teacher</th><th>Room</th><th>Time</th><th class="num">Students</th><th>Status</th></tr></thead>
-    <tbody>${DB.today.map(t=>`<tr>
-      <td class="t-main">${t.batch}</td><td>${t.subject}</td><td>${t.teacher}</td><td>${t.room}</td>
-      <td class="num">${t.st}</td><td class="num">${t.students}</td><td>${App.badge(t.status)}</td></tr>`).join('')}</tbody></table></div>`;
+      <div class="grid-2 mb16">
+        <div class="card">
+          <div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison (₹ in '000)</div></div>
+            <div class="legend"><div class="lg"><span class="sw bar-brand"></span>Income</div><div class="lg"><span class="sw bar-amber"></span>Expense</div></div></div>
+          <div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div><h3>Pending Fees Trend</h3><div class="sub">Outstanding dues (₹ in '000)</div></div></div>
+          <div class="card-body">${App.barChart(ch.pendingTrend,{color:'bar-red'})}</div>
+        </div>
+      </div>
+
+      <div class="grid-3 mb16">
+        <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
+        <div class="card"><div class="card-head"><h3>Batch-wise Students</h3></div><div class="card-body">${App.hbars(ch.batchCount.slice(0,6),v=>v+' students')}</div></div>
+        <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(ch.teacherPayout.slice(0,6),App.money)}</div></div>
+      </div>
+
+      <div class="grid-32">
+        <div class="card">
+          <div class="card-head"><div><h3>Today's Classes</h3><div class="sub">${todayClasses.length} scheduled · ${todayClasses.filter(t=>t.status==='Completed').length} completed</div></div>
+            <a class="btn btn-light btn-sm" href="timetable.html">View timetable</a></div>
+          <div class="tbl-host" id="todayTbl"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div><h3>Quick stats</h3></div></div>
+          <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Attendance Today</span><b class="num" style="font-size:18px">${attendancePct}%</b></div>
+              <div class="progress"><span style="width:${attendancePct}%"></span></div>
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Pending Enquiries</span><b class="num" style="font-size:18px">${pendingEnquiries}</b></div>
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Fee Collection Rate</span><b class="num" style="font-size:18px">82%</b></div>
+              <div class="progress"><span style="width:82%"></span></div>
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--ink-3)">Demo Conversion</span><b class="num" style="font-size:18px">61%</b></div>
+              <div class="progress warn"><span style="width:61%"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    document.getElementById('todayTbl').innerHTML = `<div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Batch</th><th>Subject</th><th>Teacher</th><th>Room</th><th>Time</th><th class="num">Students</th><th>Status</th></tr></thead>
+      <tbody>${todayClasses.map(t=>`<tr>
+        <td class="t-main">${t.batch}</td><td>${t.subject}</td><td>${t.teacher}</td><td>${t.room}</td>
+        <td class="num">${t.st}</td><td class="num">${t.students}</td><td>${App.badge(t.status)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  (async function init(){
+    renderPage();
+    await loadDashboard();
+    renderPage();
+  })();
 }
 </script>
 </body></html>

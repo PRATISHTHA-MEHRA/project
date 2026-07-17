@@ -125,6 +125,24 @@ if(App.guard()){
     });
     return Object.values(byTeacher).sort((a,b)=>b.value-a.value);
   }
+ 
+  function computeAdmissionSource(){
+    const PALETTE = ['var(--brand)','var(--blue)','var(--violet)','var(--green)','var(--amber)','var(--red)','var(--yellow)','var(--slate)'];
+    const bySource = {};
+    enquiriesList.forEach(e=>{
+      const key = normName(e.source);
+      if(!key) return;
+      if(!bySource[key]) bySource[key] = { label: e.source, count: 0 };
+      bySource[key].count += 1;
+    });
+    const rows = Object.values(bySource).sort((a,b)=>b.count-a.count);
+    const total = rows.reduce((a,r)=>a+r.count,0) || 1;
+    return rows.map((r,i)=>({
+      label: r.label,
+      value: Math.round(r.count/total*100),
+      color: PALETTE[i % PALETTE.length]
+    }));
+  }
 
   function renderPage(){
     // collectionTrend / incomeExpense / admissionSource have no live endpoint yet
@@ -133,7 +151,7 @@ if(App.guard()){
     const ch = {
       collectionTrend: DB.charts.collectionTrend,
       incomeExpense: DB.charts.incomeExpense,
-      admissionSource: DB.charts.admissionSource,
+      admissionSource: computeAdmissionSource(),
       courseRevenue: computeCourseRevenue(),
       teacherPayout: computeTeacherPayout()
     };

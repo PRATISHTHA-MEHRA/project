@@ -1,5 +1,3 @@
-const Report = require("../models/reportModel");
-
 const Fee = require("../models/feeModel");
 const PendingFee = require("../models/pendingfeeModel");
 const TeacherPayment = require("../models/teacherPaymentModel");
@@ -9,30 +7,18 @@ const Course = require("../models/courseModel");
 const Enquiry = require("../models/enquiryModel");
 const Income = require("../models/incomeExpenseModel");
 const Expense = require("../models/incomeExpenseModel");
+const Teacher = require("../models/teacherModel");
+const Timetable = require("../models/timetableModel");
+const Attendance = require("../models/attendanceModel");
+const Admission = require("../models/admissionModel");
+
 
 const toNum = v => (v === null || v === undefined || v === '') ? 0 : Number(v);
 
-exports.getLogs = async (req, res) => {
+exports.getSummary = async (req, res) => {
   try {
-    const data = await Report.getLatestLogs();
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
+    const today = new Date().toISOString().slice(0, 10);
 
-exports.logGeneration = async (req, res) => {
-  try {
-    const { name, action } = req.body;
-    const data = await Report.logGeneration(req.params.key, name, action);
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-exports.getDashboard = async (req, res) => {
-  try {
     const results = await Promise.allSettled([
       Fee.getAllReceipts(),
       PendingFee.getPendingFeesList(),
@@ -43,12 +29,16 @@ exports.getDashboard = async (req, res) => {
       Enquiry.getAll(),
       Income.getIncomeList(),
       Expense.getExpenseList(),
-      Report.getLatestLogs()
+      Teacher.getAll(),
+      Timetable.getMasterSchedules(),
+      Attendance.getDailyKPIs(today),
+      Admission.getAdmissionStats()
     ]);
 
     const [
       rawFees, rawPendingFees, rawTeacherPayments, rawStudents,
-      rawBatches, rawCourses, rawEnquiries, rawIncome, rawExpense, reportLogs
+      rawBatches, rawCourses, rawEnquiries, rawIncome, rawExpense,
+      teachers, rawSchedule, attendanceKpis, admissionStats
     ] = results.map(r => r.status === 'fulfilled' ? r.value : []);
 
     results.forEach((r, i) => {
@@ -77,17 +67,10 @@ exports.getDashboard = async (req, res) => {
 
     const courses = (rawCourses || []).map(c => ({
       name: c.course_name,
-      code: c.course_code,
       category: c.category,
       level: c.level,
-      subject: c.subject,
-      duration: c.duration,
       monthly: toNum(c.monthly_fee),
-      quarterly: toNum(c.quarterly_fee),
-      semiAnnual: toNum(c.semi_annual_fee),
-      annual: toNum(c.annual_fee),
-      status: c.status,
-      description: c.description
+      status: c.status
     }));
 
     const students = (rawStudents || []).map(s => {
@@ -96,22 +79,10 @@ exports.getDashboard = async (req, res) => {
       return {
         id: s.student_code || s.id,
         name: s.student_name,
-        cls: s.class_name,
         course: s.course_name,
         batch: s.batch_name,
-        feeType: s.fee_type,
-        feeAmt: toNum(s.fee_amount),
-        admission,
         status: s.status,
-        feeStatus: s.fee_status,
-        att: toNum(s.attendance),
-        gender: s.gender,
-        dob: s.dob,
-        mobile: s.mobile,
-        parentName: s.parent_name,
-        parentMobile: s.parent_mobile,
-        address: s.address,
-        schoolName: s.school_name
+        admission
       };
     });
 
@@ -121,20 +92,28 @@ exports.getDashboard = async (req, res) => {
 
     const enquiries = rawEnquiries || [];
 
-    const logsMap = {};
-    (reportLogs || []).forEach(l => { logsMap[l.report_key] = l.generated_at; });
+    const weekday = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+    const weekdayFull = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    let todayClasses = (rawSchedule || []).filter(cls => {
+      const days = String(cls.days || '').toLowerCase();
+      return days.includes(weekday.toLowerCase()) || days.includes(weekdayFull.toLowerCase());
+    });
+    if (!todayClasses.length) todayClasses = rawSchedule || [];
+    todayClasses = todayClasses.map(t => ({ ...t, students: toNum(t.students) }));
 
     res.json({
       success: true,
       data: {
         fees, pendingFees, teacherPayments, students,
         batches, courses, enquiries, income, expense,
-        reportLogs: logsMap
+        totalTeachers: (teachers || []).length,
+        todayClasses,
+        attendancePct: attendanceKpis?.overall_pct !== undefined ? toNum(attendanceKpis.overall_pct) : null,
+        newAdmissionsThisMonth: admissionStats?.month_count !== undefined ? toNum(admissionStats.month_count) : null,
+        avgAdmissionFee: admissionStats?.avg_fee !== undefined ? toNum(admissionStats.avg_fee) : null
       }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
-module.exports = exports;
