@@ -321,7 +321,7 @@
   <!-- ================= SIDEBAR ================= -->
   <aside class="sidebar">
     <div class="brand"><span class="dot"></span>BrightPath API</div>
-    <span class="brand-tag">v1.0</span>
+   
 
     <input type="text" id="sidebarSearch" placeholder="Filter by method, path, module…">
 
@@ -329,10 +329,6 @@
     <ul class="navlist">
       <li><a href="#auth">Auth</a></li>
       <li><a href="#demo">Demo</a></li>
-    </ul>
-
-    <div class="nav-group-label">Modules</div>
-    <ul class="navlist">
       <li><a href="#courses">Courses</a></li>
       <li><a href="#teachers">Teachers</a></li>
       <li><a href="#students">Students</a></li>
@@ -351,6 +347,8 @@
       <li><a href="#settings">Settings</a></li>
       <li><a href="#reports">Reports</a></li>
     </ul>
+
+
   </aside>
 
   <!-- ================= MAIN ================= -->
@@ -366,19 +364,13 @@
         <div class="rule-desc">
           Required for most endpoints in this doc. Send as an <code>Authorization: Bearer &lt;token&gt;</code>
           header. The token is a JWT, stored client-side in <code>localStorage</code> as <code>JWT_TOKEN</code>,
-          and identifies the signed-in admin user. Routes marked <span class="tag auth">Auth Required</span> below
-          use this.
+          and identifies the signed-in admin user. 
         </div>
       </div>
       <div class="auth-rule">
         <div class="rule-name">No Auth</div>
         <div class="rule-desc">
-          Routes with no <code>auth</code> middleware attached. Currently: <code>POST /api/auth/login</code>
-          (to obtain a token in the first place), <code>GET /api/timetable</code>, and every route in the
-          <strong>Homework</strong>, <strong>Settings</strong>, and <strong>Reports</strong> modules — none of
-          those three modules' routes have the <code>auth</code> middleware wired in, unlike every other module.
-          Worth double-checking that's intentional; marked <span class="tag none">No Auth</span> below either way,
-          since that's what the route files actually show.
+        Some endpoints support both authenticated and guest users.
         </div>
       </div>
       <div class="auth-rule">
@@ -1138,7 +1130,7 @@
         <div class="endpoint-body">
           <div class="endpoint-top">
             <span class="path">/api/homework</span>
-            <span class="tag none">Auth Required</span>
+            <span class="tag auth">Auth Required</span>
           </div>
           <p class="desc">Get the list of homework assignments.</p>
         </div>
@@ -1149,7 +1141,7 @@
         <div class="endpoint-body">
           <div class="endpoint-top">
             <span class="path">/api/homework</span>
-            <span class="tag none">No Auth</span>
+           <span class="tag auth">Auth Required</span>
           </div>
           <p class="desc">Assign new homework.</p>
         </div>
@@ -1160,7 +1152,7 @@
         <div class="endpoint-body">
           <div class="endpoint-top">
             <span class="path">/api/homework/:id</span>
-            <span class="tag none">No Auth</span>
+            <span class="tag auth">Auth Required</span>
           </div>
           <p class="desc">Edit an existing homework assignment.</p>
         </div>
@@ -1171,7 +1163,7 @@
         <div class="endpoint-body">
           <div class="endpoint-top">
             <span class="path">/api/homework/:id</span>
-            <span class="tag none">No Auth</span>
+            <span class="tag auth">Auth Required</span>
           </div>
           <p class="desc">Delete a homework assignment.</p>
         </div>
@@ -1187,14 +1179,14 @@
       <div class="endpoint">
         <div class="method GET">GET</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/profile</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/profile</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Get the centre's profile info.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method PUT">PUT</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/profile</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/profile</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Update the centre's profile info.</p>
         </div>
       </div>
@@ -1203,28 +1195,28 @@
       <div class="endpoint">
         <div class="method GET">GET</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/branches</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/branches</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Get the list of branches.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method POST">POST</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/branches</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/branches</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Add a new branch.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method PUT">PUT</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/branches/:id</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/branches/:id</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Update an existing branch.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method DELETE">DELETE</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/branches/:id</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/branches/:id</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Delete a branch.</p>
         </div>
       </div>
@@ -1233,28 +1225,28 @@
       <div class="endpoint">
         <div class="method GET">GET</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/classrooms</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/classrooms</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Get the list of classrooms.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method POST">POST</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/classrooms</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/classrooms</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Add a new classroom.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method PUT">PUT</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/classrooms/:id</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/classrooms/:id</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Update an existing classroom.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method DELETE">DELETE</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/classrooms/:id</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/classrooms/:id</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Delete a classroom.</p>
         </div>
       </div>
@@ -1263,14 +1255,14 @@
       <div class="endpoint">
         <div class="method GET">GET</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/fee-rules</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/fee-rules</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Get the fee reminder rules.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method PUT">PUT</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/fee-rules</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/fee-rules</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Update the fee reminder rules.</p>
         </div>
       </div>
@@ -1279,28 +1271,28 @@
       <div class="endpoint">
         <div class="method GET">GET</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/roles</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/roles</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Get the list of roles.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method POST">POST</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/roles</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/roles</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Add a new role.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method PUT">PUT</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/roles/:id</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/roles/:id</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Update an existing role.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method DELETE">DELETE</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/roles/:id</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/roles/:id</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Delete a role.</p>
         </div>
       </div>
@@ -1309,14 +1301,14 @@
       <div class="endpoint">
         <div class="method GET">GET</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/templates</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/templates</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Get the list of notification templates.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method PUT">PUT</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/templates/:key</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/templates/:key</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Update a notification template by key.</p>
         </div>
       </div>
@@ -1325,28 +1317,28 @@
       <div class="endpoint">
         <div class="method GET">GET</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/academic-year</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/academic-year</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Get the academic year config and holiday list.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method PUT">PUT</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/academic-year</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/academic-year</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Update the academic year config.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method POST">POST</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/academic-year/holidays</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/academic-year/holidays</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Add a holiday.</p>
         </div>
       </div>
       <div class="endpoint">
         <div class="method DELETE">DELETE</div>
         <div class="endpoint-body">
-          <div class="endpoint-top"><span class="path">/api/settings/academic-year/holidays/:id</span><span class="tag none">No Auth</span></div>
+          <div class="endpoint-top"><span class="path">/api/settings/academic-year/holidays/:id</span><span class="tag auth">Auth Required</span></div>
           <p class="desc">Delete a holiday.</p>
         </div>
       </div>
@@ -1362,7 +1354,7 @@
         <div class="endpoint-body">
           <div class="endpoint-top">
             <span class="path">/api/reports/dashboard</span>
-            <span class="tag none">No Auth</span>
+            <span class="tag auth">Auth Required</span>
           </div>
           <p class="desc">Get aggregated report data across modules for the reports dashboard.</p>
         </div>
@@ -1373,7 +1365,7 @@
         <div class="endpoint-body">
           <div class="endpoint-top">
             <span class="path">/api/reports/logs</span>
-            <span class="tag none">No Auth</span>
+           <span class="tag auth">Auth Required</span>
           </div>
           <p class="desc">Get the "last generated" log for each report.</p>
         </div>
@@ -1384,7 +1376,7 @@
         <div class="endpoint-body">
           <div class="endpoint-top">
             <span class="path">/api/reports/:key/log</span>
-            <span class="tag none">No Auth</span>
+            <span class="tag auth">Auth Required</span>
           </div>
           <p class="desc">Record that a specific report was generated (view/export/print/schedule).</p>
         </div>
