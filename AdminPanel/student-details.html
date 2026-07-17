@@ -9,58 +9,56 @@
 <body>
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
+<script src="assets/js/api.js"></script>
 <script>
 if(App.guard()){
-  const API_BASE = "http://localhost:5001/api/students";
+  const API_BASE = "/students";
   const requestedId = new URLSearchParams(location.search).get('id') || DB.students[0].id;
+  let usingFallback = false;
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const asNum = v => Number(v ?? 0) || 0;
-
-  function authHeaders(){
-    const token = localStorage.getItem('JWT_TOKEN') || '';
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }
-
-  async function apiRequest(path = ''){
-    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
-    const text = await res.text();
-    let data = null;
-    if (text) {
-      try { data = JSON.parse(text); }
-      catch (err) { data = { message: text }; }
-    }
-    if (!res.ok) throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
-    return data;
-  }
+  const toDateStr = v => {
+    if (!v) return '';
+    if (typeof v === 'string') return v.slice(0,10);
+    try { return new Date(v).toISOString().slice(0,10); } catch { return ''; }
+  };
 
   function unwrapOne(payload){
     return payload?.data?.student || payload?.data || payload?.student || payload;
   }
 
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    if (Array.isArray(payload?.result)) return payload.result;
+    return [];
+  }
+
   function mapStudent(item = {}){
     const id = item.id ?? item.student_id ?? item.student_code ?? '';
-    const course = item.course || '';
+    const course = item.course ?? item.course_name ?? '';
     const courseObj = (DB.courses || []).find(c => c.name === course || c.course_name === course);
     return {
       id: String(id),
-      name: item.name || item.student_name || 'Unnamed Student',
-      mobile: item.mobile || '',
-      parent: item.parent || item.parent_name || '',
-      parentMobile: item.parentMobile || item.parent_mobile || '',
-      cls: item.cls || item.class || item.standard || '',
+      name: item.name ?? item.student_name ?? 'Unnamed Student',
+      mobile: item.mobile ?? '',
+      parent: item.parent ?? item.parent_name ?? '',
+      parentMobile: item.parentMobile ?? item.parent_mobile ?? '',
+      cls: item.cls ?? item.class_name ?? item.standard ?? '',
       course,
-      batch: item.batch || '',
-      feeType: item.feeType || item.fee_type || 'Regular Fee',
+      batch: item.batch ?? item.batch_name ?? '',
+      feeType: item.feeType ?? item.fee_type ?? 'Regular Fee',
       feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
-      admission: item.admission || item.admission_date || '',
-      status: item.status || 'Active',
-      feeStatus: item.feeStatus || item.fee_status || 'Pending',
+      admission: toDateStr(item.admission ?? item.admission_date),
+      status: item.status ?? 'Active',
+      feeStatus: item.feeStatus ?? item.fee_status ?? 'Pending',
       att: asNum(item.att ?? item.attendance),
-      gender: item.gender || 'M',
-      dob: item.dob || '',
-      address: item.address || '',
-      school: item.school || ''
+      gender: item.gender ?? 'M',
+      dob: toDateStr(item.dob),
+      address: item.address ?? '',
+      school: item.school ?? item.school_name ?? ''
     };
   }
 
@@ -70,19 +68,69 @@ if(App.guard()){
 
   async function loadStudent(id){
     try {
-      return mapStudent(unwrapOne(await apiRequest(`/${encodeURIComponent(id)}`)));
+      const payload = await API.get(`${API_BASE}/${encodeURIComponent(id)}`);
+      usingFallback = false;
+      return mapStudent(unwrapOne(payload));
     } catch (err) {
       console.warn('Student API unavailable, showing local profile:', err);
       App.toast('Student API unavailable. Showing local profile.', 'info');
+      usingFallback = true;
       return fallbackStudent(id);
     }
   }
 
-  function render(s){
+  async function loadExtras(id){
+    if (usingFallback) return { fees: [], attendance: [], exams: [] };
+    const results = await Promise.allSettled([
+      API.get(`${API_BASE}/${encodeURIComponent(id)}/fees`),
+      API.get(`${API_BASE}/${encodeURIComponent(id)}/attendance`),
+      API.get(`${API_BASE}/${encodeURIComponent(id)}/exams`)
+    ]);
+    const unwrap = r => r.status === 'fulfilled' ? unwrapList(r.value) : [];
+    return {
+      fees: unwrap(results[0]),
+      attendance: unwrap(results[1]),
+      exams: unwrap(results[2])
+    };
+  }
+
+  function emptyRow(colspan, text){
+    return `<tr><td colspan="${colspan}" class="t-sub" style="text-align:center;padding:16px">${esc(text)}</td></tr>`;
+  }
+
+  function render(s, extras){
+    extras = extras || { fees: [], attendance: [], exams: [] };
+
     const head = `<button class="btn btn-light" onclick="App.toast('Statement downloaded','ok')">${App.svg('download')}Statement</button>
       <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
     const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,s.id],head);
     const initials = s.name.split(' ').map(w=>w[0]).join('');
+
+    // Derive KPIs from real data where we have it; fall back to a dash rather than a fake number.
+    const examRows = extras.exams;
+    const avgScorePct = examRows.length
+      ? Math.round(examRows.reduce((sum,e)=>{
+          const obtained = asNum(e.obtained ?? e.score);
+          const total = asNum(e.total) || 100;
+          return sum + (obtained/total*100);
+        },0) / examRows.length)
+      : null;
+
+    const feesPaidYtd = extras.fees.length
+      ? extras.fees.reduce((sum,f)=> sum + asNum(f.amount ?? f.paid), 0)
+      : null;
+
+    const ledgerRows = extras.fees.length
+      ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date) || '-')}</td></tr>`).join('')
+      : emptyRow(5, 'No payment records available yet.');
+
+    const examTableRows = examRows.length
+      ? examRows.map(e => `<tr><td>${esc(e.name ?? e.exam ?? '-')}</td><td class="num">${esc(e.obtained ?? e.score ?? '-')}/${esc(e.total ?? '-')}</td><td>${esc(e.grade ?? '-')}</td><td>${esc(e.remarks ?? '-')}</td></tr>`).join('')
+      : emptyRow(4, 'No performance records available yet.');
+
+    const attendanceRows = extras.attendance.length
+      ? extras.attendance.map(a => `<tr><td>${esc(toDateStr(a.date) || '-')}</td><td>${App.badge(esc(a.status ?? '-'))}</td><td>${esc(a.remarks ?? '-')}</td></tr>`).join('')
+      : emptyRow(3, 'No attendance records available yet.');
 
     c.innerHTML = `
       <div class="card mb16"><div class="card-body">
@@ -96,8 +144,8 @@ if(App.guard()){
 
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
         <div class="kpi"><div class="top"><span class="label">Attendance</span><span class="ic b-brand">${App.svg('attendance')}</span></div><div class="val">${s.att}%</div></div>
-        <div class="kpi"><div class="top"><span class="label">Avg Test Score</span><span class="ic b-blue">${App.svg('marks')}</span></div><div class="val">82%</div></div>
-        <div class="kpi"><div class="top"><span class="label">Fees Paid (YTD)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(s.feeAmt*3)}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Avg Test Score</span><span class="ic b-blue">${App.svg('marks')}</span></div><div class="val">${avgScorePct===null?'-':avgScorePct+'%'}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Fees Paid (YTD)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${feesPaidYtd===null?'-':App.money(feesPaidYtd)}</div></div>
         <div class="kpi"><div class="top"><span class="label">Pending Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${s.feeStatus==='Paid'?'Rs 0':App.money(s.feeAmt)}</div></div>
       </div>
 
@@ -124,19 +172,23 @@ if(App.guard()){
       <div class="grid-2 mb16">
         <div class="card"><div class="card-head"><h3>Payment Ledger</h3></div><div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Receipt</th><th>Period</th><th class="num">Amount</th><th>Mode</th><th>Date</th></tr></thead>
-          <tbody>${['Apr 2026','May 2026','Jun 2026'].map((p,i)=>`<tr><td class="t-id">RCP-240${10+i}</td><td>${p}</td><td class="num">${App.money(s.feeAmt)}</td><td>${['UPI','Cash','Bank Transfer'][i]}</td><td>0${4+i}-06-2026</td></tr>`).join('')}</tbody></table></div></div>
+          <tbody>${ledgerRows}</tbody></table></div></div>
         <div class="card"><div class="card-head"><h3>Test Performance</h3></div><div class="tbl-wrap"><table class="tbl">
           <thead><tr><th>Test</th><th class="num">Score</th><th>Grade</th><th>Remark</th></tr></thead>
-          <tbody>${[['Unit Test 3',82,'A','Consistent'],['Monthly Test',74,'B+','Improving'],['Weekly Quiz 5',91,'A+','Excellent'],['Mock Exam 1',68,'B','Revise']].map(t=>`<tr><td>${t[0]}</td><td class="num">${t[1]}/100</td><td><span class="badge b-blue"><span class="pip"></span>${t[2]}</span></td><td>${t[3]}</td></tr>`).join('')}</tbody></table></div></div>
+          <tbody>${examTableRows}</tbody></table></div></div>
       </div>
 
-      <div class="card"><div class="card-head"><h3>Teacher Remarks</h3></div><div class="card-body">
-        ${[['Rajesh Verma','Diligent student, strong in conceptual questions. Needs to improve speed in numerical sections.','2 days ago'],['Pooja Bansal','Active participation in class. Homework submitted on time consistently.','1 week ago']].map(r=>`
-          <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)">${App.avatar(r[0])}<div><b>${r[0]}</b> <span class="t-sub">- ${r[2]}</span><p style="margin:4px 0 0;color:var(--ink-2)">${r[1]}</p></div></div>`).join('')}
-      </div></div>`;
+      <div class="card mb16"><div class="card-head"><h3>Attendance Records</h3></div><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
+        <tbody>${attendanceRows}</tbody></table></div></div>`;
   }
 
-  loadStudent(requestedId).then(render).catch(err => App.toast(err.message || 'Failed to load student profile', 'err'));
+  loadStudent(requestedId)
+    .then(async s => {
+      const extras = await loadExtras(s.id);
+      render(s, extras);
+    })
+    .catch(err => App.toast(err.message || 'Failed to load student profile', 'err'));
 }
 </script>
 </body></html>
