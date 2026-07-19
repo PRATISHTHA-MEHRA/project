@@ -4,6 +4,10 @@ const router = express.Router();
 const studentController = require("../controllers/studentController");
 const auth = require("../middleware/authMiddleware");
 
+router.get("/:id/fees", studentController.getStudentFees);
+router.get("/:id/attendance", studentController.getStudentAttendance);
+router.get("/:id/exams", studentController.getStudentExams);
+
 // Get All Students
 router.get("/", auth, studentController.getStudents);
 
@@ -18,5 +22,7 @@ router.put("/:id", auth, studentController.updateStudent);
 
 // Delete Student
 router.delete("/:id", auth, studentController.deleteStudent);
+
+
 
 module.exports = router;

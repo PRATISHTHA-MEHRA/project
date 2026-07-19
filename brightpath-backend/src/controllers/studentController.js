@@ -1,5 +1,46 @@
 const Student = require("../models/studentModel");
 const db = require("../config/db"); // Needed to perform lookup queries
+const Fee = require("../models/feeModel");
+const Attendance = require("../models/attendanceModel");
+
+exports.getStudentFees = async (req, res) => {
+    try {
+        const student = await Student.getById(req.params.id);
+        console.log('DEBUG student:', student?.id, student?.student_code); // ← temp
+        if (!student) {
+            return res.status(404).json({ success: false, message: "Student not found" });
+        }
+        const fees = await Fee.getReceiptsByStudentId(req.params.id, student.student_code);
+        console.log('DEBUG fees found:', fees.length); // ← temp
+        res.status(200).json({ success: true, data: fees });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+
+exports.getStudentAttendance = async (req, res) => {
+    try {
+        const logs = await Attendance.getRecentLogsByStudent(req.params.id);
+        const mapped = logs.map(l => ({
+            date: l.attendance_date instanceof Date
+                ? l.attendance_date.toISOString().slice(0, 10)
+                : String(l.attendance_date).slice(0, 10),
+            batch: l.batch_name,
+            status: l.status
+        }));
+        res.status(200).json({ success: true, data: mapped });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+exports.getStudentExams = async (req, res) => {
+    // ⚠️ assessments_exams has no per-student link (no student_id, no
+    // obtained-marks column) — it only stores test definitions, not results.
+    // Returning [] until a student-level results table exists.
+    res.status(200).json({ success: true, data: [] });
+};
 
 
 const generateStudentCode = async () => {

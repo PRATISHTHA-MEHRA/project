@@ -20,6 +20,7 @@
         const ENDPOINT = "/teacher-payments";
         const MONTH = "May 2026"; 
         let paymentRows = [];
+        let teachersList = []; // [{id, name}] — comes from the same dashboard call, no extra request
 
         const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
         const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -85,6 +86,7 @@
 
             const metrics = res.metrics || {};
             paymentRows = res.payments || [];
+            teachersList = res.teachers || [];
 
             document.getElementById("totNet").innerHTML = App.money(metrics.totNet || 0);
             document.getElementById("totPaid").innerHTML = App.money(metrics.totPaid || 0);
@@ -365,6 +367,10 @@
         // ADD PAYMENT POST
         // ===============================
         window.addPay = function () {
+          const teacherOptions = teachersList.length
+            ? teachersList.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('')
+            : `<option value="" disabled>No active teachers found</option>`;
+
           App.modal({
             size: "lg",
             title: "Add Teacher Payment",
@@ -373,7 +379,10 @@
               <div class="form-grid">
                 <div>
                   <label>Teacher</label>
-                  <input id="teacherName">
+                  <select id="teacherName">
+                    <option value="">Select teacher…</option>
+                    ${teacherOptions}
+                  </select>
                 </div>
 
                 <div>
@@ -430,7 +439,7 @@
             onOpen: (box) => {
               box.querySelector("#addPayment").onclick = async () => {
                 const teacherName = box.querySelector("#teacherName").value.trim();
-                if (!teacherName) return App.toast("Enter teacher name", "err");
+                if (!teacherName) return App.toast("Select a teacher", "err");
 
                 try {
                   await API.post(`${ENDPOINT}/add`, {

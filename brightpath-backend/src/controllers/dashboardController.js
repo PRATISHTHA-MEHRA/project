@@ -98,7 +98,7 @@ exports.getSummary = async (req, res) => {
       const days = String(cls.days || '').toLowerCase();
       return days.includes(weekday.toLowerCase()) || days.includes(weekdayFull.toLowerCase());
     });
-    if (!todayClasses.length) todayClasses = rawSchedule || [];
+    
     todayClasses = todayClasses.map(t => ({ ...t, students: toNum(t.students) }));
 
     res.json({

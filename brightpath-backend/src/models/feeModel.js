@@ -66,9 +66,24 @@ const getAllReceipts = async () => {
     return result.rows;
 };
 
-// CRITICAL: This exact block must export all three methods explicitly
-module.exports = { 
-    getFinanceKPIs, 
-    getAllReceipts, 
-    saveCollectionReceipt 
+// models/feeModel.js
+const getReceiptsByStudentId = async (studentId, studentCode) => {
+    const query = `
+        SELECT 
+            id, student_name as student, student_id as "studentId", batch_name as batch,
+            fee_type as "feeType", period, due_amount::FLOAT as due,
+            discount::FLOAT as discount, fine::FLOAT as fine, paid_amount::FLOAT as paid,
+            payment_mode as mode, payment_date::TEXT as date, transaction_id as txn,
+            collected_by as "collectedBy", balance::FLOAT as balance, remarks
+        FROM fee_receipts
+        WHERE TRIM(LOWER(student_id)) = TRIM(LOWER($1)) 
+           OR TRIM(LOWER(student_id)) = TRIM(LOWER($2))
+        ORDER BY created_at DESC;
+    `;
+    const result = await db.query(query, [String(studentId), studentCode || '']);
+    return result.rows;
 };
+
+module.exports = { getFinanceKPIs, getAllReceipts, saveCollectionReceipt, getReceiptsByStudentId };
+
+module.exports = { getFinanceKPIs, getAllReceipts, saveCollectionReceipt, getReceiptsByStudentId };

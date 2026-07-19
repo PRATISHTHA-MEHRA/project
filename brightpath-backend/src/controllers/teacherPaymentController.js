@@ -1,10 +1,19 @@
 const TeacherPayment = require("../models/teacherPaymentModel");
+const Teacher = require("../models/teacherModel");
 
 exports.getPaymentDashboard = async (req, res) => {
     try {
         const targetMonth = req.query.month || "May 2026";
         const kpis = await TeacherPayment.getPaymentKPIs(targetMonth);
         const paymentsList = await TeacherPayment.getAllPayments();
+
+        // Fetched in the same request as everything else — no separate
+        // frontend call. Only Active teachers are offered for new payments;
+        // drop the status filter below if you want everyone listed.
+        const allTeachers = await Teacher.getAll();
+        const teacherOptions = allTeachers
+            .filter(t => t.status === "Active")
+            .map(t => ({ id: t.id, name: t.teacher_name }));
 
         res.status(200).json({
             success: true,
@@ -14,7 +23,8 @@ exports.getPaymentDashboard = async (req, res) => {
                 totBal: parseFloat(kpis.tot_bal || 0),
                 pendingTeachers: parseInt(kpis.pending_count || 0)
             },
-            payments: paymentsList
+            payments: paymentsList,
+            teachers: teacherOptions
         });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -32,7 +42,7 @@ exports.updatePaymentDetails = async (req, res) => {
         const totalPaidNow = parseFloat(paidAmount);
         const netPayable = parseFloat(original.net);
         const updatedBalance = netPayable - totalPaidNow;
-        
+
         let targetStatus = 'Partially Paid';
         if (updatedBalance <= 0) targetStatus = 'Paid';
         if (totalPaidNow === 0) targetStatus = 'Pending';
@@ -52,11 +62,19 @@ exports.updatePaymentDetails = async (req, res) => {
 exports.addNewVoucher = async (req, res) => {
     try {
         const { teacher, month, gross, paid, mode, date, voucher, txn, remarks } = req.body;
-        
+
+        // Server-side safety net: the frontend dropdown already restricts this
+        // to real teachers, but a request could bypass the UI, so re-check here.
+        const allTeachers = await Teacher.getAll();
+        const validTeacher = allTeachers.find(t => t.teacher_name === teacher);
+        if (!validTeacher) {
+            return res.status(400).json({ success: false, message: "Selected teacher was not found in Teacher records." });
+        }
+
         const grossAmt = parseFloat(gross || 0);
         const paidAmt = parseFloat(paid || 0);
         const balanceAmt = grossAmt - paidAmt;
-        
+
         let targetStatus = 'Partially Paid';
         if (balanceAmt <= 0) targetStatus = 'Paid';
         if (paidAmt === 0) targetStatus = 'Pending';
