@@ -15,7 +15,10 @@ if(App.guard()){
   let currentIncome = [];
   let currentExpense = [];
 
-  const head=`<button class="btn btn-light" onclick="addInc()">${App.svg('plus')}Add Income</button><button class="btn btn-primary" onclick="addExp()">${App.svg('plus')}Add Expense</button>`;
+  const currentMonthValue = new Date().toISOString().slice(0,7); // "2026-07"
+const head=`<input type="month" id="ieMonthFilter" class="filter-sel" value="${currentMonthValue}" style="min-width:150px">
+    <button class="btn btn-light" id="ieClearFilter" style="display:none">Clear filter</button>
+    <button class="btn btn-light" onclick="addInc()">${App.svg('plus')}Add Income</button><button class="btn btn-primary" onclick="addExp()">${App.svg('plus')}Add Expense</button>`;
   const c=App.layout('income-expense','Income & Expense',[`<span>Finance</span>`,'Income & Expense'],head);
 
   const incCats = ["Monthly Fees","Quarterly Fees","Semi-Annual Fees","Annual Fees","Admission Fees","Study Material Sales","Test Series Fees","Other Income"];
@@ -64,16 +67,22 @@ if(App.guard()){
       actions:r=>`${App.actBtn('edit','Edit',`onclick="editExpense('${r.id}')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="deleteExpense('${r.id}')"`)}` });
   }
 
-  async function loadDashboard() {
-    try {
-      const res = await API.get('/income-expense/dashboard');
-      renderDashboard(res.kpis, res.trend || [], res.pl, res.income || [], res.expense || []);
-    } catch (err) {
-      App.toast(err.message || 'Failed to load income & expense data', 'err');
-      renderDashboard({totalIncome:0,totalExpense:0,netProfit:0,profitMargin:0}, [], {feeCollection:0,otherIncome:0,teacherPayments:0,staffSalary:0,rent:0,otherExpenses:0,netProfit:0}, [], []);
+  async function loadDashboard(selectedMonth) {
+  try {
+    const params = new URLSearchParams();
+    if (selectedMonth) {
+      params.set('month', selectedMonth);
+      params.set('listMonth', selectedMonth);
     }
+    const qs = params.toString();
+    const url = qs ? `/income-expense/dashboard?${qs}` : '/income-expense/dashboard';
+    const res = await API.get(url);
+    renderDashboard(res.kpis, res.trend || [], res.pl, res.income || [], res.expense || []);
+  } catch (err) {
+    App.toast(err.message || 'Failed to load income & expense data', 'err');
+    renderDashboard({totalIncome:0,totalExpense:0,netProfit:0,profitMargin:0}, [], {feeCollection:0,otherIncome:0,teacherPayments:0,staffSalary:0,rent:0,otherExpenses:0,netProfit:0}, [], []);
   }
-
+}
   window.viewIncome = id => {
     const r = currentIncome.find(x=>x.id===id);
     if (!r) return App.toast('Entry not found', 'err');
@@ -90,7 +99,7 @@ if(App.guard()){
     App.confirmModal('Delete this income entry? This cannot be undone.', async () => {
       try {
         await API.delete(`/income-expense/income/${encodeURIComponent(id)}`);
-        await loadDashboard();
+        await loadDashboard(document.getElementById('ieMonthFilter').value || null);
         App.toast('Income entry deleted', 'ok');
       } catch (err) {
         App.toast(err.message || 'Failed to delete income entry', 'err');
@@ -102,7 +111,7 @@ if(App.guard()){
     App.confirmModal('Delete this expense entry? This cannot be undone.', async () => {
       try {
         await API.delete(`/income-expense/expense/${encodeURIComponent(id)}`);
-        await loadDashboard();
+        await loadDashboard(document.getElementById('ieMonthFilter').value || null);
         App.toast('Expense entry deleted', 'ok');
       } catch (err) {
         App.toast(err.message || 'Failed to delete expense entry', 'err');
@@ -119,7 +128,7 @@ if(App.guard()){
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="ai_save">Save</button>`,
     onOpen:b=>{ b.querySelector('#ai_save').onclick=async ()=>{
       const payload = { date:b.querySelector('#ai_date').value, category:b.querySelector('#ai_cat').value, description:b.querySelector('#ai_desc').value, mode:b.querySelector('#ai_mode').value, amount:+b.querySelector('#ai_amt').value };
-      try { await API.post('/income-expense/income', payload); App.closeModal(); await loadDashboard(); App.toast('Income added','ok'); }
+      try { await API.post('/income-expense/income', payload); App.closeModal(); await loadDashboard(document.getElementById('ieMonthFilter').value || null); App.toast('Income added','ok'); }
       catch(err){ App.toast(err.message || 'Failed to add income', 'err'); }
     }; }});
 
@@ -133,7 +142,7 @@ if(App.guard()){
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="ae_save">Save</button>`,
     onOpen:b=>{ b.querySelector('#ae_save').onclick=async ()=>{
       const payload = { date:b.querySelector('#ae_date').value, category:b.querySelector('#ae_cat').value, description:b.querySelector('#ae_desc').value, vendor:b.querySelector('#ae_vendor').value, mode:b.querySelector('#ae_mode').value, amount:+b.querySelector('#ae_amt').value };
-      try { await API.post('/income-expense/expense', payload); App.closeModal(); await loadDashboard(); App.toast('Expense added','ok'); }
+      try { await API.post('/income-expense/expense', payload); App.closeModal(); await loadDashboard(document.getElementById('ieMonthFilter').value || null); App.toast('Expense added','ok'); }
       catch(err){ App.toast(err.message || 'Failed to add expense', 'err'); }
     }; }});
 
@@ -150,12 +159,23 @@ if(App.guard()){
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="ee_save">Save Changes</button>`,
       onOpen:b=>{ b.querySelector('#ee_save').onclick=async ()=>{
         const payload = { date:b.querySelector('#ee_date').value, category:b.querySelector('#ee_cat').value, description:b.querySelector('#ee_desc').value, vendor:b.querySelector('#ee_vendor').value, mode:b.querySelector('#ee_mode').value, amount:+b.querySelector('#ee_amt').value };
-        try { await API.put(`/income-expense/expense/${encodeURIComponent(id)}`, payload); App.closeModal(); await loadDashboard(); App.toast('Expense updated','ok'); }
+        try { await API.put(`/income-expense/expense/${encodeURIComponent(id)}`, payload); App.closeModal(); await loadDashboard(document.getElementById('ieMonthFilter').value || null); App.toast('Expense updated','ok'); }
         catch(err){ App.toast(err.message || 'Failed to update expense', 'err'); }
       }; }});
   };
 
-  loadDashboard();
+  document.getElementById('ieMonthFilter').addEventListener('change', (e) => {
+    const val = e.target.value; // "2026-05" or "" if cleared
+    document.getElementById('ieClearFilter').style.display = val ? 'inline-flex' : 'none';
+    loadDashboard(val || null);
+  });
+  document.getElementById('ieClearFilter').addEventListener('click', () => {
+    document.getElementById('ieMonthFilter').value = '';
+    document.getElementById('ieClearFilter').style.display = 'none';
+    loadDashboard(null);
+  });
+
+  loadDashboard(currentMonthValue);
 }
 </script>
 </body></html>

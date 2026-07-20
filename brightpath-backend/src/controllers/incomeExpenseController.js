@@ -4,13 +4,15 @@ const IE = require("../models/incomeExpenseModel");
 exports.getDashboard = async (req, res) => {
     try {
         const month = req.query.month || new Date().toISOString().slice(0, 7);
+        // listMonth is separate — undefined means "show all", matching current default behavior
+        const listMonth = req.query.listMonth; // e.g. '2026-05', or omitted for all-time list
 
         const [kpiTotals, trend, pl, income, expense] = await Promise.all([
             IE.getMonthlyKPIs(month),
             IE.getSixMonthTrend(),
             IE.getPLBreakdown(month),
-            IE.getIncomeList(),
-            IE.getExpenseList()
+            IE.getIncomeList(listMonth),
+            IE.getExpenseList(listMonth)
         ]);
 
         const netProfit = kpiTotals.totalIncome - kpiTotals.totalExpense;
@@ -21,17 +23,10 @@ exports.getDashboard = async (req, res) => {
         res.status(200).json({
             success: true,
             month,
-            kpis: {
-                totalIncome: kpiTotals.totalIncome,
-                totalExpense: kpiTotals.totalExpense,
-                netProfit,
-                profitMargin
-            },
+            listMonth: listMonth || null,
+            kpis: { totalIncome: kpiTotals.totalIncome, totalExpense: kpiTotals.totalExpense, netProfit, profitMargin },
             trend,
-            pl: {
-                ...pl,
-                netProfit: (pl.feeCollection + pl.otherIncome) - (pl.teacherPayments + pl.staffSalary + pl.rent + pl.otherExpenses)
-            },
+            pl: { ...pl, netProfit: (pl.feeCollection + pl.otherIncome) - (pl.teacherPayments + pl.staffSalary + pl.rent + pl.otherExpenses) },
             income,
             expense
         });
@@ -39,7 +34,6 @@ exports.getDashboard = async (req, res) => {
         res.status(500).json({ success: false, message: err.message });
     }
 };
-
 // POST /income-expense/income
 exports.addIncome = async (req, res) => {
     try {

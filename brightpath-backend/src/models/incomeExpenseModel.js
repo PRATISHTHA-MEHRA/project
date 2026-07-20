@@ -89,21 +89,29 @@ const getPLBreakdown = async (month) => {
 };
 
 // ---------- Lists ----------
-const getIncomeList = async () => {
-    const result = await db.query(`
-        SELECT id, TO_CHAR(entry_date,'YYYY-MM-DD') as date, category, description as desc,
-               payment_mode as mode, amount::FLOAT as amount
-        FROM income_entries ORDER BY entry_date DESC, id DESC;
-    `);
+const getIncomeList = async (month) => {
+    const query = month
+        ? `SELECT id, TO_CHAR(entry_date,'YYYY-MM-DD') as date, category, description as desc,
+                  payment_mode as mode, amount::FLOAT as amount
+           FROM income_entries WHERE TO_CHAR(entry_date, 'YYYY-MM') = $1
+           ORDER BY entry_date DESC, id DESC;`
+        : `SELECT id, TO_CHAR(entry_date,'YYYY-MM-DD') as date, category, description as desc,
+                  payment_mode as mode, amount::FLOAT as amount
+           FROM income_entries ORDER BY entry_date DESC, id DESC;`;
+    const result = month ? await db.query(query, [month]) : await db.query(query);
     return result.rows;
 };
 
-const getExpenseList = async () => {
-    const result = await db.query(`
-        SELECT id, TO_CHAR(entry_date,'YYYY-MM-DD') as date, category, description as desc,
-               vendor, payment_mode as mode, amount::FLOAT as amount
-        FROM expense_entries ORDER BY entry_date DESC, id DESC;
-    `);
+const getExpenseList = async (month) => {
+    const query = month
+        ? `SELECT id, TO_CHAR(entry_date,'YYYY-MM-DD') as date, category, description as desc,
+                  vendor, payment_mode as mode, amount::FLOAT as amount
+           FROM expense_entries WHERE TO_CHAR(entry_date, 'YYYY-MM') = $1
+           ORDER BY entry_date DESC, id DESC;`
+        : `SELECT id, TO_CHAR(entry_date,'YYYY-MM-DD') as date, category, description as desc,
+                  vendor, payment_mode as mode, amount::FLOAT as amount
+           FROM expense_entries ORDER BY entry_date DESC, id DESC;`;
+    const result = month ? await db.query(query, [month]) : await db.query(query);
     return result.rows;
 };
 

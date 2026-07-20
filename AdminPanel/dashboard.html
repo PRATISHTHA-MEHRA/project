@@ -122,11 +122,26 @@ const ch = {
     const newAdmissions = newAdmissionsThisMonth !== null ? newAdmissionsThisMonth
       : (studentsList.filter(s=>(s.admission||'').startsWith('2026-06')).length || DB.dash.newAdmissions);
     const activeBatches = batchesList.filter(b=>b.status==='Active' || b.status!=='Upcoming').length;
-    const monthlyCollection = feesList.reduce((a,f)=>a+(Number(f.paid)||0),0);
-const pendingFeesTotal = pendingList.reduce((a,p)=>a+(Number(p.due)||0),0);
-const teacherPaymentsDue = tpayList.filter(t=>t.status!=='Paid').reduce((a,t)=>a+(Number(t.balance)||0),0);
-const monthlyIncome = incomeList.reduce((a,x)=>a+(Number(x.amount)||0),0);
-const monthlyExpenses = expenseList.reduce((a,x)=>a+(Number(x.amount)||0),0);
+    const currentMonthPrefix = new Date().toISOString().slice(0,7); // "2026-07"
+const inCurrentMonth = dateStr => String(dateStr || '').startsWith(currentMonthPrefix);
+
+const monthlyCollection = feesList
+  .filter(f => inCurrentMonth(f.date))
+  .reduce((a,f)=>a+(Number(f.paid)||0),0);
+
+const pendingFeesTotal = pendingList.reduce((a,p)=>a+(Number(p.due)||0),0); // pending dues aren't month-scoped by nature — kept as-is
+
+const teacherPaymentsDue = tpayList
+  .filter(t=>t.status!=='Paid')
+  .reduce((a,t)=>a+(Number(t.balance)||0),0); // also not month-scoped — a teacher's balance due doesn't reset monthly
+
+const monthlyIncome = incomeList
+  .filter(x => inCurrentMonth(x.date))
+  .reduce((a,x)=>a+(Number(x.amount)||0),0);
+
+const monthlyExpenses = expenseList
+  .filter(x => inCurrentMonth(x.date))
+  .reduce((a,x)=>a+(Number(x.amount)||0),0);
     const netProfit = monthlyIncome - monthlyExpenses;
     const pendingEnquiries = enquiriesList.filter(e=>e.status!=='Converted' && e.status!=='Closed').length;
 
