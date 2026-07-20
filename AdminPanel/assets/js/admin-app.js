@@ -51,7 +51,11 @@ const App = (function () {
   };
   function svg(name, cls){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${cls||''}">${I[name]||''}</svg>`; }
 
-  /* ---------- NAV ---------- */
+  /* ---------- NAV ----------
+     Items can carry an optional `roles: [...]` array. If present, the item
+     (and its group, if it ends up empty) is hidden for any logged-in user
+     whose role isn't in that list. Items with no `roles` are visible to
+     everyone, same as before. */
   const NAV = [
     { group:"Overview", items:[ {k:"dashboard",t:"Dashboard",ic:"dash"} ]},
     { group:"Academics", items:[
@@ -77,6 +81,9 @@ const App = (function () {
       {k:"homework",t:"Homework",ic:"homework"},
       {k:"study-material",t:"Study Material",ic:"material"}
     ]},
+    { group:"Administration", items:[
+      {k:"admin-users",t:"Admin Users",ic:"user",roles:["Super Admin"]}
+    ]},
     { group:"Insights", items:[
       {k:"reports",t:"Reports",ic:"reports"},
       {k:"settings",t:"Settings",ic:"settings"}
@@ -86,6 +93,17 @@ const App = (function () {
   /* ---------- AUTH ---------- */
   function guard(){
     if (!sessionStorage.getItem("bp_admin")) { location.href = "login.html"; return false; }
+    return true;
+  }
+  /* Call at the top of a page (after guard()) to block access by role.
+     Redirects to dashboard.html if the logged-in user's role isn't allowed.
+     Usage: if (App.guard() && App.requireRole('Super Admin')) { ...page code... } */
+  function requireRole(...allowedRoles){
+    const u = me();
+    if (!allowedRoles.includes(u.role)){
+      location.href = "dashboard.html";
+      return false;
+    }
     return true;
   }
   function login(user, pass){
@@ -101,14 +119,18 @@ const App = (function () {
   /* ---------- LAYOUT ---------- */
   function layout(active, title, crumbs, headActions){
     const u = me();
-    const sb = NAV.map(g=>`
+    const sb = NAV.map(g=>{
+      const visibleItems = g.items.filter(it => !it.roles || it.roles.includes(u.role));
+      if (!visibleItems.length) return '';
+      return `
       <div class="sb-group">${g.group}</div>
-      ${g.items.map(it=>`
+      ${visibleItems.map(it=>`
         <a class="sb-link ${it.k===active?'active':''}" href="${it.k}.html">
           ${svg(it.ic)}<span>${it.t}</span>
           ${it.badge?`<span class="badge-dot num">${it.badge}</span>`:''}
         </a>`).join('')}
-    `).join('');
+    `;
+    }).join('');
 
     const notif = DB.notifications.map(n=>`
       <div class="notif">
@@ -232,7 +254,7 @@ const App = (function () {
     "New":"b-blue","Contacted":"b-violet","Demo Scheduled":"b-amber","Demo Completed":"b-violet","Interested":"b-brand",
     "Converted":"b-green","Lost":"b-red","No Show":"b-red","Result Published":"b-green","Closed":"b-slate",
     "Approved":"b-green","Rejected":"b-red","Present":"b-green","Absent":"b-red","Late":"b-amber","Leave":"b-blue",
-    "Not Marked":"b-slate"
+    "Not Marked":"b-slate","Super Admin":"b-violet","Admin":"b-blue"
   };
   function badge(text){ return `<span class="badge ${BMAP[text]||'b-slate'}"><span class="pip"></span>${text}</span>`; }
   function money(n){ return '₹' + Number(n||0).toLocaleString('en-IN'); }
@@ -241,8 +263,6 @@ const App = (function () {
   function whoCell(name, sub){ return `<div class="who-cell">${avatar(name)}<div><div class="t-main">${name}</div>${sub?`<div class="t-sub">${sub}</div>`:''}</div></div>`; }
 
   /* ---------- TABLE ENGINE ---------- */
-  /* config: {columns:[{key,label,num,render(row)}], rows, searchKeys, filters:[{label,key,options}], actions(row), pageSize, empty,
-     dateFilter, dateValue (preset the date input's value), onDateChange(dateStr) (called when the date input changes — use this to refetch server-side date-scoped data)} */
   function table(mount, cfg){
     const state={ q:'', filters:{}, page:1, ps:cfg.pageSize||10, sortKey:null, sortDir:1 };
     const el = typeof mount==='string'?document.getElementById(mount):mount;
@@ -349,6 +369,6 @@ const App = (function () {
     return `<div class="hbar-list">${data.map((d,i)=>`<div class="row"><div class="top"><b>${d.label}</b><span class="v">${fmt?fmt(d.value):d.value}</span></div><div class="track"><span style="width:${d.value/max*100}%;background:${colors[i%colors.length]}"></span></div></div>`).join('')}</div>`;
   }
 
-  return { svg, I, guard, login, logout, me, layout, toast, modal, closeModal, confirmModal,
+  return { svg, I, guard, requireRole, login, logout, me, layout, toast, modal, closeModal, confirmModal,
     badge, money, avatar, whoCell, table, actBtn, barChart, sparkline, donut, hbars };
 })();

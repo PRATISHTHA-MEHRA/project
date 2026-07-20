@@ -25,6 +25,7 @@ const studyMaterialRoutes=require("./routes/studyMaterialRoutes");
 const reportRoutes=require("./routes/reportRoutes");
 const settingsRoutes=require("./routes/settingsRoutes");
 const dashboardRoutes=require("./routes/dashboardRoutes");
+const adminRoutes=require("./routes/adminRoutes");
 const app = express();
 
 app.use(cors());
@@ -58,6 +59,7 @@ app.use("/api/study-material",studyMaterialRoutes);
 app.use("/api/reports",reportRoutes);
 app.use("/api/settings",settingsRoutes);
 app.use("/api/dashboard",dashboardRoutes);
+app.use("/api/admin-users",adminRoutes);
 
 const PORT = process.env.PORT || 5001;
 

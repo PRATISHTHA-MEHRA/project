@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Users - BrightPath Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/admin-style.css">
+</head>
+<body>
+<script src="assets/js/admin-data.js"></script>
+<script src="assets/js/admin-app.js"></script>
+<script src="assets/js/api.js"></script>
+<script>
+/* Guard: must be logged in AND must be a Super Admin. A regular Admin who
+   types this URL directly gets bounced to dashboard.html — the sidebar
+   link is hidden for them too (see admin-app.js NAV), but this is the
+   real enforcement; the backend also re-checks on every API call. */
+if(App.guard() && App.requireRole('Super Admin')){
+  const API_BASE = "/admin-users"; // -> "http://localhost:5001/api/admin-users"
+  const statuses = ["Active", "Inactive"];
+  let currentAdmins = [];
+  const me = App.me();
+
+  const head = `<button class="btn btn-primary" onclick="addAdmin()">${App.svg('plus')}Add Admin</button>`;
+  const c = App.layout('admin-users','Admin Users',['Admin Users'],head);
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  function unwrapOne(payload){
+    return payload?.data || payload;
+  }
+  function unwrapList(payload){
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  }
+
+  function mapAdmin(item = {}){
+    return {
+      id: String(item.id ?? ''),
+      username: item.username ?? '',
+      full_name: item.full_name ?? '',
+      role: item.role ?? 'Admin',
+      status: item.status ?? 'Active',
+      last_login: item.last_login ?? null
+    };
+  }
+
+  function findCurrentAdmin(id){ return currentAdmins.find(a => String(a.id) === String(id)); }
+
+  function renderPage(rows){
+    currentAdmins = rows;
+    const total = rows.length;
+    const active = rows.filter(a => a.status === 'Active').length;
+
+    c.innerHTML = `<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi"><div class="top"><span class="label">Total Admins</span><span class="ic b-brand">${App.svg('user')}</span></div><div class="val">${total}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Active</span><span class="ic b-green">${App.svg('check')}</span></div><div class="val">${active}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Inactive</span><span class="ic b-slate">${App.svg('x')}</span></div><div class="val">${total-active}</div></div>
+    </div><div id="tbl"></div>`;
+
+    App.table('tbl', {
+      rows,
+      searchKeys:['username','full_name'],
+      searchPlaceholder:'Search by name or username...',
+      pageSize:10,
+      filters:[
+        {label:'Status',key:'status',options:statuses}
+      ],
+      columns:[
+        {key:'full_name',label:'Admin',render:r=>App.whoCell(esc(r.full_name || r.username),esc(r.username))},
+        {key:'role',label:'Role',render:r=>App.badge(esc(r.role))},
+        {key:'status',label:'Status',render:r=>App.badge(esc(r.status))},
+        {key:'last_login',label:'Last Login',render:r=>esc(r.last_login ? new Date(r.last_login).toLocaleString('en-IN') : 'Never')}
+      ],
+      actions:r=>{
+        // Super Admin accounts can't be edited/deleted through this UI,
+        // and a Super Admin can't delete their own account.
+        const isSuperAdmin = r.role === 'Super Admin';
+        const isSelf = String(r.id) === String(me.id);
+        return `
+          ${App.actBtn('edit','Edit', isSuperAdmin ? 'disabled style="opacity:.4;cursor:not-allowed"' : `onclick="editAdmin('${jsStr(r.id)}')"`)}
+          ${App.actBtn('trash','Delete', (isSuperAdmin || isSelf) ? 'disabled style="opacity:.4;cursor:not-allowed"' : `class="danger" onclick="delAdmin('${jsStr(r.id)}')"`)}
+        `;
+      }
+    });
+  }
+
+  async function loadAdmins(){
+    try {
+      const payload = await API.get(API_BASE);
+      renderPage(unwrapList(payload).map(mapAdmin));
+    } catch (err) {
+      App.toast(err.message || 'Failed to load admin users', 'err');
+    }
+  }
+
+  function adminForm(a){
+    return `<div class="form-grid">
+      <div><label>Full Name</label><input id="f_full_name" value="${esc(a?.full_name || '')}"></div>
+      <div><label>Username</label><input id="f_username" value="${esc(a?.username || '')}" ${a ? 'disabled' : ''}></div>
+      ${!a ? `<div class="full"><label>Password</label><input type="password" id="f_password" placeholder="Set an initial password"></div>` : ''}
+      ${a ? `<div><label>Status</label><select id="f_status">${statuses.map(x=>`<option ${a.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
+             <div><label>Reset Password (optional)</label><input type="password" id="f_password" placeholder="Leave blank to keep current"></div>` : ''}
+    </div>`;
+  }
+
+  window.addAdmin = () => App.modal({ size:'md', title:'Add New Admin', sub:'Create a new Admin account',
+    body:adminForm(null),
+    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Create Admin</button>`,
+    onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
+      const full_name = b.querySelector('#f_full_name').value.trim();
+      const username = b.querySelector('#f_username').value.trim();
+      const password = b.querySelector('#f_password').value;
+      if (!full_name || !username || !password) return App.toast('All fields are required','err');
+      try {
+        await API.post(API_BASE, { username, password, full_name });
+        App.closeModal();
+        await loadAdmins();
+        App.toast('Admin created successfully','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to create admin','err');
+      }
+    }
+  });
+
+  window.editAdmin = id => {
+    const a = findCurrentAdmin(id);
+    if (!a) return App.toast('Admin not found','err');
+    App.modal({ size:'md', title:'Edit Admin', sub:esc(a.username), body:adminForm(a),
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Save Changes</button>`,
+      onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
+        const full_name = b.querySelector('#f_full_name').value.trim();
+        const status = b.querySelector('#f_status').value;
+        const password = b.querySelector('#f_password').value;
+        if (!full_name) return App.toast('Enter full name','err');
+        try {
+          const payload = { full_name, status };
+          if (password) payload.password = password;
+          await API.put(`${API_BASE}/${encodeURIComponent(a.id)}`, payload);
+          App.closeModal();
+          await loadAdmins();
+          App.toast('Admin updated','ok');
+        } catch (err) {
+          App.toast(err.message || 'Failed to update admin','err');
+        }
+      }
+    });
+  };
+
+  window.delAdmin = id => {
+    const a = findCurrentAdmin(id);
+    const label = a ? `${esc(a.full_name)} (${esc(a.username)})` : esc(id);
+    App.confirmModal(`Delete <b>${label}</b>? This cannot be undone.`, async()=>{
+      try {
+        await API.delete(`${API_BASE}/${encodeURIComponent(id)}`);
+        await loadAdmins();
+        App.toast('Admin deleted','ok');
+      } catch (err) {
+        App.toast(err.message || 'Failed to delete admin','err');
+      }
+    }, {danger:true,yes:'Delete',title:'Delete admin'});
+  };
+
+  loadAdmins();
+}
+</script>
+</body></html>

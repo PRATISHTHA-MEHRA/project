@@ -50,6 +50,20 @@ exports.login = async (req, res) => {
 
         }
 
+        // Credentials are correct at this point — now check if the
+        // account is allowed to log in at all.
+        if (admin.status !== "Active") {
+
+            return res.status(403).json({
+
+                success: false,
+
+                message: "This account has been deactivated. Please contact a Super Admin."
+
+            });
+
+        }
+
         await Auth.updateLogin(admin.id);
 
         const token = generateToken(admin);

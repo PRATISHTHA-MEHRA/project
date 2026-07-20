@@ -8,7 +8,6 @@ const query=`
 SELECT *
 FROM admins
 WHERE username=$1
-AND status='Active'
 `;
 
 const result=await db.query(query,[username]);
