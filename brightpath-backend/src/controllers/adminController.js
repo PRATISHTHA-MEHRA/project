@@ -7,14 +7,15 @@ exports.create = async (req, res) => {
         const {
             username,
             password,
+            email,
             full_name
         } = req.body;
 
-        if (!username || !password || !full_name) {
+        if (!username || !password || !full_name || !email) {
 
             return res.status(400).json({
                 success: false,
-                message: "username, password and full_name are required"
+                message: "username, password and full_name and email are required"
             });
 
         }
@@ -30,7 +31,7 @@ exports.create = async (req, res) => {
 
         }
 
-        const admin = await AdminUser.create({ username, password, full_name });
+        const admin = await AdminUser.create({ username, password, email, full_name });
 
         res.status(201).json({
             success: true,

@@ -35,17 +35,17 @@ if(App.guard() && App.requireRole('Super Admin')){
     if (Array.isArray(payload?.data)) return payload.data;
     return [];
   }
-
-  function mapAdmin(item = {}){
-    return {
-      id: String(item.id ?? ''),
-      username: item.username ?? '',
-      full_name: item.full_name ?? '',
-      role: item.role ?? 'Admin',
-      status: item.status ?? 'Active',
-      last_login: item.last_login ?? null
-    };
-  }
+function mapAdmin(item = {}){
+  return {
+    id: String(item.id ?? ''),
+    username: item.username ?? '',
+    full_name: item.full_name ?? '',
+    email: item.email ?? '',
+    role: item.role ?? 'Admin',
+    status: item.status ?? 'Active',
+    last_login: item.last_login ?? null
+  };
+}
 
   function findCurrentAdmin(id){ return currentAdmins.find(a => String(a.id) === String(id)); }
 
@@ -97,33 +97,36 @@ if(App.guard() && App.requireRole('Super Admin')){
   }
 
   function adminForm(a){
-    return `<div class="form-grid">
-      <div><label>Full Name</label><input id="f_full_name" value="${esc(a?.full_name || '')}"></div>
-      <div><label>Username</label><input id="f_username" value="${esc(a?.username || '')}" ${a ? 'disabled' : ''}></div>
-      ${!a ? `<div class="full"><label>Password</label><input type="password" id="f_password" placeholder="Set an initial password"></div>` : ''}
-      ${a ? `<div><label>Status</label><select id="f_status">${statuses.map(x=>`<option ${a.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
-             <div><label>Reset Password (optional)</label><input type="password" id="f_password" placeholder="Leave blank to keep current"></div>` : ''}
-    </div>`;
-  }
+  return `<div class="form-grid">
+    <div><label>Full Name</label><input id="f_full_name" value="${esc(a?.full_name || '')}"></div>
+    <div><label>Username</label><input id="f_username" value="${esc(a?.username || '')}" ${a ? 'disabled' : ''}></div>
+    ${!a ? `<div><label>Email</label><input type="email" id="f_email" placeholder="admin@brightpath.com"></div>` : ''}
+    ${!a ? `<div class="full"><label>Password</label><input type="password" id="f_password" placeholder="Set an initial password"></div>` : ''}
+    ${a ? `<div><label>Email</label><input value="${esc(a.email || '')}" disabled></div>
+           <div><label>Status</label><select id="f_status">${statuses.map(x=>`<option ${a.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
+           <div><label>Reset Password (optional)</label><input type="password" id="f_password" placeholder="Leave blank to keep current"></div>` : ''}
+  </div>`;
+}
 
-  window.addAdmin = () => App.modal({ size:'md', title:'Add New Admin', sub:'Create a new Admin account',
-    body:adminForm(null),
-    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Create Admin</button>`,
-    onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
-      const full_name = b.querySelector('#f_full_name').value.trim();
-      const username = b.querySelector('#f_username').value.trim();
-      const password = b.querySelector('#f_password').value;
-      if (!full_name || !username || !password) return App.toast('All fields are required','err');
-      try {
-        await API.post(API_BASE, { username, password, full_name });
-        App.closeModal();
-        await loadAdmins();
-        App.toast('Admin created successfully','ok');
-      } catch (err) {
-        App.toast(err.message || 'Failed to create admin','err');
-      }
+window.addAdmin = () => App.modal({ size:'md', title:'Add New Admin', sub:'Create a new Admin account',
+  body:adminForm(null),
+  foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Create Admin</button>`,
+  onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
+    const full_name = b.querySelector('#f_full_name').value.trim();
+    const username = b.querySelector('#f_username').value.trim();
+    const email = b.querySelector('#f_email').value.trim();
+    const password = b.querySelector('#f_password').value;
+    if (!full_name || !username || !email || !password) return App.toast('All fields are required','err');
+    try {
+      await API.post(API_BASE, { username, password, email, full_name });
+      App.closeModal();
+      await loadAdmins();
+      App.toast('Admin created successfully','ok');
+    } catch (err) {
+      App.toast(err.message || 'Failed to create admin','err');
     }
-  });
+  }
+});
 
   window.editAdmin = id => {
     const a = findCurrentAdmin(id);
