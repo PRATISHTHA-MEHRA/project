@@ -36,11 +36,14 @@
   <div class="auth-form-side">
     <div class="auth-card">
       <h2 id="cardTitle">Welcome back</h2>
-      <p class="sub" id="cardSub">Sign in to the administrator console.</p>
-       <div class="cred-hint" id="credHint">Demo login — <b>Username:</b> admin &nbsp; <b>Password:</b> admin123</div>
+      
 
       <!-- LOGIN FORM -->
       <form id="loginForm">
+        <p class="sub" id="cardSub">Sign in to the administrator console.</p>
+      
+         <div class="cred-hint" id="credHint">Demo login — <b>Username:</b> admin &nbsp; <b>Password:</b> admin123</div>
+         
         <div class="field"><label>Username</label><input type="text" id="u" autocomplete="username" placeholder="Enter your username"></div>
         <div class="field"><label>Password</label><input type="password" id="p" autocomplete="current-password" placeholder="Enter your password"></div>
         <div class="field" style="display:flex;justify-content:space-between;align-items:center">
@@ -53,6 +56,7 @@
 
       <!-- RESET PASSWORD FORM (hidden until "Forgot password?" is clicked) -->
       <form id="resetForm" novalidate style="display:none">
+        <br>
         <div class="field"><label>Username</label><input type="text" id="ru" autocomplete="username" placeholder="Enter your username"></div>
         <div class="field"><label>New password</label><input type="password" id="rnp" autocomplete="new-password" placeholder="Enter new password"></div>
         <div class="field"><label>Confirm new password</label><input type="password" id="rncp" autocomplete="new-password" placeholder="Re-enter new password"></div>
@@ -103,7 +107,7 @@ const resetForm = document.getElementById('resetForm');
 
 function showLoginView(){
   cardTitle.textContent = "Welcome back";
-  cardSub.textContent = "Sign in to the administrator console.";
+  // cardSub.textContent = "Sign in to the administrator console.";
   resetForm.style.display = "none";
   loginForm.style.display = "block";
   document.getElementById('err').style.display = "none";
@@ -112,7 +116,7 @@ function showLoginView(){
 
 function showResetView(){
   cardTitle.textContent = "Reset password";
-  cardSub.textContent = "Verify your current password to set a new one.";
+  
   loginForm.style.display = "none";
   resetForm.style.display = "block";
   document.getElementById('rerr').style.display = "none";
