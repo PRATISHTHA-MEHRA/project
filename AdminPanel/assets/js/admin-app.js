@@ -90,9 +90,16 @@ const App = (function () {
     ]}
   ];
 
-  /* ---------- AUTH ---------- */
+  /* ---------- AUTH ----------
+     bp_admin / JWT_TOKEN can live in either localStorage (Remember Me
+     checked at login) or sessionStorage (Remember Me unchecked). Read
+     helpers below check both so a "remembered" session survives a
+     browser restart instead of being treated as logged out. */
+  function getAdminRaw(){
+    return localStorage.getItem("bp_admin") || sessionStorage.getItem("bp_admin");
+  }
   function guard(){
-    if (!sessionStorage.getItem("bp_admin")) { location.href = "login.html"; return false; }
+    if (!getAdminRaw()) { location.href = "login.html"; return false; }
     return true;
   }
   /* Call at the top of a page (after guard()) to block access by role.
@@ -113,8 +120,14 @@ const App = (function () {
     }
     return false;
   }
-  function logout(){ sessionStorage.removeItem("bp_admin"); location.href="login.html"; }
-  function me(){ try { return JSON.parse(sessionStorage.getItem("bp_admin")) || {}; } catch(e){ return {}; } }
+  function logout(){
+    localStorage.removeItem("bp_admin");
+    sessionStorage.removeItem("bp_admin");
+    localStorage.removeItem("JWT_TOKEN");
+    sessionStorage.removeItem("JWT_TOKEN");
+    location.href="login.html";
+  }
+  function me(){ try { return JSON.parse(getAdminRaw()) || {}; } catch(e){ return {}; } }
 
   /* ---------- LAYOUT ---------- */
   function layout(active, title, crumbs, headActions){
