@@ -29,22 +29,66 @@ if(App.guard()){
       studentsList = [], batchesList = [], coursesList = [],
       enquiriesList = [];
   let reportLogs = {}; // report_key -> "DD Mon YYYY, HH:MM AM"
+  let collectionTrendLive = null, incomeExpenseLive = null; // live monthly aggregates (null until confirmed present)
+
+  
+  let selectedMonth = '2026-06'; // 'YYYY-MM', matches the <input type="month"> default
+  let feesAllData = [], incomeAllData = [], expenseAllData = [];
+
+  function monthKey(dateStr){
+    if(!dateStr) return null;
+    const d = new Date(dateStr);
+    if(isNaN(d.getTime())) return null;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  function monthLabel(ym){
+    const [y,m] = (ym||'').split('-');
+    if(!y||!m) return '';
+    return new Date(Number(y), Number(m)-1, 1).toLocaleString('en-US',{month:'short'});
+  }
+
+  // Filters a list to the selected month using getDate(item) to pull the date field.
+  // If NONE of the records have a parseable date (e.g. the API doesn't send that
+  // field yet), filtering everything out would be worse than not filtering at all —
+  // so in that case we fall back to showing the unfiltered list rather than a blank page.
+  function filterByMonth(list, getDate){
+    const withDates = list.filter(item => monthKey(getDate(item)));
+    if(withDates.length === 0) return list;
+    return withDates.filter(item => monthKey(getDate(item)) === selectedMonth);
+  }
+
+  function applyMonthFilter(){
+    feesList    = filterByMonth(feesAllData,   f => f.date);
+    incomeList  = filterByMonth(incomeAllData, x => x.date);
+    expenseList = filterByMonth(expenseAllData,x => x.date);
+  }
+
+  window.onMonthChange = function(val){
+    selectedMonth = val;
+    applyMonthFilter();
+    renderPage();
+  };
 
   async function loadAllData(){
     try{
       const res = await API.get('/reports/dashboard');
       const d = res?.data ?? res; // handle either {success,data} or raw envelope
 
-      feesList      = unwrapList(d.fees);
+      feesAllData   = unwrapList(d.fees);
       pendingList   = unwrapList(d.pendingFees);
       tpayList      = unwrapList(d.teacherPayments);
       studentsList  = unwrapList(d.students);
       batchesList   = unwrapList(d.batches);
       coursesList   = unwrapList(d.courses);
       enquiriesList = unwrapList(d.enquiries);
-      incomeList    = unwrapList(d.income);
-      expenseList   = unwrapList(d.expense);
+      incomeAllData = unwrapList(d.income);
+      expenseAllData= unwrapList(d.expense);
       reportLogs    = d.reportLogs || {};
+      applyMonthFilter(); // populates feesList/incomeList/expenseList for the current selectedMonth
+
+      collectionTrendLive = Array.isArray(d.collectionTrend) ? d.collectionTrend : null;
+      incomeExpenseLive   = Array.isArray(d.incomeExpense) ? d.incomeExpense : null;
     }catch(err){
       App.toast('Could not load report data', 'error');
     }
@@ -60,7 +104,7 @@ if(App.guard()){
   }
 
   const head=`
-    <input type="month" class="filter-sel" value="2026-06" style="min-width:140px">
+    <input type="month" class="filter-sel" id="monthFilter" value="2026-06" style="min-width:140px" onchange="onMonthChange(this.value)">
     <button class="btn btn-light" onclick="App.toast('Report pack exported (PDF)','ok')">${App.svg('download')}Export All</button>
     <button class="btn btn-primary" onclick="App.toast('Scheduled report email sent','ok')">${App.svg('bell')}Schedule</button>`;
   const c=App.layout('reports','Reports',[`<span>Insights</span>`,'Reports'],head);
@@ -145,36 +189,37 @@ if(App.guard()){
   }
 
   function renderPage(){
-    // collectionTrend / incomeExpense / admissionSource have no live endpoint yet
-    // (they need multi-month history + an admission-source column) so they still
-    // read from DB.charts on purpose — this is a known gap, not a silent fallback.
+    
     const ch = {
-      collectionTrend: DB.charts.collectionTrend,
-      incomeExpense: DB.charts.incomeExpense,
+      collectionTrend: collectionTrendLive || DB.charts.collectionTrend,
+      incomeExpense: incomeExpenseLive || DB.charts.incomeExpense,
       admissionSource: computeAdmissionSource(),
       courseRevenue: computeCourseRevenue(),
       teacherPayout: computeTeacherPayout()
     };
+    const chartsAreLive = !!(collectionTrendLive && incomeExpenseLive);
 
     /* ───────── KPI strip (computed live from fetched data) ───────── */
     const totalCollection = feesList.reduce((a,f)=>a+(f.paid||0),0);
     const outstanding = pendingList.reduce((a,p)=>a+(p.due||0),0);
     const netProfit = incomeList.reduce((a,x)=>a+(x.amount||0),0) - expenseList.reduce((a,x)=>a+(x.amount||0),0);
-    const newAdmissions = studentsList.filter(s=>(s.admission||'').startsWith('2026-06')).length;
+    const isLoss = netProfit < 0;
+    const newAdmissions = studentsList.filter(s=>(s.admission||'').startsWith(selectedMonth)).length;
+    const mLabel = monthLabel(selectedMonth);
 
     const kpis=`
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi"><div class="top"><span class="label">Total Collection (Jun)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(totalCollection)}</div><span class="delta up">${App.svg('up')}10.6% MoM</span></div>
+        <div class="kpi"><div class="top"><span class="label">Total Collection (${mLabel})</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(totalCollection)}</div><span class="delta up">${App.svg('up')}10.6% MoM</span></div>
         <div class="kpi"><div class="top"><span class="label">Outstanding Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(outstanding)}</div><span class="delta down">${App.svg('down')}6% vs last month</span></div>
-        <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('trending')}</span></div><div class="val">${App.money(netProfit)}</div><span class="delta up">${App.svg('up')}12% MoM</span></div>
+        <div class="kpi"><div class="top"><span class="label">${isLoss?'Net Loss':'Net Profit'}</span><span class="ic ${isLoss?'b-red':'b-brand'}">${App.svg('trending')}</span></div><div class="val">${App.money(Math.abs(netProfit))}</div><span class="delta ${isLoss?'down':'up'}">${App.svg(isLoss?'down':'up')}12% MoM</span></div>
         <div class="kpi"><div class="top"><span class="label">New Admissions</span><span class="ic b-blue">${App.svg('admit')}</span></div><div class="val">${newAdmissions}</div><span class="delta up">${App.svg('up')}+2 vs last month</span></div>
       </div>`;
 
     /* ───────── Charts (Course-wise Revenue & Teacher-wise Payout are live) ───────── */
     const charts=`
       <div class="grid-2 mb16">
-        <div class="card"><div class="card-head"><div><h3>Monthly Fee Collection</h3><div class="sub">₹ in '000</div></div><button class="btn btn-light btn-sm" onclick="App.toast('Exported','ok')">${App.svg('download')}Export</button></div><div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div></div>
-        <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison, ₹ in '000</div></div></div><div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Monthly Fee Collection${chartsAreLive?'':' <span class="badge b-amber" style="font-size:10px;vertical-align:middle">mock data</span>'}</h3><div class="sub">₹ in '000</div></div><button class="btn btn-light btn-sm" onclick="App.toast('Exported','ok')">${App.svg('download')}Export</button></div><div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Income vs Expense${chartsAreLive?'':' <span class="badge b-amber" style="font-size:10px;vertical-align:middle">mock data</span>'}</h3><div class="sub">6-month comparison, ₹ in '000</div></div></div><div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
       </div>
       <div class="grid-3 mb16">
         <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
@@ -369,6 +414,7 @@ if(App.guard()){
         const tcPaid=tpayList.reduce((a,t)=>a+t.paid,0);
         const rent=78000, elec=18000, internet=4800, staff=96000, mktg=32000, misc=22000;
         const net=inc-exp;
+        const plIsLoss = net < 0;
         return `
           <div style="max-width:560px;margin:0 auto">
             <div style="padding:14px 0;border-bottom:2px solid var(--line);margin-bottom:16px">
@@ -387,9 +433,9 @@ if(App.guard()){
               <div class="pl-line" style="background:var(--red-soft);font-weight:700"><span>Total Expenses (recorded)</span><span class="v" style="color:var(--red)">${App.money(exp)}</span></div>
             </div>
             <div class="pl-line total" style="font-size:16px">
-              <span>Net Profit (${period})</span><span class="v">${App.money(net)}</span>
+              <span>${plIsLoss?'Net Loss':'Net Profit'} (${period})</span><span class="v" style="${plIsLoss?'color:var(--red)':''}">${App.money(Math.abs(net))}</span>
             </div>
-            <div style="text-align:center;margin-top:12px;color:var(--ink-3);font-size:12.5px">Profit Margin: <b style="color:var(--brand)">${inc?Math.round(net/inc*1000)/10:0}%</b></div>
+            <div style="text-align:center;margin-top:12px;color:var(--ink-3);font-size:12.5px">Profit Margin: <b style="color:${plIsLoss?'var(--red)':'var(--brand)'}">${inc?Math.round(net/inc*1000)/10:0}%</b></div>
           </div>`;
       }
 

@@ -1,4 +1,5 @@
 const Report = require("../models/reportModel");
+const pool = require("../config/db"); 
 
 const Fee = require("../models/feeModel");
 const PendingFee = require("../models/pendingfeeModel");
@@ -31,6 +32,53 @@ exports.logGeneration = async (req, res) => {
   }
 };
 
+async function getMonthlyTrend() {
+  const feeTrend = await pool.query(`
+    SELECT TO_CHAR(date_trunc('month', payment_date), 'Mon') AS m,
+           COALESCE(SUM(paid_amount), 0) AS value
+    FROM fee_receipts
+    WHERE payment_date >= date_trunc('month', now()) - interval '5 months'
+    GROUP BY date_trunc('month', payment_date)
+    ORDER BY date_trunc('month', payment_date)
+  `);
+
+  const incomeTrend = await pool.query(`
+    SELECT date_trunc('month', entry_date) AS mkey,
+           TO_CHAR(date_trunc('month', entry_date), 'Mon') AS m,
+           COALESCE(SUM(amount), 0) AS inc
+    FROM income_entries
+    WHERE entry_date >= date_trunc('month', now()) - interval '5 months'
+    GROUP BY date_trunc('month', entry_date)
+  `);
+
+  const expenseTrend = await pool.query(`
+    SELECT date_trunc('month', entry_date) AS mkey,
+           TO_CHAR(date_trunc('month', entry_date), 'Mon') AS m,
+           COALESCE(SUM(amount), 0) AS exp
+    FROM expense_entries
+    WHERE entry_date >= date_trunc('month', now()) - interval '5 months'
+    GROUP BY date_trunc('month', entry_date)
+  `);
+
+
+  const byMonth = {};
+  incomeTrend.rows.forEach(r => {
+    byMonth[r.mkey] = byMonth[r.mkey] || { m: r.m, inc: 0, exp: 0 };
+    byMonth[r.mkey].inc = toNum(r.inc);
+  });
+  expenseTrend.rows.forEach(r => {
+    byMonth[r.mkey] = byMonth[r.mkey] || { m: r.m, inc: 0, exp: 0 };
+    byMonth[r.mkey].exp = toNum(r.exp);
+  });
+  const incomeExpense = Object.keys(byMonth).sort().map(k => byMonth[k]);
+
+  return {
+    collectionTrend: feeTrend.rows.map(r => ({ m: r.m, value: toNum(r.value) })),
+    incomeExpense
+  };
+}
+
+
 exports.getDashboard = async (req, res) => {
   try {
     const results = await Promise.allSettled([
@@ -43,12 +91,13 @@ exports.getDashboard = async (req, res) => {
       Enquiry.getAll(),
       Income.getIncomeList(),
       Expense.getExpenseList(),
-      Report.getLatestLogs()
+      Report.getLatestLogs(),
+      getMonthlyTrend()
     ]);
 
     const [
       rawFees, rawPendingFees, rawTeacherPayments, rawStudents,
-      rawBatches, rawCourses, rawEnquiries, rawIncome, rawExpense, reportLogs
+      rawBatches, rawCourses, rawEnquiries, rawIncome, rawExpense, reportLogs, monthlyTrend
     ] = results.map(r => r.status === 'fulfilled' ? r.value : []);
 
     results.forEach((r, i) => {
@@ -124,12 +173,16 @@ exports.getDashboard = async (req, res) => {
     const logsMap = {};
     (reportLogs || []).forEach(l => { logsMap[l.report_key] = l.generated_at; });
 
+    
+    const { collectionTrend, incomeExpense } = monthlyTrend || {};
+
     res.json({
       success: true,
       data: {
         fees, pendingFees, teacherPayments, students,
         batches, courses, enquiries, income, expense,
-        reportLogs: logsMap
+        reportLogs: logsMap,
+        collectionTrend, incomeExpense
       }
     });
   } catch (err) {

@@ -28,11 +28,14 @@ const head=`<input type="month" id="ieMonthFilter" class="filter-sel" value="${c
     currentIncome = income;
     currentExpense = expense;
 
+    const isLoss = (kpis.netProfit||0) < 0;
+    const plIsLoss = (pl.netProfit||0) < 0;
+
     c.innerHTML=`<div class="kpi-grid">
       <div class="kpi"><div class="top"><span class="label">Total Income</span><span class="ic b-green">${App.svg('trending')}</span></div><div class="val">${App.money(kpis.totalIncome)}</div></div>
       <div class="kpi"><div class="top"><span class="label">Total Expenses</span><span class="ic b-red">${App.svg('money')}</span></div><div class="val">${App.money(kpis.totalExpense)}</div></div>
-      <div class="kpi"><div class="top"><span class="label">Net Profit</span><span class="ic b-brand">${App.svg('rupee')}</span></div><div class="val">${App.money(kpis.netProfit)}</div></div>
-      <div class="kpi"><div class="top"><span class="label">Profit Margin</span><span class="ic b-amber">${App.svg('reports')}</span></div><div class="val">${kpis.profitMargin}%</div></div>
+      <div class="kpi"><div class="top"><span class="label">${isLoss?'Net Loss':'Net Profit'}</span><span class="ic ${isLoss?'b-red':'b-brand'}">${App.svg('rupee')}</span></div><div class="val">${App.money(Math.abs(kpis.netProfit||0))}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Profit Margin</span><span class="ic b-amber">${App.svg('reports')}</span></div><div class="val" style="${isLoss?'color:var(--red)':''}">${kpis.profitMargin}%</div></div>
     </div>
 
     <div class="grid-32 mb16">
@@ -46,7 +49,7 @@ const head=`<input type="month" id="ieMonthFilter" class="filter-sel" value="${c
         <div class="pl-line minus"><span>− Staff Salary</span><span class="v">${App.money(pl.staffSalary)}</span></div>
         <div class="pl-line minus"><span>− Rent</span><span class="v">${App.money(pl.rent)}</span></div>
         <div class="pl-line minus"><span>− Other Expenses</span><span class="v">${App.money(pl.otherExpenses)}</span></div>
-        <div class="pl-line total"><span>= Net Profit</span><span class="v">${App.money(pl.netProfit)}</span></div>
+        <div class="pl-line total"><span>= ${plIsLoss?'Net Loss':'Net Profit'}</span><span class="v" style="${plIsLoss?'color:var(--red)':''}">${App.money(Math.abs(pl.netProfit||0))}</span></div>
       </div></div>
     </div>
 

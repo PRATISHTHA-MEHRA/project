@@ -13,7 +13,7 @@
 <script src="assets/js/api.js"></script>
 <script>
 if (App.guard()) {
-  const API_BASE = "/admissions"; // will be appended to BASE_URL in api.js
+  const API_BASE = "/admissions"; 
   let usingFallback = false;
   let currentAdmissions = [];
 
@@ -197,7 +197,7 @@ if (App.guard()) {
 
   async function loadAdmissions() {
     try {
-      const payload = await API.get(API_BASE); // "/admissions" → "http://localhost:5001/api/admissions"
+      const payload = await API.get(API_BASE); 
       usingFallback = false;
       renderPage(unwrapList(payload).map(mapAdmission));
     } catch (err) {
@@ -232,7 +232,7 @@ if (App.guard()) {
     });
   };
 
-  // ---- New Admission flow (unchanged, except API call) ----
+
 
   function optionList(values, selected) {
     return unique(values).map(
@@ -385,7 +385,7 @@ if (App.guard()) {
     });
   };
 
-  // Initial load
+  
   loadAdmissions();
 }
 </script>

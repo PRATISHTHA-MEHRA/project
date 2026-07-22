@@ -112,8 +112,7 @@ const createAdmission = async (req, res) => {
         });
     } catch (error) {
         console.error(error);
-        // 400, not 500: these are payload/validation problems (missing or
-        // mismatched course/batch), not server failures.
+  
         res.status(400).json({ success: false, message: error.message || "Error completing admission process" });
     }
 };

@@ -79,10 +79,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 
     localStorage.setItem('JWT_TOKEN', token);
 
-    // This is the real session record — role comes straight from the
-    // backend, NOT from the old hardcoded App.login() mock. Everything
-    // that checks App.me().role (sidebar filtering, requireRole, the
-    // topbar profile chip) depends on this being accurate.
+    
     sessionStorage.setItem('bp_admin', JSON.stringify({
       id: admin.id,
       name: admin.name || admin.full_name || admin.username,

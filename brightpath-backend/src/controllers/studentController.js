@@ -36,9 +36,7 @@ exports.getStudentAttendance = async (req, res) => {
 };
 
 exports.getStudentExams = async (req, res) => {
-    // ⚠️ assessments_exams has no per-student link (no student_id, no
-    // obtained-marks column) — it only stores test definitions, not results.
-    // Returning [] until a student-level results table exists.
+   
     res.status(200).json({ success: true, data: [] });
 };
 

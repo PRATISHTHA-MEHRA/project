@@ -45,15 +45,14 @@ async function loadDashboard(){
     expenseList  = unwrapList(d.expense).length ? unwrapList(d.expense) : DB.expense;
     totalTeachers= d.totalTeachers || DB.dash.totalTeachers;
 
-    // todayClasses: an empty array here is a legitimate "no classes today"
-    // answer (e.g. Sunday), not a fetch failure — don't mask it with sample data.
+
     todayClasses = Array.isArray(d.todayClasses) ? d.todayClasses : DB.today;
 
     attendancePct = (d.attendancePct !== null && d.attendancePct !== undefined) ? d.attendancePct : DB.dash.attendancePct;
     newAdmissionsThisMonth = (d.newAdmissionsThisMonth !== null && d.newAdmissionsThisMonth !== undefined) ? d.newAdmissionsThisMonth : null;
   }catch(err){
     console.warn('Falling back to sample data — /dashboard/summary failed:', err.message);
-    // only here — a genuine fetch failure — should todayClasses stay on its initial DB.today default
+    
   }
 }
 
@@ -107,8 +106,7 @@ async function loadDashboard(){
   const c = App.layout('dashboard','Welcome back, Anand 👋',null,head);
 
   function renderPage(){
-    // NOTE: collectionTrend, admissionSource, pendingTrend need schema support
-    // (multi-month history, admission source column) — left on sample data
+   
    const liveAdmissionSource = computeAdmissionSource();
 const ch = {
   ...DB.charts,
@@ -129,12 +127,11 @@ const monthlyCollection = feesList
   .filter(f => inCurrentMonth(f.date))
   .reduce((a,f)=>a+(Number(f.paid)||0),0);
 
-const pendingFeesTotal = pendingList.reduce((a,p)=>a+(Number(p.due)||0),0); // pending dues aren't month-scoped by nature — kept as-is
+const pendingFeesTotal = pendingList.reduce((a,p)=>a+(Number(p.due)||0),0); 
 
 const teacherPaymentsDue = tpayList
   .filter(t=>t.status!=='Paid')
-  .reduce((a,t)=>a+(Number(t.balance)||0),0); // also not month-scoped — a teacher's balance due doesn't reset monthly
-
+  .reduce((a,t)=>a+(Number(t.balance)||0),0); 
 const monthlyIncome = incomeList
   .filter(x => inCurrentMonth(x.date))
   .reduce((a,x)=>a+(Number(x.amount)||0),0);

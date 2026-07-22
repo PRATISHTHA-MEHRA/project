@@ -20,8 +20,7 @@
         const ENDPOINT = "/teacher-payments";
         const MONTH = "May 2026"; 
         let paymentRows = [];
-        let teachersList = []; // [{id, name}] — comes from the same dashboard call, no extra request
-
+        let teachersList = []; 
         const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
         const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const unique = values => [...new Set(values.filter(Boolean))];
@@ -117,9 +116,7 @@
               {
                 label: "Month",
                 key: "month",
-                // Derived from whatever's actually loaded, instead of a
-                // hardcoded single-month list, so new months show up here
-                // automatically once vouchers exist for them.
+                
                 options: unique(rows.map(r => r.month)).length
                   ? unique(rows.map(r => r.month))
                   : [MONTH],

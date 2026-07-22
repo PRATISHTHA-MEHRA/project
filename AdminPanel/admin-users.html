@@ -11,10 +11,7 @@
 <script src="assets/js/admin-app.js"></script>
 <script src="assets/js/api.js"></script>
 <script>
-/* Guard: must be logged in AND must be a Super Admin. A regular Admin who
-   types this URL directly gets bounced to dashboard.html — the sidebar
-   link is hidden for them too (see admin-app.js NAV), but this is the
-   real enforcement; the backend also re-checks on every API call. */
+
 if(App.guard() && App.requireRole('Super Admin')){
   const API_BASE = "/admin-users"; // -> "http://localhost:5001/api/admin-users"
   const statuses = ["Active", "Inactive"];
@@ -75,8 +72,7 @@ function mapAdmin(item = {}){
         {key:'last_login',label:'Last Login',render:r=>esc(r.last_login ? new Date(r.last_login).toLocaleString('en-IN') : 'Never')}
       ],
       actions:r=>{
-        // Super Admin accounts can't be edited/deleted through this UI,
-        // and a Super Admin can't delete their own account.
+    
         const isSuperAdmin = r.role === 'Super Admin';
         const isSelf = String(r.id) === String(me.id);
         return `

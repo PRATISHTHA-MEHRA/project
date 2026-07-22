@@ -32,13 +32,13 @@ exports.getTimetable = async (req, res) => {
 
         const allSlots = await Timetable.getMasterSchedules();
 
-        // 1. TODAY'S FILTERING LOGIC
+
         if (view === "today") {
             const filtered = allSlots.filter(s => matchesDay(s.days, dayAbbr));
             return res.status(200).json({ success: true, date: targetDate, day: dayFull, data: filtered });
         }
 
-        // 2. WEEKLY LOGIC — grouped by day so the frontend doesn't re-derive schedule matching
+
         if (view === "weekly") {
             const grouped = WEEK_FULL.map((dayName, i) => ({
                 day: dayName,
@@ -47,7 +47,7 @@ exports.getTimetable = async (req, res) => {
             return res.status(200).json({ success: true, date: targetDate, data: grouped });
         }
 
-        // 3. MASTER UNGROUPED RAW ARRAY (teacher-wise / batch-wise / room-wise views group this client-side)
+       
         res.status(200).json({
             success: true,
             view: view || "all",

@@ -19,7 +19,7 @@
       let examsList = [];
       let studentsList = [];
 
-      // Sanitization utility helpers
+     
       const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
       const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const asNum = v => Number(v ?? 0) || 0;
@@ -40,8 +40,7 @@
           batch: item.batch || item.batch_name || '',
           subject: item.subject || item.subject_name || '',
           total: asNum(item.total ?? item.total_marks ?? 100),
-          // NOTE: getMarksWithRankings doesn't currently SELECT student_id, so this
-          // will be blank until the backend query adds it — see message below.
+          
           studentId: item.studentId || item.student_id || '',
           student: item.student || item.student_name || 'Unknown',
           obtained: asNum(item.obtained ?? item.marks_obtained ?? 0),

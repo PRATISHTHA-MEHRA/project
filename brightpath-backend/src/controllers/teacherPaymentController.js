@@ -7,9 +7,7 @@ exports.getPaymentDashboard = async (req, res) => {
         const kpis = await TeacherPayment.getPaymentKPIs(targetMonth);
         const paymentsList = await TeacherPayment.getAllPayments();
 
-        // Fetched in the same request as everything else — no separate
-        // frontend call. Only Active teachers are offered for new payments;
-        // drop the status filter below if you want everyone listed.
+      
         const allTeachers = await Teacher.getAll();
         const teacherOptions = allTeachers
             .filter(t => t.status === "Active")
@@ -63,8 +61,7 @@ exports.addNewVoucher = async (req, res) => {
     try {
         const { teacher, month, gross, paid, mode, date, voucher, txn, remarks } = req.body;
 
-        // Server-side safety net: the frontend dropdown already restricts this
-        // to real teachers, but a request could bypass the UI, so re-check here.
+       
         const allTeachers = await Teacher.getAll();
         const validTeacher = allTeachers.find(t => t.teacher_name === teacher);
         if (!validTeacher) {

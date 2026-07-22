@@ -259,7 +259,7 @@ if(App.guard()){
       <div><label>Session End</label><input type="date" id="ay_end" value="${(a.session_end||'').slice(0,10)}"></div>
       <div><label>Working Days</label><input id="ay_wdays" value="${a.working_days||'Mon – Sat'}"></div></div>
       <div class="sec-title">Holidays</div>
-      <div class="chips" id="holidayChips">${(a.holidays||[]).map(h=>`<span class="chip">${h.label} ${App.svg('x')}<span data-hid="${h.id}" class="chip-x" style="cursor:pointer" onclick="removeHoliday(${h.id})">✕</span></span>`).join('')}</div>
+      <div class="chips" id="holidayChips">${(a.holidays||[]).map(h=>`<span class="chip">${h.label}<span data-hid="${h.id}" class="chip-x" style="cursor:pointer;margin-left:6px;font-weight:700" onclick="removeHoliday(${h.id})" title="Remove holiday">✕</span></span>`).join('')}</div>
       <div style="margin-top:10px;display:flex;gap:8px"><input id="ay_newholiday" placeholder="Add holiday label e.g. 15 Aug" style="max-width:240px">
       <button class="btn btn-light btn-sm" id="addHolidayBtn">${App.svg('plus')}Add Holiday</button></div>`;
   }

@@ -16,6 +16,12 @@ if(App.guard()){
   let batchNames = [];
   let teacherNames = [];
 
+  const API_BASE = (typeof API !== 'undefined' && API.BASE_URL) ? API.BASE_URL : 'http://localhost:5001/api';
+  function authHeaders(){
+    const token = localStorage.getItem('JWT_TOKEN');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
   function unwrapList(payload){
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.data)) return payload.data;
@@ -80,13 +86,35 @@ if(App.guard()){
 
   const find=id=>homeworkList.find(h=>h.id===id);
 
+  // Fetches the attachment as a blob and saves it — same approach as
+  // study-material's downloadSm, since attachments aren't statically served.
+  window.downloadHwAttachment=async (id, filename)=>{
+    try{
+      const res = await fetch(`${API_BASE}/homework/${id}/file`, { headers: authHeaders() });
+      if(!res.ok){
+        if(res.status===404) throw new Error('No attachment was uploaded for this homework');
+        throw new Error('Failed to download attachment');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'attachment';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }catch(err){ App.toast(err.message || 'Failed to download attachment','err'); }
+  };
+
   window.viewHw=id=>{ const h=find(id);
     App.modal({size:'lg',title:h.title,sub:`${h.id} · ${h.batch}`,
       body:`<div class="dl cols-3"><div class="it"><div class="k">Subject</div><div class="v">${h.subject||'—'}</div></div>
         <div class="it"><div class="k">Teacher</div><div class="v">${h.teacher||'—'}</div></div><div class="it"><div class="k">Due Date</div><div class="v">${h.due||'—'}</div></div>
         <div class="it"><div class="k">Submitted</div><div class="v num">${h.submitted}</div></div><div class="it"><div class="k">Pending</div><div class="v num">${h.pending}</div></div>
         <div class="it"><div class="k">Status</div><div class="v">${App.badge(h.status)}</div></div></div>
-      <div class="sec-title">Description</div><p style="color:var(--ink-2)">${h.desc||'—'}</p>`,
+      <div class="sec-title">Description</div><p style="color:var(--ink-2)">${h.desc||'—'}</p>
+      ${h.attachment ? `<div class="sec-title">Attachment</div><button type="button" class="btn btn-light" onclick="downloadHwAttachment('${h.id}','${h.attachment}')">Download Attachment</button>` : ''}`,
       foot:`<button class="btn btn-light" data-close>Close</button><button class="btn btn-primary" onclick="App.closeModal();App.toast('Homework marked checked','ok')">Mark Checked</button>` }); };
 
   window.delHw=id=>{ const h=find(id);
@@ -110,26 +138,48 @@ if(App.guard()){
     <div><label>Due Date</label><input type="date" id="h_due" value="${h?h.due:'2026-06-15'}"></div>
     <div class="full"><label>Title</label><input id="h_title" placeholder="e.g. Practice Set 4" value="${h?h.title:''}"></div>
     <div class="full"><label>Description</label><textarea id="h_desc" rows="3">${h?h.desc||'':''}</textarea></div>
-    <div class="full"><label>Attachment</label><input type="file" disabled title="File upload isn't wired to the backend yet"></div></div>`; }
+    <div class="full"><label>Attachment</label>
+      <input type="file" id="h_attachment" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+      ${h && h.attachment ? `<div class="t-sub" style="margin-top:6px">Current file uploaded — <button type="button" class="btn btn-light" style="padding:2px 10px" onclick="downloadHwAttachment('${h.id}','${h.attachment}')">Download</button> (upload a new file above to replace it)</div>` : ''}
+    </div></div>`; }
 
+  // Builds FormData (not JSON) so the file travels with the rest of the fields
   function readHwForm(b){
-    return {
-      batch: b.querySelector('#h_batch').value,
-      subject: b.querySelector('#h_subject').value,
-      teacher: b.querySelector('#h_teacher').value,
-      due: b.querySelector('#h_due').value,
-      title: b.querySelector('#h_title').value.trim(),
-      desc: b.querySelector('#h_desc').value
-    };
+    const fd = new FormData();
+    fd.append('batch', b.querySelector('#h_batch').value);
+    fd.append('subject', b.querySelector('#h_subject').value);
+    fd.append('teacher', b.querySelector('#h_teacher').value);
+    fd.append('due', b.querySelector('#h_due').value);
+    fd.append('title', b.querySelector('#h_title').value.trim());
+    fd.append('desc', b.querySelector('#h_desc').value);
+    const file = b.querySelector('#h_attachment').files[0];
+    if(file) fd.append('attachment', file);
+    return fd;
   }
 
   window.addHw=()=>App.modal({size:'lg',title:'Assign Homework',body:hwForm(null),
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Assign</button>`,
     onOpen:b=>b.querySelector('#sv').onclick=async ()=>{
-      const payload = readHwForm(b);
-      if(!payload.title) return App.toast('Please enter a title','err');
+      const title = b.querySelector('#h_title').value.trim();
+      if(!title) return App.toast('Please enter a title','err');
+
+      const fd = readHwForm(b);
+      fd.append('status','Active');
+      fd.append('submitted','0');
+      fd.append('pending','0');
+
       try{
-        await API.post('/homework', {...payload, status:'Active', submitted:0, pending:0});
+        const res = await fetch(`${API_BASE}/homework`, {
+          method:'POST',
+          headers: authHeaders(), // do NOT set Content-Type — browser sets the multipart boundary
+          body: fd
+        });
+        const raw = await res.text();
+        let json = {};
+        try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* not JSON, fall through */ }
+        if(!res.ok || json.success===false){
+          throw new Error(json.message || raw || `Upload failed (status ${res.status})`);
+        }
         App.closeModal();
         App.toast('Homework assigned & students notified','ok');
         loadHomework();
@@ -141,10 +191,24 @@ if(App.guard()){
   window.editHw=id=>{ const h=find(id); App.modal({size:'lg',title:'Edit Homework',sub:h.id,body:hwForm(h),
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
     onOpen:b=>b.querySelector('#sv').onclick=async ()=>{
-      const payload = readHwForm(b);
-      if(!payload.title) return App.toast('Please enter a title','err');
+      const title = b.querySelector('#h_title').value.trim();
+      if(!title) return App.toast('Please enter a title','err');
+
+      const fd = readHwForm(b);
+      fd.append('status', h.status);
+
       try{
-        await API.put(`/homework/${h.id}`, {...payload, status:h.status});
+        const res = await fetch(`${API_BASE}/homework/${h.id}`, {
+          method:'PUT',
+          headers: authHeaders(),
+          body: fd
+        });
+        const raw = await res.text();
+        let json = {};
+        try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* not JSON, fall through */ }
+        if(!res.ok || json.success===false){
+          throw new Error(json.message || raw || `Update failed (status ${res.status})`);
+        }
         App.closeModal();
         App.toast('Homework updated','ok');
         loadHomework();

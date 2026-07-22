@@ -150,7 +150,7 @@ if(App.guard()){
           try{
             const res = await fetch(`${API_BASE}/study-material`, {
               method:'POST',
-              headers: authHeaders(), // do NOT set Content-Type — browser sets the multipart boundary
+              headers: authHeaders(), 
               body: fd
             });
             const raw = await res.text();

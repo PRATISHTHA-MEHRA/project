@@ -19,8 +19,8 @@ if(App.guard()){
   const feeStatuses = ["Paid", "Pending", "Overdue"];
   let usingFallback = false;
   let currentStudents = [];
-  let courseList = []; // [{id, name}]
-  let batchList = [];  // [{id, name}]
+  let courseList = []; 
+  let batchList = [];  
 
   const head = `<button class="btn btn-light" onclick="App.toast('Exported student list','ok')">${App.svg('download')}Export</button>
     <button class="btn btn-primary" onclick="addStudent()">${App.svg('plus')}Add Student</button>`;
@@ -64,9 +64,7 @@ if(App.guard()){
         .map(x => ({
           id: String(x.id ?? ''),
           name: x.course_name ?? x.name ?? '',
-          // course_name is NOT unique in this data (e.g. several rows are
-          // all "Mathematics Foundation" with different ids), so surface
-          // course_code too — it's what actually tells them apart.
+        
           code: x.course_code ?? x.code ?? ''
         }))
         .filter(x => x.name);
@@ -211,7 +209,7 @@ if(App.guard()){
   
   async function loadStudents(){
     try {
-      const payload = await API.get(API_BASE); // "/students" -> "http://localhost:5001/api/students"
+      const payload = await API.get(API_BASE); 
       usingFallback = false;
       renderPage(unwrapList(payload).map(mapStudent));
     } catch (err) {

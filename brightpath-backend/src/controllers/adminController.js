@@ -101,9 +101,7 @@ exports.update = async (req, res) => {
 
         }
 
-        // Guard rail: Super Admin accounts cannot be edited through this API,
-        // even by another Super Admin. Keeps the existing Admin role/permissions
-        // path completely separate from this new management layer.
+    
         if (existing.role === "Super Admin") {
 
             return res.status(403).json({

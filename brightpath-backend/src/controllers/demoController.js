@@ -43,7 +43,6 @@ exports.createDemo = async (req, res) => {
         const dbReady = mapToDatabase(req.body);
         const created = await Demo.create(dbReady);
 
-        // Also update corresponding Enquiry pipeline status to 'Demo Scheduled' if found
         await db.query(
             "UPDATE enquiries SET status = 'Demo Scheduled' WHERE student_name = $1 AND status != 'Converted'",
             [dbReady.student_name]
