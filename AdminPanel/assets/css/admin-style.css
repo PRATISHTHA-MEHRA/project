@@ -507,7 +507,7 @@ table.tbl td.num, table.tbl th.num { font-family: var(--font-num); text-align: r
   width: 100%;
   border-radius: 6px 6px 0 0;
   transition: height .6s cubic-bezier(.4,0,.2,1), filter .15s;
-  min-height: 4px;
+  min-height: 0px;
   cursor: default;
 }
 .bars .col .bar:hover { filter: brightness(1.12); }
