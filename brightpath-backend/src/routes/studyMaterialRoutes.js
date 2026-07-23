@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const studyMaterialController = require("../controllers/studyMaterialController");
 const upload = require("../middleware/upload");
+const auth = require("../middleware/authMiddleware");
 
 router.get("/", auth, studyMaterialController.getMaterialList);
 router.post("/", auth, upload.single("file"), studyMaterialController.addMaterial);
