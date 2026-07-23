@@ -75,12 +75,25 @@
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script>
+// Key used to remember only the username (never the password) across visits.
+const REMEMBERED_USERNAME_KEY = 'bp_remembered_username';
+
 // If this browser already has a remembered (or active) session,
 // skip the login form entirely and go straight to the dashboard.
 (function checkExistingSession(){
   const existing = localStorage.getItem('bp_admin') || sessionStorage.getItem('bp_admin');
   if (existing) {
     location.replace("dashboard.html");
+  }
+})();
+
+(function prefillRememberedUsername(){
+  const rememberedUsername = localStorage.getItem(REMEMBERED_USERNAME_KEY);
+  if (rememberedUsername) {
+    const usernameField = document.getElementById('u');
+    usernameField.value = rememberedUsername;
+    document.getElementById('rememberMe').checked = true;
+    document.getElementById('p').focus();
   }
 })();
 
@@ -139,6 +152,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 
   const usernameInput = document.getElementById('u').value.trim();
   const passwordInput = document.getElementById('p').value;
+  
   const errorEl = document.getElementById('err');
 
   errorEl.style.display = "none";
@@ -160,8 +174,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     const storage = remember ? localStorage : sessionStorage;
     const otherStorage = remember ? sessionStorage : localStorage;
 
-    // Clear any leftover copy in the storage we're NOT using this time,
-    // so a stale token/admin object can't be picked up by mistake.
+  
     otherStorage.removeItem('JWT_TOKEN');
     otherStorage.removeItem('bp_admin');
 
@@ -173,6 +186,13 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
       role: admin.role,
       initials: initialsOf(admin.name || admin.full_name || admin.username)
     }));
+
+    // Remember (or forget) just the username — never the password.
+    if (remember) {
+      localStorage.setItem(REMEMBERED_USERNAME_KEY, usernameInput);
+    } else {
+      localStorage.removeItem(REMEMBERED_USERNAME_KEY);
+    }
 
     location.href = "dashboard.html";
 

@@ -113,13 +113,7 @@ const App = (function () {
     }
     return true;
   }
-  function login(user, pass){
-    if (user.trim()==="admin" && pass==="admin123"){
-      sessionStorage.setItem("bp_admin", JSON.stringify({name:"Anand Kulkarni", role:"Centre Admin", initials:"AK"}));
-      return true;
-    }
-    return false;
-  }
+  
   function logout(){
     localStorage.removeItem("bp_admin");
     sessionStorage.removeItem("bp_admin");
@@ -382,6 +376,6 @@ const App = (function () {
     return `<div class="hbar-list">${data.map((d,i)=>`<div class="row"><div class="top"><b>${d.label}</b><span class="v">${fmt?fmt(d.value):d.value}</span></div><div class="track"><span style="width:${d.value/max*100}%;background:${colors[i%colors.length]}"></span></div></div>`).join('')}</div>`;
   }
 
-  return { svg, I, guard, requireRole, login, logout, me, layout, toast, modal, closeModal, confirmModal,
+  return { svg, I, guard, requireRole, logout, me, layout, toast, modal, closeModal, confirmModal,
     badge, money, avatar, whoCell, table, actBtn, barChart, sparkline, donut, hbars };
 })();
