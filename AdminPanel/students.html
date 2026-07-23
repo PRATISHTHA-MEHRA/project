@@ -460,62 +460,144 @@ if(App.guard()){
   window.collectFee = async id => {
     const s = findCurrentStudent(id) || await getStudent(id).catch(()=>null);
     if (!s) return App.toast('Student not found','err');
+
+    const now = new Date();
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const quarters = [
+      { value:'Q1', label:'Q1 (Jan - Mar)' },
+      { value:'Q2', label:'Q2 (Apr - Jun)' },
+      { value:'Q3', label:'Q3 (Jul - Sep)' },
+      { value:'Q4', label:'Q4 (Oct - Dec)' }
+    ];
+    const halves = [
+      { value:'H1', label:'H1 (Jan - Jun)' },
+      { value:'H2', label:'H2 (Jul - Dec)' }
+    ];
+
+    // Default period type guessed from the fee type name, but the staff can override.
+    const feeTypeLower = String(s.feeType || '').toLowerCase();
+    const defaultPeriodType = feeTypeLower.includes('quarter') ? 'quarterly'
+      : feeTypeLower.includes('half') || feeTypeLower.includes('semi') ? 'half'
+      : feeTypeLower.includes('annual') || feeTypeLower.includes('year') ? 'yearly'
+      : 'monthly';
+
+    const buildPeriodLabel = (b) => {
+      const type = b.querySelector('#cf_period_type').value;
+      const year = b.querySelector('#cf_year').value.trim();
+      if (type === 'monthly') return `${b.querySelector('#cf_month').value} ${year}`;
+      if (type === 'quarterly') return `${b.querySelector('#cf_quarter').value} ${year}`;
+      if (type === 'half') return `${b.querySelector('#cf_half').value} ${year}`;
+      return year; // yearly
+    };
+
+    const fetchDue = async (period) => {
+      if (usingFallback) return s.feeAmt;
+      try {
+        const payload = await API.get(`/fees/pending/${encodeURIComponent(s.code || s.id)}?feeType=${encodeURIComponent(s.feeType)}&period=${encodeURIComponent(period)}`);
+        const row = payload?.data;
+        return (row && row.due != null) ? Number(row.due) : s.feeAmt;
+      } catch (err) {
+        console.warn('Could not fetch current due, falling back to course fee:', err);
+        return s.feeAmt;
+      }
+    };
+
+    const defaultMonth = monthNames[now.getMonth()];
+    const defaultQuarter = quarters[Math.floor(now.getMonth()/3)].value;
+    const defaultHalf = now.getMonth() < 6 ? 'H1' : 'H2';
+    const defaultYear = now.getFullYear();
+    const defaultInitialPeriod = defaultPeriodType === 'quarterly' ? `${defaultQuarter} ${defaultYear}`
+      : defaultPeriodType === 'half' ? `${defaultHalf} ${defaultYear}`
+      : defaultPeriodType === 'yearly' ? `${defaultYear}`
+      : `${defaultMonth} ${defaultYear}`;
+
+    const initialDue = await fetchDue(defaultInitialPeriod);
+
     App.modal({ size:'lg', title:'Collect Fee', sub:`${esc(s.name)} - ${esc(s.batch || s.course || '-')}`,
       body:`<div class="form-grid">
         <div><label>Fee Type</label><input value="${esc(s.feeType || '-')}" disabled></div>
-        <div><label>Fee Period</label><input value="" id="cf_period" placeholder="e.g. Jun 2026"></div>
-        <div><label>Due Amount</label><input class="num" value="${esc(s.feeAmt)}" disabled></div>
+        <div><label>Period Type</label><select id="cf_period_type">
+          <option value="monthly" ${defaultPeriodType==='monthly'?'selected':''}>Monthly</option>
+          <option value="quarterly" ${defaultPeriodType==='quarterly'?'selected':''}>Quarterly</option>
+          <option value="half" ${defaultPeriodType==='half'?'selected':''}>Half-Yearly</option>
+          <option value="yearly" ${defaultPeriodType==='yearly'?'selected':''}>Yearly</option>
+        </select></div>
+        <div id="cf_month_wrap" style="${defaultPeriodType==='monthly'?'':'display:none'}"><label>Month</label><select id="cf_month">${monthNames.map(m=>`<option ${m===defaultMonth?'selected':''}>${m}</option>`).join('')}</select></div>
+        <div id="cf_quarter_wrap" style="${defaultPeriodType==='quarterly'?'':'display:none'}"><label>Quarter</label><select id="cf_quarter">${quarters.map(q=>`<option value="${q.value}" ${q.value===defaultQuarter?'selected':''}>${q.label}</option>`).join('')}</select></div>
+        <div id="cf_half_wrap" style="${defaultPeriodType==='half'?'':'display:none'}"><label>Half</label><select id="cf_half">${halves.map(h=>`<option value="${h.value}" ${h.value===defaultHalf?'selected':''}>${h.label}</option>`).join('')}</select></div>
+        <div><label>Year</label><input type="number" id="cf_year" value="${defaultYear}" min="2000" max="2100" step="1"></div>
+        <div><label>Due Amount</label><input class="num" id="cf_due" value="${esc(initialDue)}" disabled></div>
         <div><label>Discount</label><input class="num" id="cf_disc" value="0"></div>
         <div><label>Late Fine</label><input class="num" id="cf_fine" value="0"></div>
-        <div><label>Paid Amount</label><input class="num" id="cf_paid" value="${esc(s.feeAmt)}"></div>
+        <div><label>Paid Amount</label><input class="num" id="cf_paid" value="${esc(initialDue)}"></div>
         <div><label>Payment Mode</label><select id="cf_mode">${(DB.modes||[]).map(m=>`<option>${m}</option>`).join('')}</select></div>
         <div><label>Transaction ID</label><input id="cf_txn" placeholder="UPI / Ref no."></div>
         <div class="full"><label>Remarks</label><input id="cf_rem" placeholder="Optional note"></div></div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave">Collect & Generate Receipt</button>`,
-      onOpen:b=>b.querySelector('#cfSave').onclick=async()=>{
-        try {
-          if (usingFallback) {
-            const local = findLocalStudent(id);
-            if (local) local.feeStatus = 'Paid';
+      onOpen:b=>{
+        const refreshDue = async () => {
+          const period = buildPeriodLabel(b);
+          const due = await fetchDue(period);
+          b.querySelector('#cf_due').value = due;
+          b.querySelector('#cf_paid').value = due;
+        };
+
+        b.querySelector('#cf_period_type').onchange = (e) => {
+          b.querySelector('#cf_month_wrap').style.display = e.target.value === 'monthly' ? '' : 'none';
+          b.querySelector('#cf_quarter_wrap').style.display = e.target.value === 'quarterly' ? '' : 'none';
+          b.querySelector('#cf_half_wrap').style.display = e.target.value === 'half' ? '' : 'none';
+          refreshDue();
+        };
+        ['#cf_month','#cf_quarter','#cf_half','#cf_year'].forEach(sel => {
+          b.querySelector(sel).onchange = refreshDue;
+        });
+
+        b.querySelector('#cfSave').onclick = async () => {
+          try {
+            if (usingFallback) {
+              const local = findLocalStudent(id);
+              if (local) local.feeStatus = 'Paid';
+              App.closeModal();
+              renderPage(localStudents());
+              return App.toast('Fee collected locally','ok');
+            }
+            const due = Number(b.querySelector('#cf_due').value);
+            const discount = Number(b.querySelector('#cf_disc').value);
+            const fine = Number(b.querySelector('#cf_fine').value);
+            const paid = Number(b.querySelector('#cf_paid').value);
+            const period = buildPeriodLabel(b);
+            const year = Number(b.querySelector('#cf_year').value);
+            if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error('Enter a valid year.');
+            if (![due, discount, fine, paid].every(Number.isFinite) || due < 0 || discount < 0 || fine < 0 || paid < 0) throw new Error('Enter valid non-negative fee amounts.');
+            const balance = Math.max(0, due - discount + fine - paid);
+            await API.post('/fees/collect', {
+              studentId: s.code || s.id,
+              student: s.name,
+              batch: s.batch || '',
+              feeType: s.feeType || '',
+              period,
+              due,
+              discount,
+              fine,
+              paid,
+              mode: b.querySelector('#cf_mode').value,
+              txn: b.querySelector('#cf_txn').value.trim(),
+              collectedBy: App.me().name || 'Admin',
+              date: toDateStr(new Date()),
+              balance,
+              remarks: b.querySelector('#cf_rem').value.trim()
+            });
+            await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload({...s, feeStatus: balance === 0 ? 'Paid' : 'Pending'}));
             App.closeModal();
-            renderPage(localStudents());
-            return App.toast('Fee collected locally','ok');
+            await loadStudents();
+            App.toast('Fee collected and receipt generated','ok');
+          } catch (err) {
+            App.toast(err.message || 'Failed to collect fee','err');
           }
-          const due = Number(s.feeAmt);
-          const discount = Number(b.querySelector('#cf_disc').value);
-          const fine = Number(b.querySelector('#cf_fine').value);
-          const paid = Number(b.querySelector('#cf_paid').value);
-          const period = b.querySelector('#cf_period').value.trim();
-          if (!period) throw new Error('Fee period is required.');
-          if (![due, discount, fine, paid].every(Number.isFinite) || due < 0 || discount < 0 || fine < 0 || paid < 0) throw new Error('Enter valid non-negative fee amounts.');
-          const balance = Math.max(0, due - discount + fine - paid);
-          await API.post('/fees/collect', {
-            studentId: s.code || s.id,
-            student: s.name,
-            batch: s.batch || '',
-            feeType: s.feeType || '',
-            period,
-            due,
-            discount,
-            fine,
-            paid,
-            mode: b.querySelector('#cf_mode').value,
-            txn: b.querySelector('#cf_txn').value.trim(),
-            collectedBy: App.me().name || 'Admin',
-            date: toDateStr(new Date()),
-            balance,
-            remarks: b.querySelector('#cf_rem').value.trim()
-          });
-          await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload({...s, feeStatus: balance === 0 ? 'Paid' : 'Pending'}));
-          App.closeModal();
-          await loadStudents();
-          App.toast('Fee collected and receipt generated','ok');
-        } catch (err) {
-          App.toast(err.message || 'Failed to collect fee','err');
-        }
+        };
       }
     });
-  };
+};
 
   (async () => {
     await loadDropdownData();

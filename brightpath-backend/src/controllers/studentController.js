@@ -3,6 +3,7 @@ const db = require("../config/db"); // Needed to perform lookup queries
 const Fee = require("../models/feeModel");
 const Attendance = require("../models/attendanceModel");
 const Marks = require("../models/marksModel");
+const PendingFee = require("../models/pendingfeeModel");
 
 class RequestError extends Error {
     constructor(message, status = 400) {
@@ -76,7 +77,7 @@ exports.getStudentAttendance = async (req, res) => {
         const logs = await Attendance.getRecentLogsByStudent(req.params.id);
         const mapped = logs.map(l => ({
             date: l.attendance_date instanceof Date
-                ? l.attendance_date.toISOString().slice(0, 10)
+                ? l.attendance_date
                 : String(l.attendance_date).slice(0, 10),
             batch: l.batch_name,
             status: l.status
@@ -228,8 +229,13 @@ exports.createStudent = async (req, res) => {
         const dbReadyData = await mapToDatabase(payload);
         const created = await Student.create(dbReadyData);
 
-   
         const fullStudent = await Student.getById(created.id);
+
+        try {
+            await PendingFee.seedInitialPendingFee(fullStudent);
+        } catch (seedErr) {
+            console.error("Pending-fee seed failed for student", fullStudent?.id, ":", seedErr.message);
+        }
 
         res.status(201).json({
             success: true,
@@ -241,7 +247,6 @@ exports.createStudent = async (req, res) => {
         sendError(res, err);
     }
 };
-
 // Update Student
 exports.updateStudent = async (req, res) => {
     try {
