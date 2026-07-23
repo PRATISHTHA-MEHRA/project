@@ -5,7 +5,7 @@ const timetableController = require("../controllers/timetableController");
 
 
 // GET /api/timetable?view=today|weekly&date=YYYY-MM-DD
-router.get("/", timetableController.getTimetable);
+router.get("/", auth, timetableController.getTimetable);
 
 
 
