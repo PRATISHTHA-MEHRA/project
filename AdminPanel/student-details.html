@@ -101,7 +101,26 @@ if(App.guard()){
   function render(s, extras){
     extras = extras || { fees: [], attendance: [], exams: [] };
 
-    const head = `<button class="btn btn-light" onclick="App.toast('Statement downloaded','ok')">${App.svg('download')}Statement</button>
+    window.downloadStudentStatement = () => {
+      const rows = [
+        ['Student statement', s.name],
+        ['Student code', s.id],
+        ['Course', s.course],
+        ['Batch', s.batch],
+        ['Fee amount', s.feeAmt],
+        [],
+        ['Receipt', 'Period', 'Amount', 'Mode', 'Date'],
+        ...extras.fees.map(f => [f.receipt ?? f.id ?? '', f.period ?? '', f.amount ?? f.paid ?? '', f.mode ?? '', toDateStr(f.date)])
+      ];
+      const csv = rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+      link.download = `student-statement-${s.id}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    };
+
+    const head = `<button class="btn btn-light" onclick="downloadStudentStatement()">${App.svg('download')}Statement</button>
       <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
     const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,s.id],head);
     const initials = s.name.split(' ').map(w=>w[0]).join('');

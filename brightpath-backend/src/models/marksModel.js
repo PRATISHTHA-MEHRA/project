@@ -23,6 +23,25 @@ const getMarksWithRankings = async () => {
     return result.rows;
 };
 
+const getMarksByStudentId = async (studentId, studentCode) => {
+    const query = `
+        SELECT
+            exam_name as "exam",
+            exam_id as "examId",
+            subject_name as "subject",
+            marks_obtained as "obtained",
+            total_marks as "total",
+            remarks,
+            grade
+        FROM student_marks
+        WHERE TRIM(LOWER(student_id)) = TRIM(LOWER($1))
+           OR TRIM(LOWER(student_id)) = TRIM(LOWER($2))
+        ORDER BY created_at DESC;
+    `;
+    const result = await db.query(query, [String(studentId), studentCode || '']);
+    return result.rows;
+};
+
 const saveBulkMarks = async (records) => {
     const client = await db.connect();
     try {
@@ -63,4 +82,4 @@ const saveBulkMarks = async (records) => {
     }
 };
 
-module.exports = { getMarksWithRankings, saveBulkMarks };
+module.exports = { getMarksWithRankings, getMarksByStudentId, saveBulkMarks };

@@ -22,7 +22,7 @@ if(App.guard()){
   let courseList = []; 
   let batchList = [];  
 
-  const head = `<button class="btn btn-light" onclick="App.toast('Exported student list','ok')">${App.svg('download')}Export</button>
+  const head = `<button class="btn btn-light" onclick="exportStudents()">${App.svg('download')}Export</button>
     <button class="btn btn-primary" onclick="addStudent()">${App.svg('plus')}Add Student</button>`;
   const c = App.layout('students','Students',['Students'],head);
 
@@ -151,17 +151,40 @@ if(App.guard()){
       batch: batchSel.value,
       batchId: batchSel.selectedOptions[0]?.dataset.id || '',
       feeType: b.querySelector('#f_feetype').value,
-      feeAmt: asNum(b.querySelector('#f_feeamt').value),
+      feeAmt: b.querySelector('#f_feeamt').value.trim(),
       admission: b.querySelector('#f_adm').value,
       status: b.querySelector('#f_status').value,
       feeStatus: b.querySelector('#f_fee_status').value,
-      att: asNum(b.querySelector('#f_att').value),
+      att: b.querySelector('#f_att').value.trim(),
       gender: b.querySelector('#f_gender').value,
       dob: b.querySelector('#f_dob').value,
       school: b.querySelector('#f_school').value.trim(),
       address: b.querySelector('#f_addr').value.trim()
     };
   }
+
+  function validateStudentForm(s){
+    const required = [['name','student name'],['mobile','student mobile'],['parent','parent name'],['parentMobile','parent mobile'],['cls','class'],['course','course'],['feeType','fee type'],['admission','admission date']];
+    const missing = required.find(([key]) => !s[key]);
+    if (missing) return `Enter ${missing[1]}.`;
+    if (!/^\+?[0-9]{7,15}$/.test(s.mobile.replace(/[\s-]/g,'')) || !/^\+?[0-9]{7,15}$/.test(s.parentMobile.replace(/[\s-]/g,''))) return 'Enter valid student and parent mobile numbers.';
+    const fee = Number(s.feeAmt), attendance = Number(s.att);
+    if (!Number.isFinite(fee) || fee < 0) return 'Fee amount must be zero or greater.';
+    if (!Number.isFinite(attendance) || attendance < 0 || attendance > 100) return 'Attendance must be between 0 and 100.';
+    if (s.dob && s.dob > s.admission) return 'Date of birth cannot be after admission date.';
+    return '';
+  }
+
+  window.exportStudents = () => {
+    const columns = ['Student Code','Name','Mobile','Parent','Parent Mobile','Class','Course','Batch','Fee Type','Fee Amount','Admission Date','Status','Fee Status','Attendance','Gender','Date of Birth','School','Address'];
+    const values = currentStudents.map(s => [s.code || s.id,s.name,s.mobile,s.parent,s.parentMobile,s.cls,s.course,s.batch,s.feeType,s.feeAmt,s.admission,s.status,s.feeStatus,s.att,s.gender,s.dob,s.school,s.address]);
+    const csv = [columns, ...values].map(row => row.map(value => `"${String(value ?? '').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    link.download = `students-${toDateStr(new Date())}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
 
   function renderPage(rows){
     currentStudents = rows;
@@ -334,16 +357,16 @@ if(App.guard()){
       : unique(currentStudents.map(x=>x.batch)).map(name => ({ id:'', name }));
 
     return `<div class="form-grid">
-      <div><label>Full Name</label><input id="f_name" value="${esc(s?.name || '')}"></div>
-      <div><label>Mobile</label><input id="f_mobile" value="${esc(s?.mobile || '')}"></div>
-      <div><label>Parent Name</label><input id="f_parent" value="${esc(s?.parent || '')}"></div>
-      <div><label>Parent Mobile</label><input id="f_pmobile" value="${esc(s?.parentMobile || '')}"></div>
+       <div><label>Full Name</label><input id="f_name" maxlength="120" required value="${esc(s?.name || '')}"></div>
+       <div><label>Mobile</label><input id="f_mobile" type="tel" inputmode="numeric" required value="${esc(s?.mobile || '')}"></div>
+       <div><label>Parent Name</label><input id="f_parent" required value="${esc(s?.parent || '')}"></div>
+       <div><label>Parent Mobile</label><input id="f_pmobile" type="tel" inputmode="numeric" required value="${esc(s?.parentMobile || '')}"></div>
       <div><label>Class / Standard</label><select id="f_cls">${classOptions.map(x=>`<option ${s?.cls===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
       <div><label>Course</label><select id="f_course">${courseOpts.map(cItem=>`<option value="${esc(cItem.name)}" data-id="${esc(cItem.id)}" ${(s?.courseId && s.courseId===cItem.id) || (!s?.courseId && s?.course===cItem.name)?'selected':''}>${esc(cItem.name)}${cItem.code?` (${esc(cItem.code)})`:''}</option>`).join('')}</select></div>
       <div><label>Batch</label><select id="f_batch"><option value="" data-id="">— No batch —</option>${batchOpts.map(bItem=>`<option value="${esc(bItem.name)}" data-id="${esc(bItem.id)}" ${s?.batch===bItem.name?'selected':''}>${esc(bItem.name)}</option>`).join('')}</select></div>
       <div><label>Fee Type</label><select id="f_feetype">${feeTypeOptions.map(x=>`<option ${s?.feeType===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
-      <div><label>Fee Amount</label><input class="num" id="f_feeamt" value="${esc(s?.feeAmt ?? 0)}"></div>
-      <div><label>Attendance %</label><input class="num" id="f_att" value="${esc(s?.att ?? 0)}"></div>
+       <div><label>Fee Amount</label><input class="num" id="f_feeamt" type="number" min="0" step="0.01" required value="${esc(s?.feeAmt ?? 0)}"></div>
+       <div><label>Attendance %</label><input class="num" id="f_att" type="number" min="0" max="100" step="1" required value="${esc(s?.att ?? 0)}"></div>
       <div><label>Fee Status</label><select id="f_fee_status">${feeStatuses.map(x=>`<option ${s?.feeStatus===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label>Admission Date</label><input type="date" id="f_adm" value="${esc(s?.admission || toDateStr(new Date()))}"></div>
       <div><label>Status</label><select id="f_status">${statuses.map(x=>`<option ${s?.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
@@ -359,7 +382,8 @@ if(App.guard()){
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Save Student</button>`,
     onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
       const s = readForm(b);
-      if (!s.name) return App.toast('Enter student name','err');
+      const validationError = validateStudentForm(s);
+      if (validationError) return App.toast(validationError,'err');
       try {
         if (usingFallback) {
           const cobj = (DB.courses||[]).find(c=>c.name===s.course) || {};
@@ -387,7 +411,8 @@ if(App.guard()){
         foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Save Changes</button>`,
         onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
           const updated = readForm(b);
-          if (!updated.name) return App.toast('Enter student name','err');
+          const validationError = validateStudentForm(updated);
+          if (validationError) return App.toast(validationError,'err');
           try {
             if (usingFallback) {
               const local = findLocalStudent(id);
@@ -456,11 +481,35 @@ if(App.guard()){
             renderPage(localStudents());
             return App.toast('Fee collected locally','ok');
           }
-          // Use common API wrapper for PUT
-          await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload({...s, feeStatus:'Paid'}));
+          const due = Number(s.feeAmt);
+          const discount = Number(b.querySelector('#cf_disc').value);
+          const fine = Number(b.querySelector('#cf_fine').value);
+          const paid = Number(b.querySelector('#cf_paid').value);
+          const period = b.querySelector('#cf_period').value.trim();
+          if (!period) throw new Error('Fee period is required.');
+          if (![due, discount, fine, paid].every(Number.isFinite) || due < 0 || discount < 0 || fine < 0 || paid < 0) throw new Error('Enter valid non-negative fee amounts.');
+          const balance = Math.max(0, due - discount + fine - paid);
+          await API.post('/fees/collect', {
+            studentId: s.code || s.id,
+            student: s.name,
+            batch: s.batch || '',
+            feeType: s.feeType || '',
+            period,
+            due,
+            discount,
+            fine,
+            paid,
+            mode: b.querySelector('#cf_mode').value,
+            txn: b.querySelector('#cf_txn').value.trim(),
+            collectedBy: App.me().name || 'Admin',
+            date: toDateStr(new Date()),
+            balance,
+            remarks: b.querySelector('#cf_rem').value.trim()
+          });
+          await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload({...s, feeStatus: balance === 0 ? 'Paid' : 'Pending'}));
           App.closeModal();
           await loadStudents();
-          App.toast('Fee collected - receipt generated','ok');
+          App.toast('Fee collected and receipt generated','ok');
         } catch (err) {
           App.toast(err.message || 'Failed to collect fee','err');
         }

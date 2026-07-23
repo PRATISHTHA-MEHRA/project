@@ -4,9 +4,9 @@ const router = express.Router();
 const studentController = require("../controllers/studentController");
 const auth = require("../middleware/authMiddleware");
 
-router.get("/:id/fees", studentController.getStudentFees);
-router.get("/:id/attendance", studentController.getStudentAttendance);
-router.get("/:id/exams", studentController.getStudentExams);
+router.get("/:id/fees", auth, studentController.getStudentFees);
+router.get("/:id/attendance", auth, studentController.getStudentAttendance);
+router.get("/:id/exams", auth, studentController.getStudentExams);
 
 // Get All Students
 router.get("/", auth, studentController.getStudents);
