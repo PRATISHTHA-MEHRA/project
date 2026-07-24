@@ -493,7 +493,7 @@ if(App.guard()){
     const fetchDue = async (period) => {
       if (usingFallback) return s.feeAmt;
       try {
-        const payload = await API.get(`/fees/pending/${encodeURIComponent(s.code || s.id)}?feeType=${encodeURIComponent(s.feeType)}&period=${encodeURIComponent(period)}`);
+       const payload = await API.get(`/pending-fees/${encodeURIComponent(s.code || s.id)}?feeType=${encodeURIComponent(s.feeType)}&period=${encodeURIComponent(period)}`);
         const row = payload?.data;
         return (row && row.due != null) ? Number(row.due) : s.feeAmt;
       } catch (err) {

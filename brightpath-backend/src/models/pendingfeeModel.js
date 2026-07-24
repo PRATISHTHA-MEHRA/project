@@ -132,10 +132,21 @@ const getCurrentDueForStudent = async (studentId, feeType, period) => {
     return result.rows[0] || null;
 };
 
+const getTotalDueForStudent = async (studentId) => {
+    const result = await db.query(
+        `SELECT COALESCE(SUM(due_amount), 0)::FLOAT AS total
+         FROM student_pending_fees
+         WHERE student_id = $1`,
+        [studentId]
+    );
+    return result.rows[0].total;
+};
+
 module.exports = {
     getPendingFeesList,
     saveCallNoteTransaction,
     syncPendingBalance,
     seedInitialPendingFee,
-    getCurrentDueForStudent
+    getCurrentDueForStudent,
+    getTotalDueForStudent
 };

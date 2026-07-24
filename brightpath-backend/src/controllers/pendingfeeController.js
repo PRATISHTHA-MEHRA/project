@@ -9,6 +9,32 @@ exports.getPendingFeesSummary = async (req, res) => {
     }
 };
 
+
+exports.getTotalDue = async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const total = await Fee.getTotalDueForStudent(studentId);
+        res.status(200).json({ success: true, data: { total } });
+    } catch (err) {
+        sendFeeError(res, err);
+    }
+};
+
+exports.getCurrentDue = async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const { feeType, period } = req.query;
+        if (!feeType || !period) {
+            return res.status(400).json({ success: false, message: "feeType and period query params are required." });
+        }
+        const row = await Fee.getCurrentDueForStudent(studentId, feeType, period);
+        res.status(200).json({ success: true, data: row });
+    } catch (err) {
+        sendFeeError(res, err);
+    }
+};
+
+
 exports.addFeeCallNote = async (req, res) => {
     try {
         const { id } = req.params;

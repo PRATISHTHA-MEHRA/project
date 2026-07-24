@@ -95,12 +95,27 @@ if(App.guard()){
     };
   }
 
+  async function loadPendingDues(id){
+    if (usingFallback) return null;
+    try {
+      const payload = await API.get(`/pending-fees/${encodeURIComponent(id)}/total`);
+      return Number(payload?.data?.total ?? 0);
+    } catch (err) {
+      console.warn('Could not fetch pending dues, falling back to fee status:', err);
+      return null; // signal fallback needed
+    }
+  }
+
   function emptyRow(colspan, text){
     return `<tr><td colspan="${colspan}" class="t-sub" style="text-align:center;padding:16px">${esc(text)}</td></tr>`;
   }
 
-  function render(s, extras){
+  function render(s, extras, pendingDues){
     extras = extras || { fees: [], attendance: [], exams: [] };
+    // Fallback if the live pending-dues total couldn't be fetched: best guess from feeStatus.
+    if (pendingDues === null || pendingDues === undefined) {
+      pendingDues = s.feeStatus === 'Paid' ? 0 : s.feeAmt;
+    }
 
     window.downloadStudentStatement = () => {
       const rows = [
@@ -123,10 +138,9 @@ if(App.guard()){
 
     const head = `<button class="btn btn-light" onclick="downloadStudentStatement()">${App.svg('download')}Statement</button>
       <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
-    const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,s.id],head);
+    const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,'Full Profile'],head);
     const initials = s.name.split(' ').map(w=>w[0]).join('');
 
-    // Derive KPIs from real data where we have it; fall back to a dash rather than a fake number.
     const examRows = extras.exams;
     const avgScorePct = examRows.length
       ? Math.round(examRows.reduce((sum,e)=>{
@@ -206,7 +220,8 @@ const pendingDues = s.pendingDues > 0 ? s.pendingDues : (s.feeStatus === 'Paid' 
   loadStudent(requestedId)
     .then(async s => {
       const extras = await loadExtras(s.id);
-      render(s, extras);
+      const pendingDues = await loadPendingDues(s.id);
+      render(s, extras, pendingDues);
     })
     .catch(err => App.toast(err.message || 'Failed to load student profile', 'err'));
 }
