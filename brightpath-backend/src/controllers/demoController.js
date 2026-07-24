@@ -9,7 +9,7 @@ const mapToFrontend = (d) => {
         course: d.course_name,
         batch: d.batch_name,
         teacher: d.teacher_name,
-        date: d.demo_date ? d.demo_date.toISOString().split('T')[0] : "",
+        date: d.demo_date ? d.demo_date : "",
         time: d.demo_time,
         status: d.status,
         feedback: d.feedback || "-"

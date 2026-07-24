@@ -10,7 +10,7 @@ const mapToFrontend = (a) => {
         batch: a.batch_name || "",
         feeType: a.fee_type,
         feeAmt: parseFloat(a.fee_amount) || 0,
-        admission: a.admission_date ? a.admission_date.toISOString().split('T')[0] : "",
+        admission: a.admission_date ? a.admission_date : "",
         feeStatus: a.fee_status
     };
 };

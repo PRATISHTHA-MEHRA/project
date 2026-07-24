@@ -1,6 +1,7 @@
 const Fee = require("../models/feeModel");
 const PendingFee = require("../models/pendingfeeModel");
 
+
 const sendFeeError = (res, err) => {
     if (err.status) return res.status(err.status).json({ success: false, message: err.message });
     console.error("Fee request failed:", err);
@@ -48,6 +49,22 @@ exports.getFeeDashboard = async (req, res) => {
             },
             feesList: receipts
         });
+    } catch (err) {
+        sendFeeError(res, err);
+    }
+};
+
+exports.getCurrentDue = async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const { feeType, period } = req.query;
+        if (!feeType || !period) {
+            const err = new Error("feeType and period query params are required.");
+            err.status = 400;
+            throw err;
+        }
+        const row = await PendingFee.getCurrentDueForStudent(studentId, feeType, period);
+        res.status(200).json({ success: true, data: row });
     } catch (err) {
         sendFeeError(res, err);
     }

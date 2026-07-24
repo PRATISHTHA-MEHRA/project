@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const C = require('../controllers/settingsController');
+const auth = require("../middleware/authMiddleware");
 
 // Centre Profile
 router.get('/profile', auth, C.getProfile);

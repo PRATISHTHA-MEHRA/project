@@ -141,7 +141,7 @@ exports.getDashboard = async (req, res) => {
 
     const students = (rawStudents || []).map(s => {
       let admission = s.admission_date;
-      if (admission instanceof Date) admission = admission.toISOString().slice(0, 10);
+      if (admission instanceof Date) admission = admission;
       return {
         id: s.student_code || s.id,
         name: s.student_name,

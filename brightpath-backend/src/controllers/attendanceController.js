@@ -48,7 +48,7 @@ exports.getStudentHistory = async (req, res) => {
         const historyLogs = await Attendance.getRecentLogsByStudent(studentId);
         
         const formattedHistory = historyLogs.map(h => ({
-              date: h.attendance_date.toISOString().split('T')[0],
+              date: h.attendance_date,
             batch: h.batch_name,
             status: h.status
         }));
