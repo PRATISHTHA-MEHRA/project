@@ -17,21 +17,38 @@ if(App.guard()){
   const ENDPOINT = "/demo-classes";
   let currentDemos = [];
 
+  // Real data backing the Schedule/Edit Demo form dropdowns. Loaded once on
+  // page load (loadDropdownData) alongside the demos table itself.
+  let coursesList = [];
+  let teachersList = [];
+  let batchesList = [];
+
   const head = `<button class="btn btn-primary" onclick="addDemo()">${App.svg('plus')}Schedule Demo</button>`;
   const c = App.layout('demo-classes','Demo Classes',['Demo Classes'],head);
   c.innerHTML = `<div id="tbl"></div>`;
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const unique = values => [...new Set(values.filter(Boolean))];
   const findCurrentDemo = id => currentDemos.find(d => String(d.id) === String(id));
 
   function unwrapList(payload){
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.data)) return payload.data;
     if (Array.isArray(payload?.demos)) return payload.demos;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    if (Array.isArray(payload?.result)) return payload.result;
     return [];
   }
+
+  // Defensive field readers - exact column-alias names returned by the
+  // enquiries/courses/teachers/batches endpoints weren't all confirmed, so
+  // each helper checks a couple of likely keys the same way homework.html /
+  // study-material.html already do for batches/teachers.
+  const courseName = c => c.name || c.course_name || '';
+  const teacherName = t => t.name || t.teacher_name || '';
+  const batchName = b => b.name || b.batch_name || '';
+  const batchCourseId = b => b.course_id ?? b.courseId ?? null;
+  const batchCourseName = b => b.course_name || b.course || b.courseName || null;
 
   function toApiPayload(d){
     return {
@@ -49,9 +66,9 @@ if(App.guard()){
   function readForm(box){
     return {
       student: box.querySelector('#d_stu').value.trim(),
-      course: box.querySelector('#d_course').value.trim(),
-      batch: box.querySelector('#d_batch').value.trim(),
-      teacher: box.querySelector('#d_teacher').value.trim(),
+      course: box.querySelector('#d_course').value,
+      batch: box.querySelector('#d_batch').value,
+      teacher: box.querySelector('#d_teacher').value,
       date: box.querySelector('#d_date').value,
       time: box.querySelector('#d_time').value.trim(),
       status: box.querySelector('#d_status').value,
@@ -69,7 +86,7 @@ if(App.guard()){
       dateFilter:true,
       filters:[
         {label:'Status',key:'status',options:statuses},
-        {label:'Course',key:'course',options:unique(rows.map(d=>d.course))}
+        {label:'Course',key:'course',options:[...new Set(rows.map(d=>d.course).filter(Boolean))]}
       ],
       columns:[
         {key:'student',label:'Student',render:r=>`<div class="t-main">${esc(r.student)}</div><div class="t-sub">${esc(r.id)}</div>`},
@@ -93,6 +110,22 @@ if(App.guard()){
     }
   }
 
+  // Loads the real course/teacher/batch lists the Schedule/Edit Demo form needs.
+  async function loadDropdownData(){
+    try {
+      const [crs, tch, bth] = await Promise.all([
+        API.get('/courses'),
+        API.get('/teachers'),
+        API.get('/batches')
+      ]);
+      coursesList = unwrapList(crs);
+      teachersList = unwrapList(tch).filter(t => !t.status || t.status === 'Active');
+      batchesList = unwrapList(bth);
+    } catch (err) {
+      App.toast('Failed to load course/batch/teacher data','err');
+    }
+  }
+
   function showDemoModal(x){
     if (!x || !x.id) return App.toast('Demo class not found', 'err');
     App.modal({size:'md',title:'Demo Class - '+esc(x.student),sub:esc(x.id),
@@ -105,21 +138,62 @@ if(App.guard()){
     });
   }
 
-  function datalistOptions(id, values){
-    return `<datalist id="${id}">${unique(values).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
+  // Batch options are scoped to the currently-selected course. The exact
+  // field the batches API uses to link to a course wasn't confirmed, so this
+  // matches on course_id/courseId OR on a course name field, whichever the
+  // batch record actually has. If the batches API turns out not to expose
+  // any course link at all, fall back to listing every batch rather than
+  // silently showing none.
+  function batchOptionsFor(course, selectedBatchName){
+    if (!course) return `<option value="">Select course first...</option>`;
+    const hasAnyCourseLink = batchesList.some(b => batchCourseId(b) != null || batchCourseName(b));
+    let filtered = batchesList.filter(b => {
+      const bId = batchCourseId(b);
+      const bName = batchCourseName(b);
+      if (bId != null && course.id != null && String(bId) === String(course.id)) return true;
+      if (bName && course.name && bName === course.name) return true;
+      return false;
+    });
+    if (!filtered.length && !hasAnyCourseLink) {
+      console.warn('demo.html: batches API returned no course_id/course name field on any batch - listing all batches unfiltered', batchesList);
+      filtered = batchesList;
+    } else if (!filtered.length) {
+      console.warn('demo.html: no batch matched course', course, batchesList);
+    }
+    if (!filtered.length) return `<option value="">No batches for this course</option>`;
+    return `<option value="">Select batch...</option>` + filtered.map(b =>
+      `<option value="${esc(batchName(b))}" ${selectedBatchName === batchName(b) ? 'selected' : ''}>${esc(batchName(b))}</option>`
+    ).join('');
   }
 
   function demoForm(x){
-    // Suggestions are pulled from demos already loaded from the API - no static/dummy lists.
-    const students = unique(currentDemos.map(d=>d.student));
-    const courses = unique(currentDemos.map(d=>d.course));
-    const batches = unique(currentDemos.map(d=>d.batch));
-    const teachers = unique(currentDemos.map(d=>d.teacher));
+    const courseOptions = coursesList.map(c =>
+      `<option value="${esc(courseName(c))}" data-id="${esc(c.id)}" ${x?.course === courseName(c) ? 'selected' : ''}>${esc(courseName(c))}</option>`
+    ).join('');
+
+    const teacherOptions = teachersList.map(t =>
+      `<option value="${esc(teacherName(t))}" ${x?.teacher === teacherName(t) ? 'selected' : ''}>${esc(teacherName(t))}</option>`
+    ).join('');
+
     return `<div class="form-grid">
-      <div><label>Student / Enquiry</label><input id="d_stu" list="dl_stu" value="${esc(x?.student || '')}" placeholder="Student name">${datalistOptions('dl_stu', students)}</div>
-      <div><label>Course</label><input id="d_course" list="dl_course" value="${esc(x?.course || '')}" placeholder="Course name">${datalistOptions('dl_course', courses)}</div>
-      <div><label>Batch</label><input id="d_batch" list="dl_batch" value="${esc(x?.batch || '')}" placeholder="Batch name">${datalistOptions('dl_batch', batches)}</div>
-      <div><label>Teacher</label><input id="d_teacher" list="dl_teacher" value="${esc(x?.teacher || '')}" placeholder="Teacher name">${datalistOptions('dl_teacher', teachers)}</div>
+      <div><label>Student Name</label><input id="d_stu" value="${esc(x?.student || '')}" placeholder="Student name"></div>
+      <div><label>Course</label>
+        <select id="d_course">
+          <option value="">Select course...</option>
+          ${courseOptions}
+        </select>
+      </div>
+      <div><label>Batch</label>
+        <select id="d_batch">
+          <option value="">Select course first...</option>
+        </select>
+      </div>
+      <div><label>Teacher</label>
+        <select id="d_teacher">
+          <option value="">Select teacher...</option>
+          ${teacherOptions}
+        </select>
+      </div>
       <div><label>Date</label><input type="date" id="d_date" value="${esc(x?.date || '')}"></div>
       <div><label>Time</label><input id="d_time" value="${esc(x?.time || '')}" placeholder="e.g. 04:30 PM"></div>
       <div><label>Status</label><select id="d_status">${statuses.map(s=>`<option ${x?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
@@ -127,49 +201,76 @@ if(App.guard()){
     </div>`;
   }
 
+  // Wires the course -> batch cascade for a form instance. Call once right
+  // after the form markup is inserted into the modal.
+  function wireCascade(box, x){
+    const courseSel = box.querySelector('#d_course');
+    const batchSel = box.querySelector('#d_batch');
+
+    function refreshBatches(preselect){
+      const opt = courseSel.selectedOptions[0];
+      const course = (opt && opt.value) ? { id: opt.dataset.id || null, name: opt.value } : null;
+      batchSel.innerHTML = batchOptionsFor(course, preselect || '');
+    }
+
+    courseSel.addEventListener('change', () => refreshBatches(''));
+    if (x?.course) refreshBatches(x.batch || '');
+  }
+
   window.viewD = id => showDemoModal(findCurrentDemo(id));
 
   window.addDemo = () => App.modal({size:'lg',title:'Schedule Demo Class',
     body:demoForm(null),
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Schedule Demo</button>`,
-    onOpen:box=>box.querySelector('#sv').onclick=async()=>{
-      const demo = readForm(box);
-      if (!demo.student) return App.toast('Enter student name','err');
-      if (!demo.course) return App.toast('Enter course','err');
-      try {
-        await API.post(ENDPOINT, toApiPayload(demo));
-        App.closeModal();
-        await loadDemos();
-        App.toast('Demo scheduled','ok');
-      } catch (err) {
-        App.toast(err.message || 'Failed to schedule demo','err');
-      }
+    onOpen:box=>{
+      wireCascade(box, null);
+      box.querySelector('#sv').onclick=async()=>{
+        const demo = readForm(box);
+        if (!demo.student) return App.toast('Enter student name','err');
+        if (!demo.course) return App.toast('Select a course','err');
+        if (!demo.batch) return App.toast('Select a batch','err');
+        if (!demo.teacher) return App.toast('Select a teacher','err');
+        if (!demo.date) return App.toast('Select a demo date','err');
+        if (!demo.time) return App.toast('Enter a demo time','err');
+        try {
+          await API.post(ENDPOINT, toApiPayload(demo));
+          App.closeModal();
+          await loadDemos();
+          App.toast('Demo scheduled','ok');
+        } catch (err) {
+          App.toast(err.message || 'Failed to schedule demo','err');
+        }
+      };
     }
   });
 
-  // This was previously missing entirely - there was no way to edit a demo's
-  // batch/teacher/date/time once created (only View, Mark Complete, Convert).
-  // It's needed now more than ever: when an enquiry's status is set to
-  // "Demo Scheduled" from the Enquiries page, a placeholder demo record is
-  // created automatically here with batch/teacher/date left blank, and staff
-  // need a way to fill those in.
+  // Edit lets staff fill in / correct batch, teacher, date and time once a
+  // demo exists (including placeholder demos auto-created when an enquiry's
+  // status is set to "Demo Scheduled" from the Enquiries page).
   window.editD = id => {
     const x = findCurrentDemo(id);
     if (!x) return App.toast('Demo class not found', 'err');
     App.modal({size:'lg',title:'Edit Demo Class',sub:esc(x.id),body:demoForm(x),
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
-      onOpen:box=>box.querySelector('#sv').onclick=async()=>{
-        const demo = readForm(box);
-        if (!demo.student) return App.toast('Enter student name','err');
-        if (!demo.course) return App.toast('Enter course','err');
-        try {
-          await API.put(`${ENDPOINT}/${encodeURIComponent(x.id)}`, toApiPayload(demo));
-          App.closeModal();
-          await loadDemos();
-          App.toast('Demo class updated','ok');
-        } catch (err) {
-          App.toast(err.message || 'Failed to update demo','err');
-        }
+      onOpen:box=>{
+        wireCascade(box, x);
+        box.querySelector('#sv').onclick=async()=>{
+          const demo = readForm(box);
+          if (!demo.student) return App.toast('Enter student name','err');
+          if (!demo.course) return App.toast('Select a course','err');
+          if (!demo.batch) return App.toast('Select a batch','err');
+          if (!demo.teacher) return App.toast('Select a teacher','err');
+          if (!demo.date) return App.toast('Select a demo date','err');
+          if (!demo.time) return App.toast('Enter a demo time','err');
+          try {
+            await API.put(`${ENDPOINT}/${encodeURIComponent(x.id)}`, toApiPayload(demo));
+            App.closeModal();
+            await loadDemos();
+            App.toast('Demo class updated','ok');
+          } catch (err) {
+            App.toast(err.message || 'Failed to update demo','err');
+          }
+        };
       }
     });
   };
@@ -203,7 +304,7 @@ if(App.guard()){
     }
   };
 
-  loadDemos();
+  Promise.all([loadDemos(), loadDropdownData()]);
 }
 </script>
 </body></html>

@@ -45,10 +45,25 @@ exports.createDemo = async (req, res) => {
     try {
         const dbReady = mapToDatabase(req.body);
 
-        // A demo scheduled directly from this page (rather than via the
-        // enquiry's own status field) still needs to be linked to its
-        // enquiry, so both modules stay in sync going forward.
-        const matchedEnquiry = await Enquiry.getOpenByName(dbReady.student_name);
+        if (!dbReady.student_name || !dbReady.course_name || !dbReady.batch_name || !dbReady.teacher_name || !dbReady.demo_date || !dbReady.demo_time) {
+            return res.status(400).json({
+                success: false,
+                message: "Student, course, batch, teacher, date and time are all required to schedule a demo"
+            });
+        }
+
+        // The student is now picked from a real enquiry dropdown on the
+        // frontend, so req.body.enquiryId is the authoritative link whenever
+        // it's sent. Fall back to name matching only for older callers that
+        // don't send it, so nothing breaks if this endpoint is hit directly.
+        let matchedEnquiry = null;
+        if (req.body.enquiryId) {
+            const byId = await db.query("SELECT * FROM enquiries WHERE id = $1", [req.body.enquiryId]);
+            matchedEnquiry = byId.rows[0] || null;
+        }
+        if (!matchedEnquiry) {
+            matchedEnquiry = await Enquiry.getOpenByName(dbReady.student_name);
+        }
         if (matchedEnquiry) dbReady.enquiry_id = matchedEnquiry.id;
 
         const created = await Demo.create(dbReady);
@@ -70,7 +85,26 @@ exports.updateDemo = async (req, res) => {
     try {
         const id = req.params.id.replace("DM-", "");
         const dbReady = mapToDatabase(req.body);
+
+        if (!dbReady.student_name || !dbReady.course_name || !dbReady.batch_name || !dbReady.teacher_name || !dbReady.demo_date || !dbReady.demo_time) {
+            return res.status(400).json({
+                success: false,
+                message: "Student, course, batch, teacher, date and time are all required"
+            });
+        }
+
         const updated = await Demo.update(id, dbReady);
+
+        // If this demo wasn't linked to an enquiry yet and the edit form
+        // supplied one (staff picked a real enquiry while filling in a
+        // legacy/placeholder demo), link it now so Convert works reliably.
+        if (!updated.enquiry_id && req.body.enquiryId) {
+            const linked = await db.query(
+                "UPDATE demo_classes SET enquiry_id = $1 WHERE id = $2 RETURNING *",
+                [req.body.enquiryId, id]
+            );
+            if (linked.rows[0]) Object.assign(updated, linked.rows[0]);
+        }
 
         // Synchronize with active enquiry pipelines if marked completed.
         // Prefer the real enquiry_id link; fall back to name matching only
