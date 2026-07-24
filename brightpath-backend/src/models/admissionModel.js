@@ -5,10 +5,12 @@ const getAllAdmissions = async () => {
         SELECT 
             a.*,
             c.course_name,
-            b.batch_name
+            b.batch_name,
+            COALESCE(s.fee_status, a.fee_status) AS effective_fee_status
         FROM admissions a
         LEFT JOIN courses c ON a.course_id = c.id
         LEFT JOIN batches b ON a.batch_id = b.id
+        LEFT JOIN students s ON s.mobile = a.mobile AND s.course_id = a.course_id
         ORDER BY a.id DESC
     `);
     return result.rows;
@@ -23,8 +25,8 @@ const getAdmissionStats = async () => {
             -- 2. Total admissions this calendar quarter
             COUNT(CASE WHEN DATE_TRUNC('quarter', admission_date) = DATE_TRUNC('quarter', CURRENT_DATE) THEN 1 END) as quarter_count,
             
-            -- 3. Admissions converted from demos (Simulated filter based on demo fee type profiles or tracking)
-            COUNT(CASE WHEN fee_type ILIKE '%demo%' OR id % 2 = 1 THEN 1 END) as demo_count,
+            -- Demo conversions use a source-prefixed admission receipt code.
+            COUNT(CASE WHEN receipt_code LIKE 'DEMO-%' THEN 1 END) as demo_count,
             
             -- 4. Average fee amount per admission
             COALESCE(ROUND(AVG(fee_amount), 0), 0) as avg_fee
@@ -39,10 +41,12 @@ const getAdmissionById = async (id) => {
         SELECT 
             a.*,
             c.course_name,
-            b.batch_name
+            b.batch_name,
+            COALESCE(s.fee_status, a.fee_status) AS effective_fee_status
         FROM admissions a
         LEFT JOIN courses c ON a.course_id = c.id
         LEFT JOIN batches b ON a.batch_id = b.id
+        LEFT JOIN students s ON s.mobile = a.mobile AND s.course_id = a.course_id
         WHERE a.id = $1
     `, [id]);
     return result.rows[0];

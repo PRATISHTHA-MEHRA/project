@@ -1,5 +1,6 @@
 const Demo = require("../models/demoModel");
 const db = require("../config/db");
+const admissionController = require("./admissionController");
 
 const mapToFrontend = (d) => {
     if (!d) return null;
@@ -75,6 +76,7 @@ exports.updateDemo = async (req, res) => {
 };
 
 exports.convertDemoToAdmission = async (req, res) => {
+    let client;
     try {
         const id = req.params.id.replace("DM-", "");
         const demoRow = await Demo.getById(id);
@@ -83,82 +85,24 @@ exports.convertDemoToAdmission = async (req, res) => {
             return res.status(404).json({ success: false, message: "Demo instance record not found" });
         }
 
-        // 1. Force state updates on demo class tracking to Completed
-        await Demo.update(id, { ...demoRow, status: 'Completed' });
-
-        // 2. Synchronize Enquiry Pipeline to 'Converted' state
-        await db.query(
-            "UPDATE enquiries SET status = 'Converted' WHERE student_name = $1",
-            [demoRow.student_name]
-        );
-
-        // 3. SAFE LOOKUP: Resolve or auto-generate course records to prevent FK violations
-        let courseId = null;
-        if (demoRow.course_name) {
-            const courseRes = await db.query("SELECT id FROM courses WHERE course_name = $1 LIMIT 1", [demoRow.course_name]);
-            if (courseRes.rows.length > 0) {
-                courseId = courseRes.rows[0].id;
-            } else {
-                // Generate fallback parameters if course fields require more columns than course_name
-                const newCourse = await db.query("INSERT INTO courses (course_name) VALUES ($1) RETURNING id", [demoRow.course_name]);
-                courseId = newCourse.rows[0].id;
-            }
-        }
-
-        // 4. SAFE LOOKUP: Resolve or auto-generate batch records safely with batch_code
-        let batchId = null;
-        if (demoRow.batch_name) {
-            const batchRes = await db.query("SELECT id FROM batches WHERE batch_name = $1 AND course_id = $2 LIMIT 1", [demoRow.batch_name, courseId]);
-            if (batchRes.rows.length > 0) {
-                batchId = batchRes.rows[0].id;
-            } else {
-                // Generate a randomized batch code matching standard layouts (e.g., BTC-84291)
-                const generatedBatchCode = `BTC-${Math.floor(10000 + Math.random() * 90000)}`;
-                
-                // Added batch_code field safely into the insert query pipeline
-                const newBatch = await db.query(`
-                    INSERT INTO batches (batch_name, batch_code, course_id) 
-                    VALUES ($1, $2, $3) 
-                    RETURNING id
-                `, [demoRow.batch_name, generatedBatchCode, courseId]);
-                
-                batchId = newBatch.rows[0].id;
-            }
-        }
-
-        // Fetch mobile number lookup fallback from enquiries to bridge details securely
-        const enqData = await db.query("SELECT mobile, parent_name, class_level FROM enquiries WHERE student_name = $1 LIMIT 1", [demoRow.student_name]);
-        const mobileNum = enqData.rows.length > 0 ? enqData.rows[0].mobile : "0000000000";
-        const parentName = enqData.rows.length > 0 ? enqData.rows[0].parent_name : "Parent";
-        const classLevel = enqData.rows.length > 0 ? enqData.rows[0].class_level : "Class 10";
-
-        // 5. Verify duplicate avoidance logic and insert cleanly
-        const checkAdmit = await db.query("SELECT id FROM admissions WHERE student_name = $1 AND mobile = $2", [demoRow.student_name, mobileNum]);
-        
-        if (checkAdmit.rows.length === 0) {
-            await db.query(`
-                INSERT INTO admissions (
-                    receipt_code, student_name, mobile, parent_name, 
-                    class_level, course_id, batch_id, fee_type, 
-                    fee_amount, admission_date, fee_status
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_DATE, $10)
-            `, [
-                `RCP-${Date.now().toString().slice(-5)}`,
-                demoRow.student_name,
-                mobileNum,
-                parentName,
-                classLevel,
-                courseId,
-                batchId,
-                'From Demos',
-                2450.00,
-                'Paid'
-            ]);
-        }
-
-        res.status(200).json({ success: true, message: "Demo converted successfully to active student admission profile" });
+        client = await db.connect();
+        await client.query("BEGIN");
+        const enquiry = await client.query("SELECT * FROM enquiries WHERE student_name = $1 AND status != 'Converted' ORDER BY id DESC LIMIT 1", [demoRow.student_name]);
+        if (!enquiry.rows.length) throw Object.assign(new Error("A matching active enquiry with contact details is required before conversion."), { status: 400 });
+        const e = enquiry.rows[0];
+        const result = await admissionController.createAdmissionRecord({
+            name: e.student_name, mobile: e.mobile, parent: e.parent_name, cls: e.class_level,
+            course: demoRow.course_name, batch: demoRow.batch_name, feeType: "Demo Conversion",
+            feeAmt: 0, paid: 0, discount: 0, fine: 0, mode: "Cash",
+            admission: new Date().toISOString().slice(0, 10)
+        }, { client, source: "demo" });
+        await client.query("UPDATE demo_classes SET status = 'Completed' WHERE id = $1", [id]);
+        await client.query("UPDATE enquiries SET status = 'Converted' WHERE id = $1", [e.id]);
+        await client.query("COMMIT");
+        res.status(200).json({ success: true, message: "Demo converted to admission.", data: admissionController.mapToFrontend(result.admission), receiptId: result.receiptId });
     } catch (err) {
+        if (client) await client.query("ROLLBACK");
         console.error(err);
-        res.status(500).json({ success: false, message: err.message });
-    }
+        res.status(err.status || 500).json({ success: false, message: err.status ? err.message : "Unable to convert the demo." });
+    } finally { if (client) client.release(); }
 };

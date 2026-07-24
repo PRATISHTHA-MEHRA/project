@@ -123,6 +123,7 @@ exports.updateEnquiry = async (req, res) => {
 
 
 exports.convertEnquiry = async (req, res) => {
+    let client;
     try {
         const enquiryId = parseId(req.params.id);
         if (!enquiryId) return res.status(400).json({ success: false, message: "Invalid enquiry id" });
@@ -136,18 +137,8 @@ exports.convertEnquiry = async (req, res) => {
             });
         }
 
-        // to prevent duplicate conversion
-        const existing = await db.query(
-            "SELECT id FROM admissions WHERE mobile = $1",
-            [enquiry.mobile]
-        );
-
-        if (existing.rows.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: "This enquiry has already been converted."
-            });
-        }
+        client = await db.connect();
+        await client.query("BEGIN");
 
       // Merge enquiry data with Convert Modal data
 const payload = {
@@ -168,37 +159,28 @@ const payload = {
 };
 
         // Reuse existing admission logic
-        const admission = await admissionController.createAdmissionRecord(payload);
+        const result = await admissionController.createAdmissionRecord(payload, { client, source: "enquiry" });
 
         // Mark enquiry as converted
-        await Enquiry.update(enquiryId, {
-            student_name: enquiry.student_name,
-            parent_name: enquiry.parent_name,
-            mobile: enquiry.mobile,
-            class_level: enquiry.class_level,
-            course_interest: enquiry.course_interest,
-            source: enquiry.source,
-            preferred_timing: enquiry.preferred_timing,
-            followup_date: enquiry.followup_date,
-            counselor: enquiry.counselor,
-            status: "Converted",
-            remarks: enquiry.remarks
-        });
+        await client.query("UPDATE enquiries SET status = 'Converted' WHERE id = $1", [enquiryId]);
+        await client.query("COMMIT");
 
         res.status(200).json({
             success: true,
             message: "Enquiry converted successfully.",
-            data: admissionController.mapToFrontend(admission)
+            data: admissionController.mapToFrontend(result.admission),
+            receiptId: result.receiptId
         });
 
     } catch (err) {
+        if (client) await client.query("ROLLBACK");
         console.error(err);
 
-        res.status(400).json({
+        res.status(err.status || 500).json({
             success: false,
             message: err.message
         });
-    }
+    } finally { if (client) client.release(); }
 };
 
 exports.deleteEnquiry = async (req, res) => {

@@ -16,6 +16,9 @@ if (App.guard()) {
   const API_BASE = "/admissions"; 
   let usingFallback = false;
   let currentAdmissions = [];
+  let courseList = [];
+  let batchList = [];
+  let admissionStats = { thisMonth: 0, thisQuarter: 0, fromDemos: 0, avgFee: 0 };
 
   const head = `<button class="btn btn-primary" onclick="newAdmission()">${App.svg('plus')}New Admission</button>`;
   const c = App.layout('admissions', 'Admissions', ['Admissions'], head);
@@ -46,8 +49,8 @@ if (App.guard()) {
       mobile: item.mobile || '',
       parent: item.parent || item.parent_name || '',
       cls: item.cls || item.class || '',
-      course: item.course || '',
-      batch: item.batch || '',
+      course: item.course || '', courseId: String(item.courseId ?? item.course_id ?? ''),
+      batch: item.batch || '', batchId: String(item.batchId ?? item.batch_id ?? ''),
       feeType: item.feeType || item.fee_type || 'Monthly Fee',
       feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
       admission: item.admission || item.admission_date || item.created_at || '',
@@ -64,12 +67,10 @@ if (App.guard()) {
       course: a.course,
       batch: a.batch,
       feeType: a.feeType,
-      feeAmt: a.feeAmt
+      feeAmt: a.feeAmt, courseId: a.courseId, batchId: a.batchId,
+      admission: a.admission, paid: a.paid, discount: a.discount, fine: a.fine,
+      mode: a.mode, txn: a.txn, remarks: a.remarks
     };
-  }
-
-  function fallbackAdmissions() {
-    return (DB.students || []).slice(0, 12).map(mapAdmission);
   }
 
   function avgFee(rows) {
@@ -82,9 +83,9 @@ if (App.guard()) {
 
   function renderPage(rows) {
     currentAdmissions = rows;
-    const admittedThisMonth = rows.length;
-    const quarter = Math.max(rows.length, DB.dash?.newAdmissions || rows.length);
-    const fromDemos = Math.round(rows.length * 0.6);
+    const admittedThisMonth = admissionStats.thisMonth;
+    const quarter = admissionStats.thisQuarter;
+    const fromDemos = admissionStats.fromDemos;
 
     c.innerHTML = `
       <div class="card mb16">
@@ -132,7 +133,7 @@ if (App.guard()) {
             <span class="label">Avg Fee / Admission</span>
             <span class="ic b-amber">${App.svg('rupee')}</span>
           </div>
-          <div class="val">${App.money(avgFee(rows))}</div>
+          <div class="val">${App.money(admissionStats.avgFee)}</div>
         </div>
       </div>
       <div id="tbl"></div>
@@ -189,7 +190,7 @@ if (App.guard()) {
       ],
       actions: r =>
         `${App.actBtn('eye','View',`onclick="viewAdmission('${jsStr(r.id)}')"`)}` +
-        `${App.actBtn('print','Receipt',`onclick="App.toast('Receipt printed','ok')"`)}`
+         `${App.actBtn('print','Receipt',`onclick="downloadReceipt('${jsStr(r.id)}')"`)}`
     });
   }
 
@@ -199,14 +200,41 @@ if (App.guard()) {
     try {
       const payload = await API.get(API_BASE); 
       usingFallback = false;
+      admissionStats = payload.stats || admissionStats;
       renderPage(unwrapList(payload).map(mapAdmission));
     } catch (err) {
       console.warn('Admissions API unavailable, showing local data:', err);
-      usingFallback = true;
-      renderPage(fallbackAdmissions());
-      App.toast('Admissions API unavailable. Showing local data.', 'info');
+      usingFallback = false;
+      currentAdmissions = [];
+      renderPage([]);
+      App.toast(err.message || 'Admissions could not be loaded.', 'err');
     }
   }
+
+  async function loadAdmissionOptions() {
+    const [courses, batches] = await Promise.all([API.get('/courses'), API.get('/batches')]);
+    courseList = unwrapList(courses).map(x => ({
+      id:String(x.id), name:x.course_name || x.name || '',
+      monthly:x.monthly_fee ?? x.monthly, quarterly:x.quarterly_fee ?? x.quarterly,
+      semi:x.semi_annual_fee ?? x.semi, annual:x.annual_fee ?? x.annual
+    })).filter(x => x.name);
+    batchList = unwrapList(batches).map(x => {
+      const courseName = x.course_name || x.course || '';
+      const linkedCourse = courseList.find(c => c.name === courseName);
+      return { id:String(x.id), name:x.batch_name || x.name || '', courseId:String(x.course_id ?? linkedCourse?.id ?? '') };
+    }).filter(x => x.name && x.courseId);
+  }
+
+  window.downloadReceipt = id => {
+    const a = currentAdmissions.find(x => String(x.id) === String(id));
+    if (!a) return App.toast('Admission not found.', 'err');
+    const text = `BrightPath Admission Receipt\n\nStudent: ${a.name}\nMobile: ${a.mobile}\nCourse: ${a.course}\nBatch: ${a.batch}\nFee type: ${a.feeType}\nFee amount: ${a.feeAmt}\nStatus: ${a.feeStatus}\nAdmission date: ${String(a.admission).slice(0,10)}`;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([text], { type:'text/plain;charset=utf-8' }));
+    link.download = `admission-receipt-${id}.txt`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
 
   // ---- View Admission ----
 
@@ -226,7 +254,7 @@ if (App.guard()) {
         <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(a.feeAmt)}</div></div>
       </div>`,
       foot:`<button class="btn btn-light" data-close>Close</button>
-            <button class="btn btn-primary" onclick="App.toast('Receipt printed','ok')">
+            <button class="btn btn-primary" onclick="downloadReceipt('${jsStr(a.id)}')">
               ${App.svg('print')}Receipt
             </button>`
     });
@@ -241,9 +269,7 @@ if (App.guard()) {
   }
 
   function amountForFee(courseName, feeType) {
-    const course = (DB.courses || []).find(
-      c => c.name === courseName || c.course_name === courseName
-    );
+    const course = courseList.find(c => c.name === courseName);
     if (!course) return 0;
     if (feeType === 'Quarterly Fee') return course.quarterly || course.quarterly_fee || 0;
     if (feeType === 'Semi-Annual Fee') return course.semi || course.semi_annual_fee || 0;
@@ -257,11 +283,8 @@ if (App.guard()) {
       name: '',
       mobile: '',
       parent: '',
-      cls: 'Class 11',
-      course: 'Full Stack Development',
-      batch: 'Alpha Web Dev',
-      feeType: 'Quarterly Fee',
-      feeAmt: 7350
+      cls: '', course: '', courseId: '', batch: '', batchId: '', feeType: '', feeAmt: '',
+      paid: '', discount: 0, fine: 0, mode: 'Cash', txn: '', remarks: '', admission: new Date().toISOString().slice(0,10)
     };
 
     const saveStep = box => {
@@ -271,11 +294,16 @@ if (App.guard()) {
         data.parent = box.querySelector('#a_parent').value.trim();
         data.cls = box.querySelector('#a_cls').value;
       } else if (step === 2) {
-        data.course = box.querySelector('#a_course').value;
-        data.batch = box.querySelector('#a_batch').value;
+        const course = box.querySelector('#a_course').selectedOptions[0];
+        const batch = box.querySelector('#a_batch').selectedOptions[0];
+        data.course = course.value; data.courseId = course.dataset.id;
+        data.batch = batch.value; data.batchId = batch.dataset.id;
       } else if (step === 3) {
         data.feeType = box.querySelector('#a_fee').value;
-        data.feeAmt = asNum(box.querySelector('#a_fee_amt').value);
+        data.feeAmt = box.querySelector('#a_fee_amt').value.trim();
+        data.paid = box.querySelector('#a_paid').value.trim(); data.discount = box.querySelector('#a_discount').value.trim();
+        data.fine = box.querySelector('#a_fine').value.trim(); data.mode = box.querySelector('#a_mode').value;
+        data.txn = box.querySelector('#a_txn').value.trim(); data.remarks = box.querySelector('#a_remarks').value.trim();
       }
     };
 
@@ -291,23 +319,29 @@ if (App.guard()) {
 
       if (step === 1) {
         body = `<div class="form-grid">
-          <div><label>Student Name</label><input id="a_name" placeholder="Full name" value="${esc(data.name)}"></div>
-          <div><label>Mobile</label><input id="a_mobile" value="${esc(data.mobile)}"></div>
-          <div><label>Parent Name</label><input id="a_parent" value="${esc(data.parent)}"></div>
+          <div><label>Student Name</label><input id="a_name" maxlength="120" required placeholder="Full name" value="${esc(data.name)}"></div>
+          <div><label>Mobile</label><input id="a_mobile" type="tel" inputmode="numeric" required value="${esc(data.mobile)}"></div>
+          <div><label>Parent Name</label><input id="a_parent" required value="${esc(data.parent)}"></div>
           <div><label>Class</label><select id="a_cls">${optionList(['Class 9','Class 10','Class 11','Class 12','Class A','Class B'], data.cls)}</select></div>
         </div>`;
       } else if (step === 2) {
-        const courseOptions = ['Full Stack Development', ...DB.courses.map(c=>c.name), ...currentAdmissions.map(a=>a.course)];
-        const batchOptions = ['Alpha Web Dev', ...DB.batches.map(b=>b.name), ...currentAdmissions.map(a=>a.batch)];
+        const courseOptions = courseList;
+        const batchOptions = batchList.filter(b => !data.courseId || b.courseId === data.courseId);
         body = `<div class="form-grid">
-          <div><label>Course</label><select id="a_course">${optionList(courseOptions, data.course)}</select></div>
-          <div><label>Batch</label><select id="a_batch">${optionList(batchOptions, data.batch)}</select></div>
+          <div><label>Course</label><select id="a_course"><option value="" data-id="">Select course</option>${courseOptions.map(x=>`<option value="${esc(x.name)}" data-id="${esc(x.id)}" ${data.courseId===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+          <div><label>Batch</label><select id="a_batch"><option value="" data-id="">Select batch</option>${batchOptions.map(x=>`<option value="${esc(x.name)}" data-id="${esc(x.id)}" ${data.batchId===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
         </div>`;
       } else if (step === 3) {
         if (!data.feeAmt) data.feeAmt = amountForFee(data.course, data.feeType);
         body = `<div class="form-grid">
           <div><label>Select Fee Type</label><select id="a_fee">${optionList(['Monthly Fee','Quarterly Fee','Semi-Annual Fee','Annual Fee', ...DB.feeTypes], data.feeType)}</select></div>
-          <div><label>Fee Amount</label><input class="num" id="a_fee_amt" value="${esc(data.feeAmt)}"></div>
+          <div><label>Fee Amount</label><input class="num" id="a_fee_amt" type="number" min="0" step="0.01" value="${esc(data.feeAmt)}"></div>
+          <div><label>Paid Amount</label><input class="num" id="a_paid" type="number" min="0" step="0.01" value="${esc(data.paid || data.feeAmt)}"></div>
+          <div><label>Discount</label><input class="num" id="a_discount" type="number" min="0" step="0.01" value="${esc(data.discount)}"></div>
+          <div><label>Late Fine</label><input class="num" id="a_fine" type="number" min="0" step="0.01" value="${esc(data.fine)}"></div>
+          <div><label>Payment Mode</label><select id="a_mode">${optionList(DB.modes || ['Cash'], data.mode)}</select></div>
+          <div><label>Transaction ID</label><input id="a_txn" value="${esc(data.txn)}"></div>
+          <div class="full"><label>Remarks</label><input id="a_remarks" value="${esc(data.remarks)}"></div>
         </div>
         <p class="hint">Tuition fees are recurring - choose Monthly, Quarterly, Semi-Annual or Annual.</p>`;
       } else {
@@ -333,6 +367,16 @@ if (App.guard()) {
           if (next) amount.value = next;
         };
       }
+      if (step === 2) {
+        box.querySelector('#a_course').onchange = event => {
+          const option = event.target.selectedOptions[0];
+          data.course = option.value;
+          data.courseId = option.dataset.id || '';
+          data.batch = '';
+          data.batchId = '';
+          render(box);
+        };
+      }
 
       box.querySelector('#wizBtn').textContent =
         step < 4 ? 'Next' : 'Confirm & Generate Receipt';
@@ -349,8 +393,13 @@ if (App.guard()) {
         render(box);
         box.querySelector('#wizBtn').onclick = async () => {
           saveStep(box);
-          if (step === 1 && !data.name) return App.toast('Enter student name','err');
-          if (step === 1 && !data.mobile) return App.toast('Enter mobile number','err');
+          if (step === 1 && (!data.name || !data.parent || !data.cls)) return App.toast('Complete student, parent, and class details.','err');
+          if (step === 1 && !/^\+?[0-9]{7,15}$/.test(data.mobile.replace(/[\s-]/g,''))) return App.toast('Enter a valid mobile number.','err');
+          if (step === 2 && (!data.courseId || !data.batchId)) return App.toast('Select a course and a batch.','err');
+          if (step === 3) {
+            const numbers = [data.feeAmt, data.paid, data.discount, data.fine].map(Number);
+            if (!numbers.every(n => Number.isFinite(n) && n >= 0)) return App.toast('Enter valid non-negative fee values.','err');
+          }
 
           if (step < 4) {
             step++;
@@ -386,7 +435,11 @@ if (App.guard()) {
   };
 
   
-  loadAdmissions();
+  (async () => {
+    try { await loadAdmissionOptions(); }
+    catch (err) { App.toast(err.message || 'Course and batch options could not be loaded.', 'err'); }
+    await loadAdmissions();
+  })();
 }
 </script>
 </body></html>
