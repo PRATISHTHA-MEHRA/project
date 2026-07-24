@@ -682,3 +682,75 @@ table.tbl td.num, table.tbl th.num { font-family: var(--font-num); text-align: r
     text-align:center;
     color:#666;
 }
+/* Simple Checkbox Dropdown */
+.multiselect-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.multiselect-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--ink-1, #1f2328);
+  cursor: pointer;
+  user-select: none;
+}
+
+.multiselect-box .placeholder {
+  color: #8c959f;
+}
+
+.multiselect-box .arrow {
+  font-size: 10px;
+  color: #656d76;
+  margin-left: 8px;
+  transition: transform 0.2s;
+}
+
+.multiselect-dropdown.open .arrow {
+  transform: rotate(180deg);
+}
+
+.multiselect-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: 4px 0;
+}
+
+.multiselect-dropdown.open .multiselect-menu {
+  display: block;
+}
+
+.multiselect-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  color: #1f2328;
+  cursor: pointer;
+}
+
+.multiselect-item:hover {
+  background: var(--bg-hover, #f6f8fa);
+}
+
+.multiselect-item input {
+  cursor: pointer;
+}

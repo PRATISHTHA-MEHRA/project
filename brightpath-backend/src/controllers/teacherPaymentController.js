@@ -7,11 +7,13 @@ exports.getPaymentDashboard = async (req, res) => {
         const kpis = await TeacherPayment.getPaymentKPIs(targetMonth);
         const paymentsList = await TeacherPayment.getAllPayments();
 
-      
         const allTeachers = await Teacher.getAll();
-        const teacherOptions = allTeachers
+        const teacherOptions = (Array.isArray(allTeachers) ? allTeachers : [])
             .filter(t => t.status === "Active")
-            .map(t => ({ id: t.id, name: t.teacher_name }));
+            .map(t => ({ 
+                id: t.id, 
+                name: t.teacher_name || t.name 
+            }));
 
         res.status(200).json({
             success: true,
@@ -19,7 +21,7 @@ exports.getPaymentDashboard = async (req, res) => {
                 totNet: parseFloat(kpis.tot_net || 0),
                 totPaid: parseFloat(kpis.tot_paid || 0),
                 totBal: parseFloat(kpis.tot_bal || 0),
-                pendingTeachers: parseInt(kpis.pending_count || 0)
+                pendingTeachers: parseInt(kpis.pending_count || 0, 10)
             },
             payments: paymentsList,
             teachers: teacherOptions
@@ -35,10 +37,12 @@ exports.updatePaymentDetails = async (req, res) => {
         const { paidAmount, mode, txn, date, voucher, remarks } = req.body;
 
         const original = await TeacherPayment.getPaymentById(id);
-        if (!original) return res.status(404).json({ success: false, message: "Record not found." });
+        if (!original) {
+            return res.status(404).json({ success: false, message: "Record not found." });
+        }
 
-        const totalPaidNow = parseFloat(paidAmount);
-        const netPayable = parseFloat(original.net);
+        const totalPaidNow = parseFloat(paidAmount || 0);
+        const netPayable = parseFloat(original.net || 0);
         const updatedBalance = netPayable - totalPaidNow;
 
         let targetStatus = 'Partially Paid';
@@ -48,7 +52,12 @@ exports.updatePaymentDetails = async (req, res) => {
         const updated = await TeacherPayment.recordTransaction(id, {
             paid: totalPaidNow,
             balance: updatedBalance < 0 ? 0 : updatedBalance,
-            status: targetStatus, mode, txn, date, voucher, remarks
+            status: targetStatus, 
+            mode: mode || 'Bank Transfer', 
+            txn: txn || '', 
+            date: date || new Date().toISOString().split('T')[0], 
+            voucher: voucher || '', 
+            remarks: remarks || ''
         });
 
         res.status(200).json({ success: true, data: updated });
@@ -61,11 +70,16 @@ exports.addNewVoucher = async (req, res) => {
     try {
         const { teacher, month, gross, paid, mode, date, voucher, txn, remarks } = req.body;
 
-       
         const allTeachers = await Teacher.getAll();
-        const validTeacher = allTeachers.find(t => t.teacher_name === teacher);
+        const validTeacher = (Array.isArray(allTeachers) ? allTeachers : []).find(
+            t => (t.teacher_name || t.name) === teacher
+        );
+
         if (!validTeacher) {
-            return res.status(400).json({ success: false, message: "Selected teacher was not found in Teacher records." });
+            return res.status(400).json({ 
+                success: false, 
+                message: "Selected teacher was not found in Teacher records." 
+            });
         }
 
         const grossAmt = parseFloat(gross || 0);
@@ -77,8 +91,18 @@ exports.addNewVoucher = async (req, res) => {
         if (paidAmt === 0) targetStatus = 'Pending';
 
         const newVoucher = await TeacherPayment.createPaymentVoucher({
-            teacher, month, gross: grossAmt, net: grossAmt, paid: paidAmt,
-            balance: balanceAmt, status: targetStatus, mode, date, voucher, txn, remarks
+            teacher, 
+            month: month || "May 2026", 
+            gross: grossAmt, 
+            net: grossAmt, 
+            paid: paidAmt,
+            balance: balanceAmt < 0 ? 0 : balanceAmt, 
+            status: targetStatus, 
+            mode: mode || 'UPI', 
+            date: date || new Date().toISOString().split('T')[0], 
+            voucher: voucher || '', 
+            txn: txn || '', 
+            remarks: remarks || ''
         });
 
         res.status(201).json({ success: true, data: newVoucher });

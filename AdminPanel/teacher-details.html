@@ -16,9 +16,11 @@ if(App.guard()){
   const BATCHES_ENDPOINT = "/batches";
   const PAYMENTS_ENDPOINT = "/teacher-payments";
   const MONTH = "May 2026";
+  
   const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const asNum = v => Number(v ?? 0) || 0;
-  const splitSubjects = v => Array.isArray(v) ? v : String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+  const splitSubjects = v => Array.isArray(v) ? v : String(v || '').split(/[,/]+/).map(x => x.trim()).filter(Boolean);
+  const normName = s => String(s || '').trim().toLowerCase();
 
   function unwrapOne(payload){
     return payload?.data?.teacher || payload?.data || payload?.teacher || payload;
@@ -43,13 +45,13 @@ if(App.guard()){
   function mapBatch(item = {}){
     return {
       id: String(item.id ?? ''),
-      name: item.batch_name || '',
-      subject: item.subject || '',
-      teacherId: item.teacher_id != null ? String(item.teacher_id) : '',
-      teacher: item.teacher_name || '',
-      days: item.days || '',
-      st: item.start_time || '',
-      et: item.end_time || '',
+      name: item.batch_name || item.name || '',
+      subject: item.subject || item.course_name || '',
+      teacherId: item.teacher_id != null ? String(item.teacher_id) : (item.teacherId ? String(item.teacherId) : ''),
+      teacher: item.teacher_name || item.teacher || '',
+      days: item.days || 'Mon-Fri',
+      st: item.start_time || item.st || '',
+      et: item.end_time || item.et || '',
       cur: asNum(item.current_students ?? item.cur ?? item.students ?? 0)
     };
   }
@@ -59,63 +61,74 @@ if(App.guard()){
     const name = item.teacher_name || item.name || 'Unnamed Teacher';
     const subjects = splitSubjects(item.subjects);
     const exp = item.experience ?? item.exp ?? '';
+    const rawBatches = item.assigned_batches || item.batches || [];
+
     return {
       id: String(id),
       teacher_code: String(item.teacher_code ?? item.code ?? id ?? ''),
       name,
-      mobile: item.mobile || '',
-      email: item.email || '',
-      qual: item.qualification ||  '',
-      exp: exp === '' ? '' : String(exp).includes('yr') ? String(exp) : `${exp} yrs`,
+      mobile: item.mobile || '-',
+      email: item.email || '-',
+      qual: item.qualification || item.qual || 'N/A',
+      exp: exp === '' ? 'N/A' : String(exp).includes('yr') ? String(exp) : `${exp} yrs`,
       subjects,
-      payType: item.payment_type ||'',
-      joined: item.joining_date || '',
-      status: item.status || 'Active'
+      payType: item.payment_type || item.payType || 'Fixed Monthly Salary',
+      joined: item.joining_date || item.joined || '-',
+      status: item.status || 'Active',
+      assignedBatches: Array.isArray(rawBatches) ? rawBatches.map(mapBatch) : []
     };
   }
 
   async function resolveTeacherId(){
     const paramId = new URLSearchParams(location.search).get('id');
     if (paramId) return paramId;
-    // No id in the URL — fall back to the first teacher from the live list.
-    const list = unwrapList(await API.get(TEACHERS_ENDPOINT));
-    if (list.length) return list[0].id ?? list[0].teacher_id ?? list[0].teacher_code;
+    
+    // If no ID param, automatically use the first available teacher from the live API
+    try {
+      const list = unwrapList(await API.get(TEACHERS_ENDPOINT));
+      if (list.length) return list[0].id ?? list[0].teacher_id ?? list[0].teacher_code;
+    } catch (err) {
+      console.warn('Could not fetch default teacher ID:', err);
+    }
     return null;
   }
 
-  async function loadTeacher(){
-    const id = await resolveTeacherId();
+  async function loadTeacher(id){
     if (!id) {
-      App.toast('No teachers found', 'err');
+      App.toast('No teacher specified', 'err');
       setTimeout(() => location.href = 'teachers.html', 1200);
       return null;
     }
-    return mapTeacher(unwrapOne(await API.get(`${TEACHERS_ENDPOINT}/${encodeURIComponent(id)}`)));
+    const raw = unwrapOne(await API.get(`${TEACHERS_ENDPOINT}/${encodeURIComponent(id)}`));
+    return mapTeacher(raw);
   }
 
   async function loadBatchesForTeacher(t){
-    const norm = s => String(s || '').trim().toLowerCase();
+    // If the controller already sent assigned batches attached to the teacher, use those first
+    if (t.assignedBatches && t.assignedBatches.length > 0) {
+      return t.assignedBatches;
+    }
+
+    // Otherwise, fetch all batches and filter by teacher ID / Name
     try {
       const payload = await API.get(BATCHES_ENDPOINT);
       const all = unwrapBatchList(payload).map(mapBatch);
       return all.filter(b =>
-        (b.teacherId && b.teacher_id === String(t.id)) || (b.teacher && norm(b.teacher) === norm(t.name))
+        (b.teacherId && b.teacherId === String(t.id)) || 
+        (b.teacher && normName(b.teacher) === normName(t.name))
       );
     } catch (err) {
-      console.warn('Could not load batches:', err);
+      console.warn('Could not load batches endpoint:', err);
       return [];
     }
   }
 
-  
-  const normName = s => String(s || '').trim().toLowerCase();
-
   async function loadPayments(t){
-    const empty = { net:0, status:'Pending', taken:0, students:0, cancelled:0, gross:0, ded:0, adv:0, paid:0, balance:0, payType:'' };
+    const empty = { net: 0, status: 'Pending', taken: 0, students: 0, cancelled: 0, gross: 0, ded: 0, adv: 0, paid: 0, balance: 0, payType: t.payType };
     try {
       const res = await API.get(`${PAYMENTS_ENDPOINT}/dashboard?month=${encodeURIComponent(MONTH)}`);
-      const payments = res.payments || [];
-      const teacherPayments = payments.filter(p => normName(p.teacher) === normName(t.name));
+      const payments = res.payments || res.data || [];
+      const teacherPayments = payments.filter(p => normName(p.teacher || p.teacher_name) === normName(t.name));
       const current = teacherPayments.find(p => p.month === MONTH) || teacherPayments[0] || empty;
       const history = teacherPayments.slice().sort((a, b) =>
         String(b.month || '').localeCompare(String(a.month || '')) || String(b.date || '').localeCompare(String(a.date || ''))
@@ -123,57 +136,152 @@ if(App.guard()){
 
       return { current, history };
     } catch (err) {
-      console.warn('Could not load payments:', err);
+      console.warn('Could not load payments dashboard:', err);
       return { current: empty, history: [] };
     }
   }
 
   function render(t, tp, batches, history){
-    const head = `<button class="btn btn-light" onclick="App.toast('Statement downloaded','ok')">${App.svg('download')}Statement</button><button class="btn btn-primary" onclick="location.href='teachers.html'">Back to list</button>`;
+    const head = `
+      <button class="btn btn-light" onclick="App.toast('Statement downloaded','ok')">${App.svg('download')}Statement</button>
+      <button class="btn btn-primary" onclick="location.href='teachers.html'">Back to List</button>
+    `;
     const c = App.layout('teachers', t.name, [`<a href="teachers.html">Teachers</a>`, t.teacher_code || t.id], head);
-    const initials = t.name.split(' ').map(w=>w[0]).join('');
+    const initials = t.name.split(' ').map(w => w[0]).join('').toUpperCase();
 
-    c.innerHTML=`
-      <div class="card mb16"><div class="card-body"><div class="detail-hero" style="border:none;padding:0;margin:0">
-        <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
-        <div style="flex:1"><h3 style="font-size:22px">${esc(t.name)}</h3><div class="meta">${esc(t.teacher_code)} - ${esc(t.qual)} - ${esc(t.exp)}</div>
-          <div class="chips" style="margin-top:9px">${App.badge(esc(t.status))} <span class="chip">${esc(t.payType)}</span> ${t.subjects.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div></div>
-        <div style="text-align:right"><div class="t-sub">Net Payable (${esc(MONTH)})</div><div class="num" style="font-size:24px;font-weight:600">${App.money(tp.net)}</div>${App.badge(esc(tp.status))}</div>
-      </div></div></div>
+    // Sum total students active across all batches
+    const totalStudentsInBatches = batches.reduce((acc, b) => acc + asNum(b.cur), 0);
+
+    c.innerHTML = `
+      <div class="card mb16">
+        <div class="card-body">
+          <div class="detail-hero" style="border:none;padding:0;margin:0">
+            <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
+            <div style="flex:1">
+              <h3 style="font-size:22px">${esc(t.name)}</h3>
+              <div class="meta">${esc(t.teacher_code)} - ${esc(t.qual)} - ${esc(t.exp)} Experience</div>
+              <div class="chips" style="margin-top:9px">
+                ${App.badge(esc(t.status))} 
+                <span class="chip">${esc(t.payType)}</span> 
+                ${t.subjects.map(s => `<span class="chip">${esc(s)}</span>`).join('')}
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div class="t-sub">Net Payable (${esc(MONTH)})</div>
+              <div class="num" style="font-size:24px;font-weight:600">${App.money(tp.net)}</div>
+              ${App.badge(esc(tp.status || 'Pending'))}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi"><div class="top"><span class="label">Assigned Batches</span><span class="ic b-brand">${App.svg('batch')}</span></div><div class="val">${batches.length}</div></div>
-        <div class="kpi"><div class="top"><span class="label">Classes Taken (${esc(MONTH)})</span><span class="ic b-blue">${App.svg('timetable')}</span></div><div class="val">${asNum(tp.taken)}</div></div>
-        <div class="kpi"><div class="top"><span class="label">Students</span><span class="ic b-violet">${App.svg('students')}</span></div><div class="val">${asNum(tp.students)}</div></div>
-        <div class="kpi"><div class="top"><span class="label">Cancelled</span><span class="ic b-amber">${App.svg('x')}</span></div><div class="val">${asNum(tp.cancelled)}</div></div>
+        <div class="kpi">
+          <div class="top"><span class="label">Assigned Batches</span><span class="ic b-brand">${App.svg('batch')}</span></div>
+          <div class="val">${batches.length}</div>
+        </div>
+        <div class="kpi">
+          <div class="top"><span class="label">Classes Taken (${esc(MONTH)})</span><span class="ic b-blue">${App.svg('timetable')}</span></div>
+          <div class="val">${asNum(tp.taken)}</div>
+        </div>
+        <div class="kpi">
+          <div class="top"><span class="label">Total Students</span><span class="ic b-violet">${App.svg('students')}</span></div>
+          <div class="val">${asNum(tp.students) || totalStudentsInBatches}</div>
+        </div>
+        <div class="kpi">
+          <div class="top"><span class="label">Cancelled Classes</span><span class="ic b-amber">${App.svg('x')}</span></div>
+          <div class="val">${asNum(tp.cancelled)}</div>
+        </div>
       </div>
 
       <div class="grid-2 mb16">
-        <div class="card"><div class="card-head"><h3>Assigned Batches & Timetable</h3></div><div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Batch</th><th>Subject</th><th>Days</th><th>Time</th><th class="num">Students</th></tr></thead>
-          <tbody>${batches.map(b=>`<tr><td class="t-main">${esc(b.name)}</td><td>${esc(b.subject)}</td><td>${esc(b.days)}</td><td>${esc(b.st)}</td><td class="num">${esc(b.cur)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No batches</td></tr>'}</tbody></table></div></div>
-        <div class="card"><div class="card-head"><h3>Payment Statement (${esc(MONTH)})</h3></div><div class="card-body">
-          <div class="dl"><div class="it"><div class="k">Payment Type</div><div class="v">${esc(t.payType)}</div></div>
-            <div class="it"><div class="k">Gross Payable</div><div class="v num">${App.money(tp.gross)}</div></div>
-            <div class="it"><div class="k">Deductions</div><div class="v num">- ${App.money(tp.ded)}</div></div>
-            <div class="it"><div class="k">Advance Paid</div><div class="v num">- ${App.money(tp.adv)}</div></div>
-            <div class="it"><div class="k">Net Payable</div><div class="v num">${App.money(tp.net)}</div></div>
-            <div class="it"><div class="k">Paid / Balance</div><div class="v num">${App.money(tp.paid)} / ${App.money(tp.balance)}</div></div></div>
-        </div></div>
+        <div class="card">
+          <div class="card-head"><h3>Assigned Batches & Timetable</h3></div>
+          <div class="tbl-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th>Subject</th>
+                  <th>Days</th>
+                  <th>Timing</th>
+                  <th class="num">Students</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${batches.length > 0 ? batches.map(b => `
+                  <tr>
+                    <td class="t-main">${esc(b.name)}</td>
+                    <td>${esc(b.subject || '-')}</td>
+                    <td>${esc(b.days || '-')}</td>
+                    <td>${esc(b.st && b.et ? `${b.st} - ${b.et}` : (b.st || '-'))}</td>
+                    <td class="num">${esc(b.cur)}</td>
+                  </tr>
+                `).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No batches currently assigned</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Payment Breakdown (${esc(MONTH)})</h3></div>
+          <div class="card-body">
+            <div class="dl">
+              <div class="it"><div class="k">Payment Structure</div><div class="v">${esc(t.payType)}</div></div>
+              <div class="it"><div class="k">Gross Payable</div><div class="v num">${App.money(tp.gross)}</div></div>
+              <div class="it"><div class="k">Deductions</div><div class="v num" style="color:var(--red-600)">- ${App.money(tp.ded)}</div></div>
+              <div class="it"><div class="k">Advance Paid</div><div class="v num" style="color:var(--amber-600)">- ${App.money(tp.adv)}</div></div>
+              <div class="it"><div class="k">Net Payable</div><div class="v num" style="font-weight:700">${App.money(tp.net)}</div></div>
+              <div class="it"><div class="k">Paid / Balance</div><div class="v num">${App.money(tp.paid)} / ${App.money(tp.balance)}</div></div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="card mb16"><div class="card-head"><h3>Payment History</h3></div><div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Month</th><th class="num">Gross</th><th class="num">Net</th><th class="num">Paid</th><th>Status</th></tr></thead>
-          <tbody>${history.length ? history.map(p=>`<tr><td>${esc(p.month || '-')}</td><td class="num">${App.money(p.gross)}</td><td class="num">${App.money(p.net)}</td><td class="num">${App.money(p.paid)}</td><td>${App.badge(esc(p.status || 'Pending'))}</td></tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No payment history</td></tr>'}</tbody></table></div></div>`;
+      <div class="card mb16">
+        <div class="card-head"><h3>Payment History</h3></div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th class="num">Gross</th>
+                <th class="num">Net</th>
+                <th class="num">Paid</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${history.length > 0 ? history.map(p => `
+                <tr>
+                  <td>${esc(p.month || '-')}</td>
+                  <td class="num">${App.money(p.gross)}</td>
+                  <td class="num">${App.money(p.net)}</td>
+                  <td class="num">${App.money(p.paid)}</td>
+                  <td>${App.badge(esc(p.status || 'Pending'))}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No payment history recorded</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
   }
 
+  // Initializing detail page load sequence
   (async () => {
     try {
-      const t = await loadTeacher();
+      const teacherId = await resolveTeacherId();
+      const t = await loadTeacher(teacherId);
       if (!t) return;
-      const [{ current: tp, history }, batches] = await Promise.all([loadPayments(t), loadBatchesForTeacher(t)]);
+
+      const [{ current: tp, history }, batches] = await Promise.all([
+        loadPayments(t), 
+        loadBatchesForTeacher(t)
+      ]);
+
       render(t, tp, batches, history);
     } catch (err) {
+      console.error(err);
       App.toast(err.message || 'Failed to load teacher profile', 'err');
     }
   })();

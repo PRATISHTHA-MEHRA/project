@@ -5,6 +5,29 @@
 <title>Teachers - BrightPath Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/admin-style.css">
+<style>
+/* Multiselect Dropdown Styling */
+.multiselect-dropdown { position: relative; width: 100%; }
+.multiselect-box {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #fff; border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 6px; padding: 8px 12px; font-size: 14px;
+  color: var(--ink-1, #1f2328); cursor: pointer; user-select: none;
+}
+.multiselect-box .placeholder { color: #8c959f; }
+.multiselect-box .arrow { font-size: 10px; color: #656d76; margin-left: 8px; transition: transform 0.2s; }
+.multiselect-dropdown.open .arrow { transform: rotate(180deg); }
+.multiselect-menu {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: #fff; border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  max-height: 180px; overflow-y: auto; z-index: 100; padding: 4px 0;
+}
+.multiselect-dropdown.open .multiselect-menu { display: block; }
+.multiselect-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 14px; color: #1f2328; cursor: pointer; }
+.multiselect-item:hover { background: var(--bg-hover, #f6f8fa); }
+.multiselect-item input { cursor: pointer; }
+</style>
 </head>
 <body>
 <script src="assets/js/api.js"></script>
@@ -18,6 +41,7 @@ if(App.guard()){
   const MONTH = "May 2026";
   const payTypes = ["Fixed Monthly Salary","Per Class Payment","Per Student Payment","Revenue Share Percentage","Hybrid Fixed + Per Class"];
   const statuses = ["Active", "On Leave", "Inactive"];
+
   let currentTeachers = [];
   let currentBatches = [];
 
@@ -29,7 +53,7 @@ if(App.guard()){
   const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const asNum = v => Number(v ?? 0) || 0;
-  const splitSubjects = v => Array.isArray(v) ? v : String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+  const splitSubjects = v => Array.isArray(v) ? v : String(v || '').split(/[,/]+/).map(x => x.trim()).filter(Boolean);
   const findCurrentTeacher = id => currentTeachers.find(t => String(t.id) === String(id));
 
   function unwrapOne(payload){
@@ -55,101 +79,184 @@ if(App.guard()){
   function mapBatch(item = {}){
     return {
       id: String(item.id ?? ''),
-      name: item.batch_name || '',
+      name: item.name || item.batch_name || '',
       subject: item.subject || '',
-    teacherId: item.teacher_id != null ? String(item.teacher_id) : '',
-      teacher: item.teacher_name || '',
+      teacherId: String(item.teacherId ?? item.teacher_id ?? ''),
+      teacher: item.teacher || item.teacher_name || '',
       days: item.days || '',
-      st: item.start_time || '',
-      et: item.end_time || '',
-      cur: asNum(item.current_students ?? 0)
+      st: item.st || item.start_time || '',
+      et: item.et || item.end_time || '',
+      cur: asNum(item.cur ?? item.current_students ?? 0)
     };
   }
 
+  // Purely extracts unique subjects from batches ONLY (Unique entries, sorted)
+  function getOnlyBatchSubjects() {
+    const set = new Set();
+
+    currentBatches.forEach(b => {
+      if (b.subject) {
+        splitSubjects(b.subject).forEach(s => set.add(s));
+      }
+    });
+
+    return Array.from(set).sort();
+  }
 
   async function loadBatches(){
     try {
       const payload = await API.get(BATCHES_ENDPOINT);
       currentBatches = unwrapBatchList(payload).map(mapBatch);
+      return currentBatches;
     } catch (err) {
       console.warn('Could not load batches:', err);
       currentBatches = [];
+      return [];
     }
   }
 
-  function batchesForTeacher(t){
-    const norm = s => String(s || '').trim().toLowerCase();
-    return currentBatches.filter(b =>
-      (b.teacherId && b.teacherId === String(t.id)) || (b.teacher && norm(b.teacher) === norm(t.name))
-    );
-  }
-
   function mapTeacher(item = {}){
-    const id = item.id ??'';
-    const name = item.teacher_name || 'Unnamed Teacher';
+    const id = item.id ?? '';
+    const name = item.teacher_name || item.name || 'Unnamed Teacher';
     const subjects = splitSubjects(item.subjects);
-    const exp = item.experience ??  '';
+    const exp = item.experience ?? item.exp ?? '';
+    
+    const assignedBatches = item.assigned_batches || [];
+    const coursesList = item.courses_list || '';
+
     return {
       id: String(id),
       teacher_code: String(item.teacher_code ?? ''),
       name,
       mobile: item.mobile || '',
       email: item.email || '',
-      qual: item.qualification ||  '',
+      qual: item.qualification || item.qual || '',
       exp: exp === '' ? '' : String(exp).includes('yr') ? String(exp) : `${exp} yrs`,
       experience: asNum(exp),
       subjects,
-      payType: item.payment_type  || '',
-      joined: item.joining_date ||  '',
+      courses: coursesList,
+      payType: item.payment_type || item.payType || '',
+      joined: item.joining_date || item.joined || '',
       status: item.status || 'Active',
-      batches: asNum(item.batches ?? batchesForTeacher({ id: String(id), name }).length)
-    };
-  }
-
-  function toApiPayload(t){
-    return {
-      teacher_code: t.teacher_code,
-      teacher_name: t.name,
-      mobile: t.mobile,
-      email: t.email,
-      qualification: t.qual,
-      experience: t.experience,
-      subjects: t.subjects.join(','),
-      payment_type: t.payType,
-      joining_date: t.joined,
-      status: t.status
+      batches: assignedBatches,
+      batchesList: assignedBatches.map(b => b.batch_name || b.name)
     };
   }
 
   function readForm(b){
+    const getChecked = (id) => Array.from(b.querySelectorAll(`#${id} input[type="checkbox"]:checked`)).map(cb => cb.value);
+
     return {
-      teacher_code: b.querySelector('#tf_code').value.trim(),
+      teacher_code: b.querySelector('#tf_code_hidden')?.value || '',
       name: b.querySelector('#tf_name').value.trim(),
       mobile: b.querySelector('#tf_mobile').value.trim(),
       email: b.querySelector('#tf_email').value.trim(),
       qual: b.querySelector('#tf_qual').value.trim(),
       experience: asNum(b.querySelector('#tf_exp').value),
-      subjects: splitSubjects(b.querySelector('#tf_sub').value),
+      selectedBatchIds: getChecked('ms_batches').map(Number).filter(Boolean),
+      subjects: getChecked('ms_subjects'),
       payType: b.querySelector('#tf_pay').value,
       joined: b.querySelector('#tf_join').value,
       status: b.querySelector('#tf_status').value
     };
   }
 
+  function toApiPayload(t){
+    const payload = {
+      teacher_name: t.name,
+      mobile: t.mobile,
+      email: t.email,
+      qualification: t.qual,
+      experience: t.experience,
+      subjects: t.subjects.join(','),
+      batch_ids: t.selectedBatchIds,
+      payment_type: t.payType,
+      joining_date: t.joined,
+      status: t.status
+    };
+    if (t.teacher_code) payload.teacher_code = t.teacher_code;
+    return payload;
+  }
+
+  function validateForm(t) {
+    if (!t.name) return 'Teacher name is required';
+    if (t.email && !/^\S+@\S+\.\S+$/.test(t.email)) return 'Enter a valid email address';
+    if (t.subjects.length === 0) return 'Select at least one subject';
+    return null;
+  }
+
+  window.toggleDropdown = function(id) {
+    const target = document.getElementById(id);
+    const isOpen = target.classList.contains('open');
+    document.querySelectorAll('.multiselect-dropdown').forEach(el => el.classList.remove('open'));
+    if (!isOpen) target.classList.add('open');
+  };
+
+  window.updateDropdownText = function(id, placeholderText) {
+    const container = document.getElementById(id);
+    if (!container) return;
+    const checkedLabels = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.getAttribute('data-label') || cb.value);
+    const textEl = container.querySelector('.selected-label');
+    
+    if (checkedLabels.length === 0) {
+      textEl.innerHTML = `<span class="placeholder">${placeholderText}</span>`;
+    } else {
+      textEl.textContent = checkedLabels.join(', ');
+    }
+  };
+
+  // Called when a batch is checked/unchecked -> auto checks all associated subjects
+  window.onBatchSelectionChange = function() {
+    updateDropdownText('ms_batches', 'Select Batches');
+    
+    const selectedBatchIds = Array.from(document.querySelectorAll('#ms_batches input[type="checkbox"]:checked')).map(cb => String(cb.value));
+    const autoSubjects = new Set();
+
+    // Extract subjects belonging to all currently checked batches
+    selectedBatchIds.forEach(bId => {
+      const match = currentBatches.find(b => String(b.id) === bId);
+      if (match && match.subject) {
+        splitSubjects(match.subject).forEach(s => autoSubjects.add(s));
+      }
+    });
+
+    // Automatically check corresponding unique subjects in subjects dropdown
+    document.querySelectorAll('#ms_subjects input[type="checkbox"]').forEach(cb => {
+      if (autoSubjects.has(cb.value)) {
+        cb.checked = true;
+      }
+    });
+    
+    updateDropdownText('ms_subjects', 'Select Subjects');
+  };
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.multiselect-dropdown')) {
+      document.querySelectorAll('.multiselect-dropdown').forEach(el => el.classList.remove('open'));
+    }
+  });
+
+  function formatBatchesColumn(batchArr) {
+    if (!batchArr || batchArr.length === 0) return `<span class="t-sub">-</span>`;
+    const str = batchArr.join(' / ');
+    return str.length > 20 ? `<span title="${esc(str)}">${esc(str.slice(0, 18))}..</span>` : esc(str);
+  }
+
   function renderTable(rows){
     currentTeachers = rows;
     App.table('tbl',{
       rows,
-      searchKeys:['id','teacher_code','name','mobile','email','qual'],
-      searchPlaceholder:'Search teachers...',
+      searchKeys:['id','teacher_code','name','mobile','email','qual','courses'],
+      searchPlaceholder:'Search teachers, courses...',
       pageSize:8,
       filters:[{label:'Payment Type',key:'payType',options:payTypes},{label:'Status',key:'status',options:statuses}],
       columns:[
         {key:'name',label:'Teacher',render:r=>App.whoCell(esc(r.name),`${esc(r.teacher_code)} - ${esc(r.qual)}`)},
+        {key:'courses',label:'Courses',render:r=>esc(r.courses || '-')},
+        {key:'batches',label:'Batches',render:r=>formatBatchesColumn(r.batchesList)},
         {key:'subjects',label:'Subjects',render:r=>`<div class="chips">${r.subjects.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div>`},
         {key:'mobile',label:'Contact',render:r=>`<div>${esc(r.mobile)}</div><div class="t-sub">${esc(r.email)}</div>`},
         {key:'exp',label:'Exp',num:true,render:r=>esc(r.exp)},
-        {key:'batches',label:'Batches',num:true},
         {key:'payType',label:'Payment',render:r=>`<span class="chip">${esc(r.payType)}</span>`},
         {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
       ],
@@ -159,7 +266,8 @@ if(App.guard()){
 
   async function loadTeachers(){
     try {
-      const [teachersPayload] = await Promise.all([API.get(ENDPOINT), loadBatches()]);
+      await loadBatches();
+      const teachersPayload = await API.get(ENDPOINT);
       renderTable(unwrapList(teachersPayload).map(mapTeacher));
     } catch (err) {
       App.toast(err.message || 'Failed to load teachers','err');
@@ -168,7 +276,8 @@ if(App.guard()){
   }
 
   async function getTeacher(id){
-    return mapTeacher(unwrapOne(await API.get(`${ENDPOINT}/${encodeURIComponent(id)}`)));
+    const raw = unwrapOne(await API.get(`${ENDPOINT}/${encodeURIComponent(id)}`));
+    return mapTeacher(raw);
   }
 
   const normName = s => String(s || '').trim().toLowerCase();
@@ -189,18 +298,24 @@ if(App.guard()){
     try {
       const t = await getTeacher(id);
       if (!t || !t.id) return App.toast('Teacher not found', 'err');
-      const [tp, batches] = await Promise.all([paymentSummary(t), Promise.resolve(batchesForTeacher(t))]);
-      App.modal({size:'xl',title:esc(t.name),sub:`${esc(t.teacher_code)} - ${esc(t.subjects.join(', '))}`,
+
+      const [tp] = await Promise.all([paymentSummary(t)]);
+      const assignedBatches = t.batches || [];
+
+      App.modal({
+        size:'xl',
+        title:esc(t.name),
+        sub:`${esc(t.teacher_code)} - ${esc(t.subjects.join(', '))}`,
         foot:`<button class="btn btn-light" onclick="location.href='teacher-details.html?id=${encodeURIComponent(t.id)}'">Full profile</button><button class="btn btn-primary" data-close>Close</button>`,
         body:`<div class="detail-hero"><div class="av" style="background:var(--brand)">${esc(t.name.split(' ').map(w=>w[0]).join(''))}</div>
           <div style="flex:1"><h3>${esc(t.name)}</h3><div class="meta">${esc(t.qual)} - ${esc(t.exp)} experience</div>
           <div class="chips" style="margin-top:8px">${App.badge(esc(t.status))} <span class="chip">${esc(t.payType)}</span></div></div></div>
-        <div class="sec-title">Contact</div>
+        <div class="sec-title">Contact & Courses</div>
         <div class="dl"><div class="it"><div class="k">Mobile</div><div class="v">${esc(t.mobile)}</div></div><div class="it"><div class="k">Email</div><div class="v">${esc(t.email)}</div></div>
-          <div class="it"><div class="k">Joined</div><div class="v">${esc(t.joined)}</div></div><div class="it"><div class="k">Assigned Batches</div><div class="v">${batches.length}</div></div></div>
+          <div class="it"><div class="k">Courses Assigned</div><div class="v">${esc(t.courses || 'None')}</div></div><div class="it"><div class="k">Assigned Batches</div><div class="v">${assignedBatches.length}</div></div></div>
         <div class="sec-title">Assigned Batches</div>
-        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Batch</th><th>Subject</th><th>Timing</th><th class="num">Students</th></tr></thead>
-        <tbody>${batches.map(b=>`<tr><td class="t-main">${esc(b.name)}</td><td>${esc(b.subject)}</td><td>${esc(b.st)}-${esc(b.et)}</td><td class="num">${esc(b.cur)}</td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--ink-4)">No batches assigned</td></tr>'}</tbody></table></div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Batch</th><th>Course</th><th>Subject</th><th>Timing</th><th class="num">Students</th></tr></thead>
+        <tbody>${assignedBatches.map(b=>`<tr><td class="t-main">${esc(b.batch_name || b.name)}</td><td>${esc(b.course_name || '-')}</td><td>${esc(b.subject || '-')}</td><td>${esc(b.start_time || '')}-${esc(b.end_time || '')}</td><td class="num">${esc(b.current_students || 0)}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--ink-4)">No batches assigned</td></tr>'}</tbody></table></div>
         <div class="sec-title">Payment Summary (${esc(MONTH)})</div>
         <div class="dl cols-3"><div class="it"><div class="k">Gross Payable</div><div class="v num">${App.money(tp.gross)}</div></div>
           <div class="it"><div class="k">Net Payable</div><div class="v num">${App.money(tp.net)}</div></div>
@@ -212,14 +327,66 @@ if(App.guard()){
   };
 
   function tForm(t){
+    const selectedSubs = new Set(t?.subjects || []);
+    const assignedBatchIds = new Set((t?.batches || []).map(b => String(b.id)));
+    const batchSubjectsList = getOnlyBatchSubjects();
+
     return `<div class="form-grid">
-      <div><label>Teacher Code</label><input id="tf_code" value="${esc(t?.teacher_code || '')}"></div>
-      <div><label>Name</label><input id="tf_name" value="${esc(t?.name || '')}"></div>
-      <div><label>Mobile</label><input id="tf_mobile" value="${esc(t?.mobile || '')}"></div>
-      <div><label>Email</label><input id="tf_email" value="${esc(t?.email || '')}"></div>
-      <div><label>Qualification</label><input id="tf_qual" value="${esc(t?.qual || '')}"></div>
-      <div><label>Experience</label><input id="tf_exp" value="${esc(t?.experience || '')}"></div>
-      <div class="full"><label>Subjects (comma separated)</label><input id="tf_sub" value="${esc((t?.subjects || []).join(', '))}"></div>
+      <input type="hidden" id="tf_code_hidden" value="${esc(t?.teacher_code || '')}">
+      <div><label>Name</label><input id="tf_name" value="${esc(t?.name || '')}" placeholder="e.g. John Doe"></div>
+      <div><label>Mobile</label><input id="tf_mobile" value="${esc(t?.mobile || '')}" placeholder="e.g. 9876543210"></div>
+      <div><label>Email</label><input id="tf_email" value="${esc(t?.email || '')}" placeholder="e.g. john@example.com"></div>
+      <div><label>Qualification</label><input id="tf_qual" value="${esc(t?.qual || '')}" placeholder="e.g. M.Sc. Physics"></div>
+      <div><label>Experience (yrs)</label><input id="tf_exp" value="${esc(t?.experience || '')}" placeholder="e.g. 5"></div>
+
+      <!-- Batches Checkbox Dropdown -->
+      <div class="full">
+        <label>Batches</label>
+        <div class="multiselect-dropdown" id="ms_batches">
+          <div class="multiselect-box" onclick="toggleDropdown('ms_batches')">
+            <span class="selected-label">
+              ${assignedBatchIds.size > 0 ? (t?.batchesList || []).join(', ') : '<span class="placeholder">Select Batches</span>'}
+            </span>
+            <span class="arrow">▼</span>
+          </div>
+          <div class="multiselect-menu">
+            ${currentBatches.length > 0 
+              ? currentBatches.map(b => `
+                  <label class="multiselect-item">
+                    <input type="checkbox" value="${esc(b.id)}" data-label="${esc(b.name)}" ${assignedBatchIds.has(String(b.id)) ? 'checked' : ''} onchange="onBatchSelectionChange()">
+                    ${esc(b.name)}
+                  </label>
+                `).join('') 
+              : '<div class="multiselect-item" style="color:var(--ink-4)">No active batches found</div>'
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Unique Batch-Only Subjects Dropdown -->
+      <div class="full">
+        <label>Subjects</label>
+        <div class="multiselect-dropdown" id="ms_subjects">
+          <div class="multiselect-box" onclick="toggleDropdown('ms_subjects')">
+            <span class="selected-label">
+              ${selectedSubs.size > 0 ? Array.from(selectedSubs).join(', ') : '<span class="placeholder">Select Subjects</span>'}
+            </span>
+            <span class="arrow">▼</span>
+          </div>
+          <div class="multiselect-menu">
+            ${batchSubjectsList.length > 0 
+              ? batchSubjectsList.map(s => `
+                  <label class="multiselect-item">
+                    <input type="checkbox" value="${esc(s)}" ${selectedSubs.has(s) ? 'checked' : ''} onchange="updateDropdownText('ms_subjects', 'Select Subjects')">
+                    ${esc(s)}
+                  </label>
+                `).join('') 
+              : '<div class="multiselect-item" style="color:var(--ink-4)">No batch subjects available</div>'
+            }
+          </div>
+        </div>
+      </div>
+
       <div><label>Payment Type</label><select id="tf_pay">${payTypes.map(p=>`<option ${t?.payType===p?'selected':''}>${p}</option>`).join('')}</select></div>
       <div><label>Joining Date</label><input type="date" id="tf_join" value="${esc(t?.joined || '2026-06-20')}"></div>
       <div><label>Status</label><select id="tf_status">${statuses.map(s=>`<option ${t?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
@@ -230,8 +397,9 @@ if(App.guard()){
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Teacher</button>`,
     onOpen:b=>b.querySelector('#sv').onclick=async()=>{
       const t = readForm(b);
-      if (!t.teacher_code) return App.toast('Enter teacher code','err');
-      if (!t.name) return App.toast('Enter name','err');
+      const err = validateForm(t);
+      if (err) return App.toast(err, 'err');
+
       try {
         await API.post(ENDPOINT, toApiPayload(t));
         App.closeModal();
@@ -251,8 +419,9 @@ if(App.guard()){
         foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
         onOpen:b=>b.querySelector('#sv').onclick=async()=>{
           const updated = readForm(b);
-          if (!updated.teacher_code) return App.toast('Enter teacher code','err');
-          if (!updated.name) return App.toast('Enter name','err');
+          const err = validateForm(updated);
+          if (err) return App.toast(err, 'err');
+
           try {
             await API.put(`${ENDPOINT}/${encodeURIComponent(t.id)}`, toApiPayload(updated));
             App.closeModal();

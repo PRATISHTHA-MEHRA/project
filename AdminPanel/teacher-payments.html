@@ -21,6 +21,7 @@
         const MONTH = "May 2026"; 
         let paymentRows = [];
         let teachersList = []; 
+        
         const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
         const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const unique = values => [...new Set(values.filter(Boolean))];
@@ -36,7 +37,7 @@
           "teacher-payments",
           "Teacher Payments",
           ["<span>Finance</span>", "Teacher Payments"],
-          head,
+          head
         );
 
         c.innerHTML = `
@@ -80,7 +81,7 @@
         async function loadTeacherPayments() {
           try {
             const res = await API.get(
-              `${ENDPOINT}/dashboard?month=${encodeURIComponent(MONTH)}`,
+              `${ENDPOINT}/dashboard?month=${encodeURIComponent(MONTH)}`
             );
 
             const metrics = res.metrics || {};
@@ -116,7 +117,6 @@
               {
                 label: "Month",
                 key: "month",
-                
                 options: unique(rows.map(r => r.month)).length
                   ? unique(rows.map(r => r.month))
                   : [MONTH],
@@ -132,19 +132,19 @@
               {
                 key: "payType",
                 label: "Type",
-                render: (r) => `<span class="chip">${esc(r.payType)}</span>`,
+                render: (r) => `<span class="chip">${esc(r.payType || 'Fixed')}</span>`,
               },
               {
                 key: "taken",
                 label: "Classes",
                 num: true,
-                render: (r) => `${esc(r.taken)}/${esc(r.assigned)}`,
+                render: (r) => `${esc(r.taken || 0)}/${esc(r.assigned || 0)}`,
               },
               {
                 key: "gross",
                 label: "Gross",
                 num: true,
-                render: (r) => App.money(r.gross),
+                render: (r) => App.money(r.gross || 0),
               },
               {
                 key: "ded",
@@ -156,18 +156,18 @@
                 key: "net",
                 label: "Net Payable",
                 num: true,
-                render: (r) => `<b>${App.money(r.net)}</b>`,
+                render: (r) => `<b>${App.money(r.net || 0)}</b>`,
               },
               {
                 key: "balance",
                 label: "Balance",
                 num: true,
-                render: (r) => App.money(r.balance),
+                render: (r) => App.money(r.balance || 0),
               },
               {
                 key: "status",
                 label: "Status",
-                render: (r) => App.badge(esc(r.status)),
+                render: (r) => App.badge(esc(r.status || 'Pending')),
               },
             ],
 
@@ -206,17 +206,17 @@
               <div class="dl cols-3">
                 <div class="it">
                   <div class="k">Payment Type</div>
-                  <div class="v">${esc(t.payType)}</div>
+                  <div class="v">${esc(t.payType || 'Fixed Salary')}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Classes Assigned</div>
-                  <div class="v num">${esc(t.assigned)}</div>
+                  <div class="v num">${esc(t.assigned || 0)}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Classes Taken</div>
-                  <div class="v num">${esc(t.taken)}</div>
+                  <div class="v num">${esc(t.taken || 0)}</div>
                 </div>
 
                 <div class="it">
@@ -239,7 +239,7 @@
 
               <div class="pl-line plus">
                 <span>Gross Payable</span>
-                <span class="v">${App.money(t.gross)}</span>
+                <span class="v">${App.money(t.gross || 0)}</span>
               </div>
 
               <div class="pl-line minus">
@@ -254,23 +254,23 @@
 
               <div class="pl-line total">
                 <span>Net Payable</span>
-                <span class="v">${App.money(t.net)}</span>
+                <span class="v">${App.money(t.net || 0)}</span>
               </div>
 
               <div class="dl cols-3 mt16">
                 <div class="it">
                   <div class="k">Paid Amount</div>
-                  <div class="v num">${App.money(t.paid)}</div>
+                  <div class="v num">${App.money(t.paid || 0)}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Balance</div>
-                  <div class="v num">${App.money(t.balance)}</div>
+                  <div class="v num">${App.money(t.balance || 0)}</div>
                 </div>
 
                 <div class="it">
                   <div class="k">Status</div>
-                  <div class="v">${App.badge(esc(t.status))}</div>
+                  <div class="v">${App.badge(esc(t.status || 'Pending'))}</div>
                 </div>
               </div>
             `,
@@ -284,6 +284,8 @@
           const t = paymentRows.find((x) => String(x.id) === String(id));
           if (!t) return App.toast("Payment record not found", "err");
 
+          const todayStr = new Date().toISOString().split('T')[0];
+
           App.modal({
             size: "lg",
             title: "Record Payment",
@@ -293,12 +295,12 @@
               <div class="form-grid">
                 <div>
                   <label>Payable Amount (₹)</label>
-                  <input class="num" value="${esc(t.net)}" disabled>
+                  <input class="num" value="${esc(t.net || 0)}" disabled>
                 </div>
 
                 <div>
                   <label>Paid Amount (₹)</label>
-                  <input class="num" id="paidAmount" value="${esc(t.balance)}">
+                  <input class="num" id="paidAmount" value="${esc(t.balance || 0)}">
                 </div>
 
                 <div>
@@ -312,22 +314,22 @@
 
                 <div>
                   <label>Transaction ID</label>
-                  <input id="txn">
+                  <input id="txn" value="${esc(t.txn || '')}">
                 </div>
 
                 <div>
                   <label>Payment Date</label>
-                  <input type="date" id="payDate" value="2026-06-07">
+                  <input type="date" id="payDate" value="${esc(t.date || todayStr)}">
                 </div>
 
                 <div>
                   <label>Voucher Number</label>
-                  <input id="voucher" value="VCH-${esc(t.id)}">
+                  <input id="voucher" value="${esc(t.voucher || 'VCH-' + t.id)}">
                 </div>
 
                 <div class="full">
                   <label>Remarks</label>
-                  <input id="remarks">
+                  <input id="remarks" value="${esc(t.remarks || '')}">
                 </div>
               </div>
             `,
@@ -341,7 +343,7 @@
               box.querySelector("#savePayment").onclick = async () => {
                 try {
                   await API.patch(`${ENDPOINT}/pay/${encodeURIComponent(id)}`, {
-                    paidAmount: Number(box.querySelector("#paidAmount").value),
+                    paidAmount: Number(box.querySelector("#paidAmount").value || 0),
                     mode: box.querySelector("#payMode").value,
                     txn: box.querySelector("#txn").value,
                     date: box.querySelector("#payDate").value,
@@ -368,6 +370,8 @@
             ? teachersList.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('')
             : `<option value="" disabled>No active teachers found</option>`;
 
+          const todayStr = new Date().toISOString().split('T')[0];
+
           App.modal({
             size: "lg",
             title: "Add Teacher Payment",
@@ -389,7 +393,7 @@
 
                 <div>
                   <label>Gross Amount (₹)</label>
-                  <input class="num" id="gross">
+                  <input class="num" id="gross" placeholder="0">
                 </div>
 
                 <div>
@@ -408,12 +412,12 @@
 
                 <div>
                   <label>Payment Date</label>
-                  <input type="date" id="date" value="2026-06-07">
+                  <input type="date" id="date" value="${todayStr}">
                 </div>
 
                 <div>
                   <label>Voucher Number</label>
-                  <input id="voucher" value="VCH-1099">
+                  <input id="voucher" value="VCH-${Math.floor(1000 + Math.random() * 9000)}">
                 </div>
 
                 <div>
@@ -442,8 +446,8 @@
                   await API.post(`${ENDPOINT}/add`, {
                     teacher: teacherName,
                     month: box.querySelector("#month").value,
-                    gross: Number(box.querySelector("#gross").value),
-                    paid: Number(box.querySelector("#paid").value),
+                    gross: Number(box.querySelector("#gross").value || 0),
+                    paid: Number(box.querySelector("#paid").value || 0),
                     mode: box.querySelector("#mode").value,
                     date: box.querySelector("#date").value,
                     voucher: box.querySelector("#voucher").value,
