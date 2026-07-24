@@ -11,6 +11,7 @@
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script src="assets/js/api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 if (App.guard()) {
   const API_BASE = "/admissions"; 
@@ -225,19 +226,143 @@ if (App.guard()) {
     }).filter(x => x.name && x.courseId);
   }
 
+
+
   window.downloadReceipt = id => {
-    const a = currentAdmissions.find(x => String(x.id) === String(id));
-    if (!a) return App.toast('Admission not found.', 'err');
-    const text = `BrightPath Admission Receipt\n\nStudent: ${a.name}\nMobile: ${a.mobile}\nCourse: ${a.course}\nBatch: ${a.batch}\nFee type: ${a.feeType}\nFee amount: ${a.feeAmt}\nStatus: ${a.feeStatus}\nAdmission date: ${String(a.admission).slice(0,10)}`;
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([text], { type:'text/plain;charset=utf-8' }));
-    link.download = `admission-receipt-${id}.txt`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
+  const a = currentAdmissions.find(x => String(x.id) === String(id));
 
-  // ---- View Admission ----
+  if (!a) {
+    return App.toast("Admission not found", "err");
+  }
 
+  App.modal({
+    size: "lg",
+    title: "Admission Receipt",
+    sub: a.id,
+    foot: `
+      <button class="btn btn-light" data-close>Close</button>
+      <button class="btn btn-primary" onclick="printAdmissionReceipt()">
+        ${App.svg("print")} Download PDF
+      </button>
+    `,
+    body: `
+      <div id="admissionReceipt" >
+
+        <div class="receipt-head">
+          <div class="org">
+            <h3>BrightPath Coaching Centre</h3>
+            <p>
+              12, Scholars Lane, Andheri West,
+              Mumbai 400058
+            </p>
+          </div>
+
+          <div class="rno">
+            <div class="k">Receipt No.</div>
+            <div class="v">${a.id}</div>
+
+            <div class="k" style="margin-top:8px">
+              Date
+            </div>
+
+            <div class="v">
+              ${String(a.admission).slice(0,10)}
+            </div>
+          </div>
+        </div>
+
+        <div class="receipt-body">
+
+          <div class="receipt-line">
+            <span class="k">Student</span>
+            <span class="v">${a.name}</span>
+          </div>
+
+          <div class="receipt-line">
+            <span class="k">Mobile</span>
+            <span class="v">${a.mobile}</span>
+          </div>
+
+          <div class="receipt-line">
+            <span class="k">Parent</span>
+            <span class="v">${a.parent}</span>
+          </div>
+
+          <div class="receipt-line">
+            <span class="k">Class</span>
+            <span class="v">${a.cls}</span>
+          </div>
+
+          <div class="receipt-line">
+            <span class="k">Course</span>
+            <span class="v">${a.course}</span>
+          </div>
+
+          <div class="receipt-line">
+            <span class="k">Batch</span>
+            <span class="v">${a.batch}</span>
+          </div>
+
+          <div class="receipt-line">
+            <span class="k">Fee Type</span>
+            <span class="v">${a.feeType}</span>
+          </div>
+
+          <div class="receipt-total">
+            <span>Total Fee</span>
+            <span>${App.money(a.feeAmt)}</span>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;margin-top:18px">
+            <span class="stamp">
+              ${a.feeStatus}
+            </span>
+          </div>
+
+        </div>
+
+        <div class="receipt-foot">
+          This is a computer generated receipt.
+        </div>
+
+      </div>
+    `
+  });
+};
+
+window.printAdmissionReceipt = () => {
+
+    const element = document.getElementById("admissionReceipt");
+
+    const opt = {
+        margin: 0,
+        filename: "Admission-Receipt.pdf",
+
+        image: {
+            type: "jpeg",
+            quality: 1
+        },
+
+        html2canvas: {
+            scale: 3,
+            useCORS: true,
+            scrollX: 0,
+            scrollY: 0
+        },
+
+        jsPDF: {
+            unit: "mm",
+            format: "a4",
+            orientation: "portrait"
+        },
+
+        pagebreak: {
+            mode: ["avoid-all"]
+        }
+    };
+
+    html2pdf().set(opt).from(element).save();
+};
   window.viewAdmission = id => {
     const a = currentAdmissions.find(x => String(x.id) === String(id));
     if (!a) return App.toast('Admission not found', 'err');

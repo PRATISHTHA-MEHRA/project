@@ -625,3 +625,60 @@ table.tbl td.num, table.tbl th.num { font-family: var(--font-num); text-align: r
   .modal-back { position: static; background: none; padding: 0; }
   .modal { box-shadow: none; max-width: 100%; }
 }
+
+/* Admission Receipt */
+
+#admissionReceipt{
+    width: 190mm;
+    min-height: 270mm;
+    margin: 0 auto;
+    background: #fff;
+    color: #111827;
+    #admissionReceipt{
+    padding: 10mm 20mm 20mm;
+}
+    box-sizing: border-box;
+    font-family: "DM Sans", sans-serif;
+}
+
+#admissionReceipt .receipt-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    border-bottom:2px solid #e5e7eb;
+    padding-bottom:18px;
+    margin-bottom:20px;
+}
+
+#admissionReceipt .org h3{
+    margin:0;
+    font-size:24px;
+}
+
+#admissionReceipt .org p{
+    margin-top:8px;
+    color:#6b7280;
+}
+
+#admissionReceipt .receipt-line{
+    display:flex;
+    justify-content:space-between;
+    padding:12px 0;
+    border-bottom:1px solid #eee;
+}
+
+#admissionReceipt .receipt-total{
+    display:flex;
+    justify-content:space-between;
+    margin-top:24px;
+    padding-top:18px;
+    border-top:2px solid #000;
+    font-size:20px;
+    font-weight:700;
+}
+
+#admissionReceipt .receipt-foot{
+    margin-top:40px;
+    text-align:center;
+    color:#666;
+}

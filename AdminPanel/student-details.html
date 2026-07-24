@@ -54,6 +54,7 @@ if(App.guard()){
       admission: toDateStr(item.admission ?? item.admission_date),
       status: item.status ?? 'Active',
       feeStatus: item.feeStatus ?? item.fee_status ?? 'Pending',
+      pendingDues: asNum(item.pendingDues ?? item.pending_dues ?? item.pending_fee ?? 0), // <-- ADD THIS LINE
       att: asNum(item.att ?? item.attendance),
       gender: item.gender ?? 'M',
       dob: toDateStr(item.dob),
@@ -138,7 +139,7 @@ if(App.guard()){
     const feesPaidYtd = extras.fees.length
       ? extras.fees.reduce((sum,f)=> sum + asNum(f.amount ?? f.paid), 0)
       : null;
-
+const pendingDues = s.pendingDues > 0 ? s.pendingDues : (s.feeStatus === 'Paid' ? 0 : Math.max(0, s.feeAmt - (feesPaidYtd || 0)));
     const ledgerRows = extras.fees.length
       ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date) || '-')}</td></tr>`).join('')
       : emptyRow(5, 'No payment records available yet.');
