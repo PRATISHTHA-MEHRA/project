@@ -23,7 +23,7 @@ const sendError = (res, err) => {
 const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 const allowedStatuses = new Set(["Active", "Inactive"]);
 const allowedFeeStatuses = new Set(["Paid", "Pending", "Overdue"]);
-const allowedGenders = new Set(["M", "F"]);
+const allowedGenders = new Set(["M", "F", "MALE", "FEMALE"]);
 const isIsoDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 
 const validateStudentPayload = (body, { creating = false } = {}) => {
@@ -39,7 +39,25 @@ const validateStudentPayload = (body, { creating = false } = {}) => {
     });
     if (has(data, "status") && !allowedStatuses.has(data.status)) throw new RequestError("Invalid student status.");
     if (has(data, "feeStatus") && !allowedFeeStatuses.has(data.feeStatus)) throw new RequestError("Invalid fee status.");
-    if (has(data, "gender") && !allowedGenders.has(data.gender)) throw new RequestError("Invalid gender.");
+// --- FIX FOR GENDER VALIDATION ---
+    if (has(data, "gender")) {
+        // If gender is empty string, null, or undefined, convert to null
+        if (!data.gender || data.gender.trim() === "") {
+            data.gender = null;
+        } else {
+            // Trim and convert to uppercase for case-insensitive checking (e.g. "Male" -> "MALE", "m" -> "M")
+            const g = data.gender.trim().toUpperCase();
+            
+            if (!allowedGenders.has(g)) {
+                throw new RequestError("Invalid gender.");
+            }
+
+            // Normalize back to single character "M", "F", or "O" if required by database
+            if (g === "MALE" || g === "M") data.gender = "M";
+            else if (g === "FEMALE" || g === "F") data.gender = "F";
+            else data.gender = "O";
+        }
+    }
     [["admission", "Admission date"], ["dob", "Date of birth"]].forEach(([field, label]) => {
         if (data[field] && !isIsoDate(data[field])) throw new RequestError(`${label} must be a valid date.`);
     });
