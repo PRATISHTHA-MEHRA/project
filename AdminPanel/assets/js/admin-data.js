@@ -27,6 +27,10 @@ window.DB = (function () {
 
   const classrooms = ["Room A1", "Room A2", "Room B1", "Room B2", "Lab-1", "Online"];
 
+  // Single source of truth for class/standard options — school level only (8–12).
+// Referenced by Students, Courses, and Batches modules so they never drift apart.
+ const classes = ["Class 8", "Class 9", "Class 10", "Class 11", "Class 12"];
+
   const batches = [
     { id: "B-101", name: "X-Sci Morning", course: "Class 10 Science", subject: "Science", teacher: "Pooja Bansal", room: "Room A1", start: "2025-04-01", end: "2026-03-31", days: "Mon, Wed, Fri", st: "07:00 AM", et: "08:30 AM", max: 30, cur: 27, type: "Regular", status: "Active" },
     { id: "B-102", name: "IX-Math Eve", course: "Class 9 Mathematics", subject: "Mathematics", teacher: "Rajesh Verma", room: "Room A2", start: "2025-04-01", end: "2026-03-31", days: "Tue, Thu, Sat", st: "05:00 PM", et: "06:30 PM", max: 28, cur: 24, type: "Regular", status: "Active" },
@@ -274,7 +278,7 @@ window.DB = (function () {
   ];
 
   return {
-    courses, teachers, classrooms, batches, students, enquiries, demos, fees, pending,
+    courses, teachers, classes, classrooms, batches, students, enquiries, demos, fees, pending,
     tpayments, income, expense, exams, marks, homework, studyMaterial, today, notifications,
     feeTypes, modes, sources, counselors, enqStatus, dash,
     charts: { collectionTrend, pendingTrend, incomeExpense, batchCount, courseRevenue, teacherPayout, admissionSource }
