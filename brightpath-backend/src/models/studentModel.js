@@ -15,7 +15,7 @@ class Student {
                 ON s.course_id = c.id
             LEFT JOIN batches b
                 ON s.batch_id = b.id
-            ORDER BY s.created_at DESC;
+            ORDER BY s.created_at DESC, s.id DESC;
         `;
 
         const result = await db.query(query);

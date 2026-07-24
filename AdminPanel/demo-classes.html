@@ -74,12 +74,12 @@ if(App.guard()){
       columns:[
         {key:'student',label:'Student',render:r=>`<div class="t-main">${esc(r.student)}</div><div class="t-sub">${esc(r.id)}</div>`},
         {key:'course',label:'Course',render:r=>esc(r.course)},
-        {key:'batch',label:'Batch',render:r=>esc(r.batch)},
+        {key:'batch',label:'Batch',render:r=>esc(r.batch) || '<span class="t-sub">Not set</span>'},
         {key:'teacher',label:'Teacher',render:r=>App.whoCell(esc(r.teacher || '-'))},
-        {key:'date',label:'Date & Time',render:r=>`<div>${esc(r.date)}</div><div class="t-sub num">${esc(r.time)}</div>`},
+        {key:'date',label:'Date & Time',render:r=>`<div>${esc(r.date) || '<span class="t-sub">Not set</span>'}</div><div class="t-sub num">${esc(r.time)}</div>`},
         {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
       ],
-      actions:r=>`${App.actBtn('eye','View',`onclick="viewD('${jsStr(r.id)}')"`) }${App.actBtn('check','Mark Complete',`onclick="mark('${jsStr(r.id)}')"`) }${App.actBtn('admit','Convert',`onclick="convertDemo('${jsStr(r.id)}')"`) }`
+      actions:r=>`${App.actBtn('eye','View',`onclick="viewD('${jsStr(r.id)}')"`) }${App.actBtn('edit','Edit',`onclick="editD('${jsStr(r.id)}')"`) }${App.actBtn('check','Mark Complete',`onclick="mark('${jsStr(r.id)}')"`) }${App.actBtn('admit','Convert',`onclick="convertDemo('${jsStr(r.id)}')"`) }`
     });
   }
 
@@ -110,7 +110,7 @@ if(App.guard()){
   }
 
   function demoForm(x){
-    // Suggestions are pulled from demos already loaded from the API — no static/dummy lists.
+    // Suggestions are pulled from demos already loaded from the API - no static/dummy lists.
     const students = unique(currentDemos.map(d=>d.student));
     const courses = unique(currentDemos.map(d=>d.course));
     const batches = unique(currentDemos.map(d=>d.batch));
@@ -146,6 +146,33 @@ if(App.guard()){
       }
     }
   });
+
+  // This was previously missing entirely - there was no way to edit a demo's
+  // batch/teacher/date/time once created (only View, Mark Complete, Convert).
+  // It's needed now more than ever: when an enquiry's status is set to
+  // "Demo Scheduled" from the Enquiries page, a placeholder demo record is
+  // created automatically here with batch/teacher/date left blank, and staff
+  // need a way to fill those in.
+  window.editD = id => {
+    const x = findCurrentDemo(id);
+    if (!x) return App.toast('Demo class not found', 'err');
+    App.modal({size:'lg',title:'Edit Demo Class',sub:esc(x.id),body:demoForm(x),
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+      onOpen:box=>box.querySelector('#sv').onclick=async()=>{
+        const demo = readForm(box);
+        if (!demo.student) return App.toast('Enter student name','err');
+        if (!demo.course) return App.toast('Enter course','err');
+        try {
+          await API.put(`${ENDPOINT}/${encodeURIComponent(x.id)}`, toApiPayload(demo));
+          App.closeModal();
+          await loadDemos();
+          App.toast('Demo class updated','ok');
+        } catch (err) {
+          App.toast(err.message || 'Failed to update demo','err');
+        }
+      }
+    });
+  };
 
   window.mark = async id => {
     const x = findCurrentDemo(id);

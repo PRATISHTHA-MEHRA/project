@@ -5,6 +5,8 @@
 <title>Student Profile - BrightPath Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/admin-style.css">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
@@ -95,52 +97,89 @@ if(App.guard()){
     };
   }
 
-  async function loadPendingDues(id){
-    if (usingFallback) return null;
-    try {
-      const payload = await API.get(`/pending-fees/${encodeURIComponent(id)}/total`);
-      return Number(payload?.data?.total ?? 0);
-    } catch (err) {
-      console.warn('Could not fetch pending dues, falling back to fee status:', err);
-      return null; // signal fallback needed
-    }
-  }
-
   function emptyRow(colspan, text){
     return `<tr><td colspan="${colspan}" class="t-sub" style="text-align:center;padding:16px">${esc(text)}</td></tr>`;
   }
 
-  function render(s, extras, pendingDues){
+  function render(s, extras){
     extras = extras || { fees: [], attendance: [], exams: [] };
-    // Fallback if the live pending-dues total couldn't be fetched: best guess from feeStatus.
-    if (pendingDues === null || pendingDues === undefined) {
-      pendingDues = s.feeStatus === 'Paid' ? 0 : s.feeAmt;
-    }
 
     window.downloadStudentStatement = () => {
-      const rows = [
-        ['Student statement', s.name],
-        ['Student code', s.id],
-        ['Course', s.course],
-        ['Batch', s.batch],
-        ['Fee amount', s.feeAmt],
-        [],
-        ['Receipt', 'Period', 'Amount', 'Mode', 'Date'],
-        ...extras.fees.map(f => [f.receipt ?? f.id ?? '', f.period ?? '', f.amount ?? f.paid ?? '', f.mode ?? '', toDateStr(f.date)])
-      ];
-      const csv = rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g,'""')}"`).join(',')).join('\r\n');
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-      link.download = `student-statement-${s.id}.csv`;
-      link.click();
-      URL.revokeObjectURL(link.href);
-    };
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Personal & Parent Details
+  const personalRows = [
+    ['Gender', 'Date of Birth', 'Mobile', 'School', 'Parent Name', 'Parent Mobile', 'Address'],
+    [
+      s.gender === 'M' ? 'Male' : 'Female',
+      s.dob || '-',
+      s.mobile || '-',
+      s.school || '-',
+      s.parent || '-',
+      s.parentMobile || '-',
+      s.address || '-'
+    ]
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(personalRows), 'Personal & Parent Details');
+
+  // Sheet 2: Payment Ledger
+  const feeRows = [
+    ['Receipt', 'Period', 'Amount', 'Mode', 'Date'],
+    ...(extras.fees.length
+      ? extras.fees.map(f => [
+          f.receipt ?? f.id ?? '-',
+          f.period ?? '-',
+          asNum(f.amount ?? f.paid),
+          f.mode ?? '-',
+          toDateStr(f.date) || '-'
+        ])
+      : [['No payment records available yet.', '', '', '', '']])
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(feeRows), 'Payment Ledger');
+
+  // Sheet 3: Course & Batch
+  const courseRows = [
+    ['Course', 'Batch', 'Fee Type', 'Fee Amount'],
+    [s.course || '-', s.batch || '-', s.feeType || '-', s.feeAmt]
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(courseRows), 'Course & Batch');
+
+  // Sheet 4: Test Performance
+  const examRows = [
+    ['Test', 'Score', 'Grade', 'Remark'],
+    ...(extras.exams.length
+      ? extras.exams.map(e => [
+          e.name ?? e.exam ?? '-',
+          `${e.obtained ?? e.score ?? '-'}/${e.total ?? '-'}`,
+          e.grade ?? '-',
+          e.remarks ?? '-'
+        ])
+      : [['No performance records available yet.', '', '', '']])
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(examRows), 'Test Performance');
+
+  // Sheet 5: Attendance Records
+  const attendanceRows = [
+    ['Date', 'Status', 'Remarks'],
+    ...(extras.attendance.length
+      ? extras.attendance.map(a => [
+          toDateStr(a.date) || '-',
+          a.status ?? '-',
+          a.remarks ?? '-'
+        ])
+      : [['No attendance records available yet.', '', '']])
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(attendanceRows), 'Attendance Records');
+
+  XLSX.writeFile(wb, `student-profile-${s.id}.xlsx`);
+};
 
     const head = `<button class="btn btn-light" onclick="downloadStudentStatement()">${App.svg('download')}Statement</button>
       <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
-    const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,'Full Profile'],head);
+   const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,'Full Profile'],head);
     const initials = s.name.split(' ').map(w=>w[0]).join('');
 
+    // Derive KPIs from real data where we have it; fall back to a dash rather than a fake number.
     const examRows = extras.exams;
     const avgScorePct = examRows.length
       ? Math.round(examRows.reduce((sum,e)=>{
@@ -171,7 +210,7 @@ const pendingDues = s.pendingDues > 0 ? s.pendingDues : (s.feeStatus === 'Paid' 
         <div class="detail-hero" style="border:none;padding:0;margin:0">
           <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
           <div style="flex:1"><h3 style="font-size:22px">${esc(s.name)}</h3>
-            <div class="meta">${esc(s.id)} - ${esc(s.cls)} - ${esc(s.course)}</div>
+            
             <div class="chips" style="margin-top:9px">${App.badge(esc(s.status))} ${App.badge(esc(s.feeStatus))} <span class="chip">${esc(s.batch || '-')}</span> <span class="chip">Admitted ${esc(s.admission || '-')}</span></div></div>
           <div style="text-align:right"><div class="t-sub">Fee Amount</div><div class="num" style="font-size:24px;font-weight:600">${App.money(s.feeAmt)}</div><div class="t-sub">${esc(s.feeType)}</div></div>
         </div></div></div>
@@ -220,8 +259,7 @@ const pendingDues = s.pendingDues > 0 ? s.pendingDues : (s.feeStatus === 'Paid' 
   loadStudent(requestedId)
     .then(async s => {
       const extras = await loadExtras(s.id);
-      const pendingDues = await loadPendingDues(s.id);
-      render(s, extras, pendingDues);
+      render(s, extras);
     })
     .catch(err => App.toast(err.message || 'Failed to load student profile', 'err'));
 }

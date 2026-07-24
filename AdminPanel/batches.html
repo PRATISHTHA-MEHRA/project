@@ -17,6 +17,11 @@ if(App.guard()){
   const statuses = ["Active","Upcoming","Completed"];
   let currentBatches = [];
 
+  // Live course/teacher data for the Add/Edit Batch dropdowns
+  let coursesList = [];
+  let teachersList = [];
+  let dropdownDataLoaded = false;
+
   const head = `<button class="btn btn-primary" onclick="addBatch()">${App.svg('plus')}Add Batch</button>`;
   const c = App.layout('batches','Batches',['Batches'],head);
   c.innerHTML = `<div id="tbl"></div>`;
@@ -26,6 +31,11 @@ if(App.guard()){
   const asNum = v => Number(v ?? 0) || 0;
   const unique = values => [...new Set(values.filter(Boolean))];
   const findCurrentBatch = id => currentBatches.find(b => String(b.id) === String(id));
+
+
+  const courseName = c => c.name || c.course_name || '';
+  const courseSubject = c => c.subject || c.course_subject || '';
+  const teacherName = t => t.name || t.teacher_name || '';
 
   function unwrapOne(payload){
     return payload?.data?.batch || payload?.data || payload?.batch || payload;
@@ -111,7 +121,7 @@ if(App.guard()){
         {label:'Status',key:'status',options:statuses}
       ],
       columns:[
-        {key:'name',label:'Batch',render:r=>`<div class="t-main">${esc(r.name)}</div><div class="t-sub">${esc(r.id)} - ${esc(r.type)}</div>`},
+        {key:'name',label:'Batch',render:r=>`<div class="t-main">${esc(r.name)}</div>`},
         {key:'course',label:'Course / Subject',render:r=>`<div>${esc(r.course)}</div><div class="t-sub">${esc(r.subject)}</div>`},
         {key:'teacher',label:'Teacher',render:r=>App.whoCell(esc(r.teacher || '-'), esc(r.room || '-'))},
         {key:'days',label:'Schedule',render:r=>`<div>${esc(r.days)}</div><div class="t-sub num">${esc(r.st)}-${esc(r.et)}</div>`},
@@ -133,6 +143,26 @@ if(App.guard()){
       App.toast(err.message || 'Failed to load batches','err');
       renderTable([]);
     }
+  }
+
+  async function loadDropdownData(){
+    try {
+      const [coursesPayload, teachersPayload] = await Promise.all([
+        API.get('/courses'),
+        API.get('/teachers')
+      ]);
+      coursesList = unwrapList(coursesPayload);
+      teachersList = unwrapList(teachersPayload);
+    } catch (err) {
+      coursesList = DB.courses || [];
+      teachersList = DB.teachers || [];
+    } finally {
+      dropdownDataLoaded = true;
+    }
+  }
+
+  async function ensureDropdownData(){
+    if (!dropdownDataLoaded) await loadDropdownData();
   }
 
   async function getBatch(id){
@@ -163,14 +193,20 @@ async function enrolledStudents(batch){
     return unique(values).map(v => `<option ${selected===v?'selected':''}>${esc(v)}</option>`).join('');
   }
 
+  window.onCourseChange = (selectedCourseName) => {
+    const match = coursesList.find(c => courseName(c) === selectedCourseName);
+    const subInput = document.getElementById('b_sub');
+    if (match && subInput) subInput.value = courseSubject(match);
+  };
+
   function bForm(x){
-    const courseValues = ['Full Stack Development', ...DB.courses.map(c=>c.name), ...currentBatches.map(b=>b.course)];
-    const teacherValues = ['John Doe', ...DB.teachers.map(t=>t.name), ...currentBatches.map(b=>b.teacher)];
+    const courseValues = unique([...coursesList.map(courseName), ...currentBatches.map(b=>b.course)]);
+    const teacherValues = unique([...teachersList.map(teacherName), ...currentBatches.map(b=>b.teacher)]);
     const roomValues = ['Lab 3','Room 102', ...DB.classrooms, ...currentBatches.map(b=>b.room)];
     return `<div class="form-grid">
       <div class="full"><label>Batch Name</label><input id="b_name" value="${esc(x?.name || '')}"></div>
-      <div><label>Course</label><select id="b_course">${options(courseValues, x?.course)}</select></div>
-      <div><label>Subject</label><input id="b_sub" value="${esc(x?.subject || '')}"></div>
+      <div><label>Course</label><select id="b_course" onchange="onCourseChange(this.value)">${options(courseValues, x?.course)}</select></div>
+      <div><label>Subject</label><input id="b_sub" value="${esc(x?.subject || '')}" readonly></div>
       <div><label>Teacher</label><select id="b_teacher">${options(teacherValues, x?.teacher)}</select></div>
       <div><label>Classroom</label><select id="b_room">${options(roomValues, x?.room)}</select></div>
       <div><label>Start Date</label><input type="date" id="b_start" value="${esc(x?.start || '2026-07-01')}"></div>
@@ -190,24 +226,34 @@ async function enrolledStudents(batch){
     catch (err) { App.toast(err.message || 'Failed to load batch', 'err'); }
   };
 
-  window.addBatch = () => App.modal({size:'lg',title:'Add Batch',body:bForm(null),
-    foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Batch</button>`,
-    onOpen:box=>box.querySelector('#sv').onclick=async()=>{
-      const batch = readForm(box);
-      if (!batch.name) return App.toast('Enter batch name','err');
-      try {
-        await API.post(ENDPOINT, toApiPayload(batch));
-        App.closeModal();
-        await loadBatches();
-        App.toast('Batch created','ok');
-      } catch (err) {
-        App.toast(err.message || 'Failed to create batch','err');
+  window.addBatch = async () => {
+    await ensureDropdownData();
+    App.modal({size:'lg',title:'Add Batch',body:bForm(null),
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Batch</button>`,
+      onOpen:box=>{
+        // Pre-fill subject for whichever course is selected by default
+        const courseSel = box.querySelector('#b_course');
+        if (courseSel) onCourseChange(courseSel.value);
+
+        box.querySelector('#sv').onclick=async()=>{
+          const batch = readForm(box);
+          if (!batch.name) return App.toast('Enter batch name','err');
+          try {
+            await API.post(ENDPOINT, toApiPayload(batch));
+            App.closeModal();
+            await loadBatches();
+            App.toast('Batch created','ok');
+          } catch (err) {
+            App.toast(err.message || 'Failed to create batch','err');
+          }
+        };
       }
-    }
-  });
+    });
+  };
 
   window.editB = async id => {
     try {
+      await ensureDropdownData();
       const x = await getBatch(id);
       if (!x || !x.id) return App.toast('Batch not found', 'err');
       App.modal({size:'lg',title:'Edit Batch',sub:esc(x.id),body:bForm(x),
@@ -244,6 +290,7 @@ async function enrolledStudents(batch){
     },{danger:true,yes:'Delete'});
   };
 
+  loadDropdownData();
   loadBatches();
 }
 </script>

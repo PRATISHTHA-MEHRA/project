@@ -1,4 +1,5 @@
 const Enquiry = require("../models/enquiryModel");
+const Demo = require("../models/demoModel");
 const db = require("../config/db");
 const admissionController = require("./admissionController");
 
@@ -12,6 +13,10 @@ const mapToFrontend = (e) => {
         mobile: e.mobile || "",
         cls: e.class_level || "",
         course: e.course_interest || "",
+        batch: e.batch_name || "",
+        teacher: e.teacher_name || "",
+        demoDate: e.demo_date ? new Date(e.demo_date).toISOString().split("T")[0] : "",
+        demoTime: e.demo_time || "",
         source: e.source || "",
         timing: e.preferred_timing || "",
         followup: e.followup_date ? new Date(e.followup_date).toISOString().split("T")[0] : "",
@@ -28,6 +33,10 @@ const mapToDatabase = (f) => ({
     mobile: f.mobile,
     class_level: f.cls,
     course_interest: f.course,
+    batch_name: f.batch || null,
+    teacher_name: f.teacher || null,
+    demo_date: f.demoDate || null,
+    demo_time: f.demoTime || null,
     source: f.source,
     preferred_timing: f.timing,
     followup_date: f.followup || null,
@@ -43,6 +52,53 @@ const parseId = (param) => {
     const id = Number(raw);
     return Number.isInteger(id) && id > 0 ? id : null;
 };
+
+// Mobile is optional, but if it's provided it must be exactly 10 digits.
+// This is checked here (not just in the browser) because the API can be
+// called directly, bypassing whatever the webpage enforces.
+const isValidMobile = (mobile) => !mobile || /^\d{10}$/.test(mobile);
+
+// Keeps the Demo Classes module in sync whenever an enquiry's status is set
+// (or created) as "Demo Scheduled" or "Demo Completed" - whether that happens
+// on a brand-new enquiry or on an edit to an existing one.
+// - If no demo record exists for this enquiry yet, one is created straight
+//   away with the matching status (Scheduled or Completed).
+// - If one already exists, it's updated to match, but only if it's not
+//   already at that status.
+async function syncDemoWithStatus(enquiryRow, status) {
+    if (status !== "Demo Scheduled" && status !== "Demo Completed") return;
+
+    const targetDemoStatus = status === "Demo Completed" ? "Completed" : "Scheduled";
+    const linkedDemo = await Demo.getByEnquiryId(enquiryRow.id);
+
+    if (!linkedDemo) {
+        await Demo.create({
+            student_name: enquiryRow.student_name,
+            course_name: enquiryRow.course_interest,
+            batch_name: enquiryRow.batch_name,
+            teacher_name: enquiryRow.teacher_name,
+            demo_date: enquiryRow.demo_date,
+            demo_time: enquiryRow.demo_time,
+            status: targetDemoStatus,
+            feedback: "-",
+            enquiry_id: enquiryRow.id
+        });
+        return;
+    }
+
+    if (linkedDemo.status !== targetDemoStatus) {
+        await Demo.update(linkedDemo.id, {
+            student_name: linkedDemo.student_name,
+            course_name: linkedDemo.course_name,
+            batch_name: linkedDemo.batch_name,
+            teacher_name: linkedDemo.teacher_name,
+            demo_date: linkedDemo.demo_date,
+            demo_time: linkedDemo.demo_time,
+            status: targetDemoStatus,
+            feedback: linkedDemo.feedback
+        });
+    }
+}
 
 exports.getEnquiries = async (req, res) => {
     try {
@@ -86,7 +142,14 @@ exports.createEnquiry = async (req, res) => {
         if (!dbReady.student_name) {
             return res.status(400).json({ success: false, message: "Student name is required" });
         }
+        if (!isValidMobile(dbReady.mobile)) {
+            return res.status(400).json({ success: false, message: "Mobile number must be exactly 10 digits" });
+        }
+        if ((dbReady.status === "Demo Scheduled" || dbReady.status === "Demo Completed") && (!dbReady.batch_name || !dbReady.teacher_name || !dbReady.demo_date || !dbReady.demo_time)) {
+            return res.status(400).json({ success: false, message: "Select a batch, teacher, date and time before setting this status" });
+        }
         const created = await Enquiry.create(dbReady);
+        await syncDemoWithStatus(created, dbReady.status);
         res.status(201).json({ success: true, message: "Enquiry added", data: mapToFrontend(created) });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -102,6 +165,9 @@ exports.updateEnquiry = async (req, res) => {
         if (!dbReady.student_name) {
             return res.status(400).json({ success: false, message: "Student name is required" });
         }
+        if (!isValidMobile(dbReady.mobile)) {
+            return res.status(400).json({ success: false, message: "Mobile number must be exactly 10 digits" });
+        }
 
         // Conversion (and the resulting admission record) only ever happens
         // through /convert, so an edit-form status change can't fake it.
@@ -111,9 +177,16 @@ exports.updateEnquiry = async (req, res) => {
                 message: "Use the Convert action to mark an enquiry as converted"
             });
         }
+        if ((dbReady.status === "Demo Scheduled" || dbReady.status === "Demo Completed") && (!dbReady.batch_name || !dbReady.teacher_name || !dbReady.demo_date || !dbReady.demo_time)) {
+            return res.status(400).json({ success: false, message: "Select a batch, teacher, date and time before setting this status" });
+        }
 
         const updated = await Enquiry.update(id, dbReady);
         if (!updated) return res.status(404).json({ success: false, message: "Enquiry not found" });
+
+        // Keep the Demo Classes module in sync when the status is changed
+        // here on the Enquiries page, instead of from the Demo Classes page.
+        await syncDemoWithStatus(updated, dbReady.status);
 
         res.status(200).json({ success: true, message: "Enquiry updated", data: mapToFrontend(updated) });
     } catch (err) {

@@ -1,4 +1,5 @@
 const Demo = require("../models/demoModel");
+const Enquiry = require("../models/enquiryModel");
 const db = require("../config/db");
 const admissionController = require("./admissionController");
 
@@ -13,7 +14,8 @@ const mapToFrontend = (d) => {
         date: d.demo_date ? d.demo_date : "",
         time: d.demo_time,
         status: d.status,
-        feedback: d.feedback || "-"
+        feedback: d.feedback || "-",
+        enquiryId: d.enquiry_id || null
     };
 };
 
@@ -42,12 +44,21 @@ exports.getDemos = async (req, res) => {
 exports.createDemo = async (req, res) => {
     try {
         const dbReady = mapToDatabase(req.body);
+
+        // A demo scheduled directly from this page (rather than via the
+        // enquiry's own status field) still needs to be linked to its
+        // enquiry, so both modules stay in sync going forward.
+        const matchedEnquiry = await Enquiry.getOpenByName(dbReady.student_name);
+        if (matchedEnquiry) dbReady.enquiry_id = matchedEnquiry.id;
+
         const created = await Demo.create(dbReady);
 
-        await db.query(
-            "UPDATE enquiries SET status = 'Demo Scheduled' WHERE student_name = $1 AND status != 'Converted'",
-            [dbReady.student_name]
-        );
+        if (matchedEnquiry) {
+            await db.query(
+                "UPDATE enquiries SET status = 'Demo Scheduled' WHERE id = $1",
+                [matchedEnquiry.id]
+            );
+        }
 
         res.status(201).json({ success: true, message: "Demo scheduled", data: mapToFrontend(created) });
     } catch (err) {
@@ -61,12 +72,21 @@ exports.updateDemo = async (req, res) => {
         const dbReady = mapToDatabase(req.body);
         const updated = await Demo.update(id, dbReady);
 
-        // Synchronize with active enquiry pipelines if marked completed
+        // Synchronize with active enquiry pipelines if marked completed.
+        // Prefer the real enquiry_id link; fall back to name matching only
+        // for older demo records created before that link existed.
         if (dbReady.status === 'Completed') {
-            await db.query(
-                "UPDATE enquiries SET status = 'Demo Completed' WHERE student_name = $1 AND status != 'Converted'",
-                [dbReady.student_name]
-            );
+            if (updated.enquiry_id) {
+                await db.query(
+                    "UPDATE enquiries SET status = 'Demo Completed' WHERE id = $1 AND status != 'Converted'",
+                    [updated.enquiry_id]
+                );
+            } else {
+                await db.query(
+                    "UPDATE enquiries SET status = 'Demo Completed' WHERE student_name = $1 AND status != 'Converted'",
+                    [dbReady.student_name]
+                );
+            }
         }
 
         res.status(200).json({ success: true, message: "Demo class updated", data: mapToFrontend(updated) });
@@ -87,9 +107,23 @@ exports.convertDemoToAdmission = async (req, res) => {
 
         client = await db.connect();
         await client.query("BEGIN");
-        const enquiry = await client.query("SELECT * FROM enquiries WHERE student_name = $1 AND status != 'Converted' ORDER BY id DESC LIMIT 1", [demoRow.student_name]);
-        if (!enquiry.rows.length) throw Object.assign(new Error("A matching active enquiry with contact details is required before conversion."), { status: 400 });
-        const e = enquiry.rows[0];
+
+        // Prefer the real enquiry_id link; fall back to name matching only
+        // for older demo records created before that link existed.
+        let e;
+        if (demoRow.enquiry_id) {
+            const byId = await client.query("SELECT * FROM enquiries WHERE id = $1", [demoRow.enquiry_id]);
+            e = byId.rows[0];
+        }
+        if (!e) {
+            const byName = await client.query(
+                "SELECT * FROM enquiries WHERE student_name = $1 AND status != 'Converted' ORDER BY id DESC LIMIT 1",
+                [demoRow.student_name]
+            );
+            e = byName.rows[0];
+        }
+        if (!e) throw Object.assign(new Error("A matching active enquiry with contact details is required before conversion."), { status: 400 });
+
         const result = await admissionController.createAdmissionRecord({
             name: e.student_name, mobile: e.mobile, parent: e.parent_name, cls: e.class_level,
             course: demoRow.course_name, batch: demoRow.batch_name, feeType: "Demo Conversion",

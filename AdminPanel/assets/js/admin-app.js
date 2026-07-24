@@ -303,7 +303,7 @@ const App = (function () {
             ${cfg.actions?`<th style="text-align:right">Actions</th>`:''}
           </tr></thead><tbody>
             ${rows.map((row,ri)=>`<tr>
-              ${cfg.columns.map(c=>`<td class="${c.num?'num':''}">${c.render?c.render(row,ri):(row[c.key]??'—')}</td>`).join('')}
+          ${cfg.columns.map(c=>`<td class="${c.num?'num':''}">${c.render?c.render(row,(state.page-1)*state.ps+ri):(row[c.key]??'—')}</td>`).join('')}
               ${cfg.actions?`<td style="text-align:right"><div class="act" style="justify-content:flex-end">${cfg.actions(row)}</div></td>`:''}
             </tr>`).join('')}
           </tbody></table></div>

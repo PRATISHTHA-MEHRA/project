@@ -5,6 +5,7 @@
 <title>Students - BrightPath Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/admin-style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
@@ -176,16 +177,13 @@ if(App.guard()){
   }
 
   window.exportStudents = () => {
-    const columns = ['Student Code','Name','Mobile','Parent','Parent Mobile','Class','Course','Batch','Fee Type','Fee Amount','Admission Date','Status','Fee Status','Attendance','Gender','Date of Birth','School','Address'];
-    const values = currentStudents.map(s => [s.code || s.id,s.name,s.mobile,s.parent,s.parentMobile,s.cls,s.course,s.batch,s.feeType,s.feeAmt,s.admission,s.status,s.feeStatus,s.att,s.gender,s.dob,s.school,s.address]);
-    const csv = [columns, ...values].map(row => row.map(value => `"${String(value ?? '').replace(/"/g,'""')}"`).join(',')).join('\r\n');
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-    link.download = `students-${toDateStr(new Date())}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
-
+  const columns = ['Student Code','Name','Mobile','Parent','Parent Mobile','Class','Course','Batch','Fee Type','Fee Amount','Admission Date','Status','Fee Status','Attendance','Gender','Date of Birth','School','Address'];
+  const values = currentStudents.map(s => [s.code || s.id,s.name,s.mobile,s.parent,s.parentMobile,s.cls,s.course,s.batch,s.feeType,s.feeAmt,s.admission,s.status,s.feeStatus,s.att,s.gender,s.dob,s.school,s.address]);
+  const wb = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([columns, ...values]);
+  XLSX.utils.book_append_sheet(wb, sheet, 'Students');
+  XLSX.writeFile(wb, `students-${toDateStr(new Date())}.xlsx`);
+};
   function renderPage(rows){
     currentStudents = rows;
     const total = rows.length;
@@ -213,8 +211,8 @@ if(App.guard()){
         {label:'Fee Status',key:'feeStatus',options:feeStatuses}
       ],
       columns:[
-        {key:'name',label:'Student',render:r=>App.whoCell(esc(r.name),`${esc(r.code || r.id)} - ${esc(r.cls)}`)},
-        {key:'mobile',label:'Mobile',render:r=>`<div>${esc(r.mobile || '-')}</div><div class="t-sub">${esc(r.parent || '-')}</div>`},
+       {key:'name',label:'Student',render:r=>App.whoCell(esc(r.name))},
+        {key:'mobile',label:'Mobile',render:r=>`<div>${esc(r.mobile || '-')}</div>`},
         {key:'batch',label:'Batch',render:r=>`<div class="t-main" style="font-weight:500">${esc(r.batch || '-')}</div><div class="t-sub">${esc(r.course || '-')}</div>`},
         {key:'feeType',label:'Fee',render:r=>`<div>${esc(String(r.feeType || '-').replace(' Fee',''))}</div><div class="t-sub num">${App.money(r.feeAmt)}</div>`},
         {key:'att',label:'Attendance',num:true,render:r=>`<div class="pct-cell"><div class="progress ${r.att<75?'danger':r.att<85?'warn':''}"><span style="width:${Math.min(100, r.att)}%"></span></div><span class="num">${r.att}%</span></div>`},
@@ -458,8 +456,9 @@ if(App.guard()){
   };
 
   window.collectFee = async id => {
-    const s = findCurrentStudent(id) || await getStudent(id).catch(()=>null);
+   const s = findCurrentStudent(id) || await getStudent(id).catch(()=>null);
     if (!s) return App.toast('Student not found','err');
+    if (s.feeStatus === 'Paid') return App.toast('Fees already paid','info');
 
     const now = new Date();
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
