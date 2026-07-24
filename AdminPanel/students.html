@@ -206,7 +206,7 @@ if(App.guard()){
       searchPlaceholder:'Search by name, ID, mobile...',
       pageSize:10,
       filters:[
-        {label:'All Classes',key:'cls',options:unique(rows.map(s=>s.cls))},
+        {label:'All Classes',key:'cls',options:DB.classes},
         {label:'All Batches',key:'batch',options:unique(rows.map(s=>s.batch))},
         {label:'Fee Type',key:'feeType',options:unique([...(DB.feeTypes||[]), ...rows.map(s=>s.feeType)])},
         {label:'Status',key:'status',options:statuses},
@@ -347,7 +347,7 @@ if(App.guard()){
   };
 
   function studentForm(s){
-    const classOptions = unique(['Class A','Class B','Class 8','Class 9','Class 10','Class 11','Class 12', ...currentStudents.map(x=>x.cls)]);
+   const classOptions = DB.classes;
     const feeTypeOptions = unique(['Regular Fee','Scholarship', ...(DB.feeTypes||[]), ...currentStudents.map(x=>x.feeType)]);
 
     

@@ -165,7 +165,7 @@ if(App.guard()){
         <div class="kpi"><div class="top"><span class="label">Attendance</span><span class="ic b-brand">${App.svg('attendance')}</span></div><div class="val">${s.att}%</div></div>
         <div class="kpi"><div class="top"><span class="label">Avg Test Score</span><span class="ic b-blue">${App.svg('marks')}</span></div><div class="val">${avgScorePct===null?'-':avgScorePct+'%'}</div></div>
         <div class="kpi"><div class="top"><span class="label">Fees Paid (YTD)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${feesPaidYtd===null?'-':App.money(feesPaidYtd)}</div></div>
-        <div class="kpi"><div class="top"><span class="label">Pending Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${s.feeStatus==='Paid'?'Rs 0':App.money(s.feeAmt)}</div></div>
+        <div class="kpi"><div class="top"><span class="label">Pending Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(pendingDues)}</div></div>
       </div>
 
       <div class="grid-2 mb16">
