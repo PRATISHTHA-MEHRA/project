@@ -18,7 +18,7 @@ router.get("/:id", auth, studentController.getStudent);
 router.post("/", auth, studentController.createStudent);
 
 // Update Student
-router.put("/:id", auth, studentController.updateStudent);
+router.put("/:id",auth, studentController.updateStudent);
 
 // Delete Student
 router.delete("/:id", auth, studentController.deleteStudent);
