@@ -10,6 +10,7 @@
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script src="assets/js/api.js"></script>
+
 <script>
 if(App.guard()){
   const API_BASE = "/students"; 
@@ -39,12 +40,6 @@ if(App.guard()){
   const findCurrentStudent = id => currentStudents.find(s => String(s.id) === String(id));
   const unique = values => [...new Set(values.filter(Boolean))];
 
-  
-
-  function unwrapOne(payload){
-    return payload?.data?.student || payload?.data || payload?.student || payload;
-  }
-
   function unwrapList(payload){
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.data)) return payload.data;
@@ -55,8 +50,6 @@ if(App.guard()){
     return [];
   }
 
-  
-
   async function loadDropdownData(){
     try {
       const payload = await API.get(COURSES_ENDPOINT);
@@ -64,7 +57,6 @@ if(App.guard()){
         .map(x => ({
           id: String(x.id ?? ''),
           name: x.course_name ?? x.name ?? '',
-        
           code: x.course_code ?? x.code ?? ''
         }))
         .filter(x => x.name);
@@ -83,7 +75,6 @@ if(App.guard()){
     }
   }
 
-  
   function mapStudent(item = {}){
     const course = item.course ?? item.course_name ?? '';
     const batch = item.batch ?? item.batch_name ?? '';
@@ -186,84 +177,89 @@ if(App.guard()){
     URL.revokeObjectURL(link.href);
   };
 
-  function renderPage(rows){
-  // Enforce a consistent sort order so actions (edit/collect fee) don't shift rows around
-  currentStudents = [...rows].sort((a, b) => 
+  function renderPage(rows, widgets){
+    currentStudents = [...rows].sort((a, b) =>
     String(a.code || a.id).localeCompare(String(b.code || b.id), undefined, { numeric: true })
   );
 
-  const total = currentStudents.length;
-  const active = currentStudents.filter(s => s.status === 'Active').length;
-  const due = currentStudents.filter(s => s.feeStatus !== 'Paid').length;
-  const avgAtt = total ? Math.round(currentStudents.reduce((a,s)=>a + asNum(s.att), 0) / total) : 0;
+  const total = widgets?.totalStudents ?? currentStudents.length;
+  const active = widgets?.activeStudents ?? currentStudents.filter(s => s.status === 'Active').length;
+  const due = widgets?.feeDueStudents ?? currentStudents.filter(s => s.feeStatus !== 'Paid').length;
+  const avgAtt = widgets?.avgAttendance != null
+    ? (typeof widgets.avgAttendance === 'string' ? widgets.avgAttendance.replace('%','') : widgets.avgAttendance)
+    : (currentStudents.length ? Math.round(currentStudents.reduce((a,s)=>a + asNum(s.att), 0) / currentStudents.length) : 0);
 
-  c.innerHTML = `<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-    <div class="kpi"><div class="top"><span class="label">Total Students</span><span class="ic b-brand">${App.svg('students')}</span></div><div class="val">${total}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Active</span><span class="ic b-green">${App.svg('check')}</span></div><div class="val">${active}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Fee Due</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${due}</div></div>
-    <div class="kpi"><div class="top"><span class="label">Avg Attendance</span><span class="ic b-amber">${App.svg('attendance')}</span></div><div class="val">${avgAtt}%</div></div>
-  </div><div id="tbl"></div>`;
+    c.innerHTML = `<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi"><div class="top"><span class="label">Total Students</span><span class="ic b-brand">${App.svg('students')}</span></div><div class="val">${total}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Active</span><span class="ic b-green">${App.svg('check')}</span></div><div class="val">${active}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Fee Due</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${due}</div></div>
+      <div class="kpi"><div class="top"><span class="label">Avg Attendance</span><span class="ic b-amber">${App.svg('attendance')}</span></div><div class="val">${avgAtt}%</div></div>
+    </div><div id="tbl"></div>`;
 
-  App.table('tbl', {
-    rows: currentStudents,
-    searchKeys:['id','code','name','mobile','parent','batch','course','cls'],
-    searchPlaceholder:'Search by name, ID, mobile...',
-    pageSize:10,
-    filters:[
-      {label:'All Classes',key:'cls',options:DB.classes},
-      {label:'All Batches',key:'batch',options:unique(currentStudents.map(s=>s.batch))},
-      {label:'Fee Type',key:'feeType',options:unique([...(DB.feeTypes||[]), ...currentStudents.map(s=>s.feeType)])},
-      {label:'Status',key:'status',options:statuses},
-      {label:'Fee Status',key:'feeStatus',options:feeStatuses}
-    ],
-    columns:[
-      {key:'name',label:'Student',render:r=>App.whoCell(esc(r.name),`${esc(r.code || r.id)} - ${esc(r.cls)}`)},
-      {key:'mobile',label:'Mobile',render:r=>`<div>${esc(r.mobile || '-')}</div><div class="t-sub">${esc(r.parent || '-')}</div>`},
-      {key:'batch',label:'Batch',render:r=>`<div class="t-main" style="font-weight:500">${esc(r.batch || '-')}</div><div class="t-sub">${esc(r.course || '-')}</div>`},
-      {key:'feeType',label:'Fee',render:r=>`<div>${esc(String(r.feeType || '-').replace(' Fee',''))}</div><div class="t-sub num">${App.money(r.feeAmt)}</div>`},
-      {key:'att',label:'Attendance',num:true,render:r=>`<div class="pct-cell"><div class="progress ${r.att<75?'danger':r.att<85?'warn':''}"><span style="width:${Math.min(100, r.att)}%"></span></div><span class="num">${r.att}%</span></div>`},
-      {key:'feeStatus',label:'Fee Status',render:r=>App.badge(esc(r.feeStatus || '-'))},
-      {key:'status',label:'Status',render:r=>App.badge(esc(r.status || '-'))}
-    ],
-    actions:r=>`
-      ${App.actBtn('eye','View',`onclick="viewStudent('${jsStr(r.id)}')"`) }
-      ${App.actBtn('rupee','Collect Fee',`onclick="collectFee('${jsStr(r.id)}')"`) }
-      ${App.actBtn('edit','Edit',`onclick="editStudent('${jsStr(r.id)}')"`) }
-      ${App.actBtn('trash','Delete',`class="danger" onclick="delStudent('${jsStr(r.id)}')"`) }`
-  });
-}
+    App.table('tbl', {
+      rows: currentStudents,
+      searchKeys:['id','code','name','mobile','parent','batch','course','cls'],
+      searchPlaceholder:'Search by name, ID, mobile...',
+      pageSize:10,
+      filters:[
+        {label:'All Classes',key:'cls',options:DB.classes || []},
+        {label:'All Batches',key:'batch',options:unique(currentStudents.map(s=>s.batch))},
+        {label:'Fee Type',key:'feeType',options:unique([...(DB.feeTypes||[]), ...currentStudents.map(s=>s.feeType)])},
+        {label:'Status',key:'status',options:statuses},
+        {label:'Fee Status',key:'feeStatus',options:feeStatuses}
+      ],
+      columns:[
+        {key:'_index',label:'#',sort:false,render:(r,i)=>`<span class="t-sub">${i+1}</span>`},
+        {key:'name',label:'Student',render:r=>App.whoCell(esc(r.name))},
+        {key:'mobile',label:'Mobile',render:r=>`<div>${esc(r.mobile || '-')}</div>`},
+        {key:'batch',label:'Batch',render:r=>`<div class="t-main" style="font-weight:500">${esc(r.batch || '-')}</div><div class="t-sub">${esc(r.course || '-')}</div>`},
+        {key:'feeType',label:'Fee',render:r=>`<div>${esc(String(r.feeType || '-').replace(' Fee',''))}</div><div class="t-sub num">${App.money(r.feeAmt)}</div>`},
+        {key:'att',label:'Attendance',num:true,render:r=>`<span class="num">${r.att}%</span>`},
+        {key:'feeStatus',label:'Fee Status',render:r=>App.badge(esc(r.feeStatus || '-'))},
+        {key:'status',label:'Status',render:r=>App.badge(esc(r.status || '-'))}
+      ],
+      actions:r=>`
+        ${App.actBtn('eye','View',`onclick="viewStudent('${jsStr(r.id)}')"`) }
+        ${App.actBtn('rupee','Collect Fee',`onclick="collectFee('${jsStr(r.id)}')"`) }
+        ${App.actBtn('edit','Edit',`onclick="editStudent('${jsStr(r.id)}')"`) }`
+    });
+  }
+
   async function loadStudents(){
-    try {
-      const payload = await API.get(API_BASE); 
-      usingFallback = false;
-      renderPage(unwrapList(payload).map(mapStudent));
-    } catch (err) {
-      console.warn('Students API unavailable, showing local data:', err);
-      usingFallback = true;
-      renderPage(localStudents());
-      App.toast('Students API unavailable. Showing local data.', 'info');
+  try {
+    const payload = await API.get(API_BASE); 
+    usingFallback = false;
+    renderPage(unwrapList(payload).map(mapStudent), payload?.widgets);
+  } catch (err) {
+    console.warn('Students API unavailable, showing local data:', err);
+    usingFallback = true;
+    renderPage(localStudents()); // no widgets → falls back to frontend calculation
+    App.toast('Students API unavailable. Showing local data.', 'info');
+  }
+}
+
+
+  async function fetchStudentFull(id){
+    if (usingFallback) {
+      return {
+        student: mapStudent(findLocalStudent(id)),
+        extras: { fees: [], attendance: [], exams: [] }
+      };
     }
+    const raw = await API.get(`${API_BASE}/${encodeURIComponent(id)}`);
+    const data = raw?.data ?? raw ?? {};
+    const student = mapStudent(data.student ?? data);
+    const extras = {
+      fees: Array.isArray(data.fees) ? data.fees : [],
+      attendance: Array.isArray(data.attendance) ? data.attendance : [],
+      exams: Array.isArray(data.exams) ? data.exams : []
+    };
+    return { student, extras };
   }
 
   async function getStudent(id){
-    if (usingFallback) return mapStudent(findLocalStudent(id));
-    return mapStudent(unwrapOne(await API.get(`${API_BASE}/${encodeURIComponent(id)}`)));
-  }
-
-  
-  async function fetchStudentExtras(id){
-    if (usingFallback) return { fees: [], attendance: [], exams: [] };
-    const results = await Promise.allSettled([
-      API.get(`${API_BASE}/${encodeURIComponent(id)}/fees`),
-      API.get(`${API_BASE}/${encodeURIComponent(id)}/attendance`),
-      API.get(`${API_BASE}/${encodeURIComponent(id)}/exams`)
-    ]);
-    const unwrap = r => r.status === 'fulfilled' ? unwrapList(r.value) : [];
-    return {
-      fees: unwrap(results[0]),
-      attendance: unwrap(results[1]),
-      exams: unwrap(results[2])
-    };
+    const { student } = await fetchStudentFull(id);
+    return student;
   }
 
   function emptyRow(colspan, text){
@@ -322,7 +318,6 @@ if(App.guard()){
       </div>
       <div class="tab-pane" data-p="p3">
         <div class="dl cols-3"><div class="it"><div class="k">Overall %</div><div class="v num">${s.att}%</div></div></div>
-        <div class="progress ${s.att<75?'danger':''} mt16" style="height:10px"><span style="width:${Math.min(100, s.att)}%"></span></div>
         <div class="sec-title">Attendance Records</div>
         <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
         <tbody>${attendanceRows}</tbody></table></div>
@@ -341,18 +336,16 @@ if(App.guard()){
 
   window.viewStudent = async id => {
     try {
-      const s = await getStudent(id);
-      const extras = await fetchStudentExtras(id);
-      showStudentModal(s, extras);
+      const { student, extras } = await fetchStudentFull(id);
+      showStudentModal(student, extras);
     }
     catch (err) { App.toast(err.message || 'Failed to load student', 'err'); }
   };
 
   function studentForm(s){
-   const classOptions = DB.classes;
+    const classOptions = DB.classes || [];
     const feeTypeOptions = unique(['Regular Fee','Scholarship', ...(DB.feeTypes||[]), ...currentStudents.map(x=>x.feeType)]);
 
-    
     const courseOpts = courseList.length ? courseList
       : unique(currentStudents.map(x=>x.course)).map(name => ({ id:'', name }));
     const batchOpts = batchList.length ? batchList
@@ -394,7 +387,6 @@ if(App.guard()){
           renderPage(localStudents());
           return App.toast('Student added locally','ok');
         }
-        // Use common API wrapper for POST
         await API.post(API_BASE, toApiPayload(s));
         App.closeModal();
         await loadStudents();
@@ -423,7 +415,6 @@ if(App.guard()){
               renderPage(localStudents());
               return App.toast('Student updated locally','ok');
             }
-            // Use common API wrapper for PUT
             await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload(updated));
             App.closeModal();
             await loadStudents();
@@ -438,30 +429,12 @@ if(App.guard()){
     }
   };
 
-  window.delStudent = id => {
-    const s = findCurrentStudent(id);
-    const label = s ? `${esc(s.name)} (${esc(s.code || s.id)})` : esc(id);
-    App.confirmModal(`Delete <b>${label}</b>? This cannot be undone.`, async()=>{
-      try {
-        if (usingFallback) {
-          const i = (DB.students || []).findIndex(x => String(x.id) === String(id));
-          if (i > -1) DB.students.splice(i,1);
-          renderPage(localStudents());
-          return App.toast('Student deleted locally','ok');
-        }
-        // Use common API wrapper for DELETE
-        await API.delete(`${API_BASE}/${encodeURIComponent(id)}`);
-        await loadStudents();
-        App.toast('Student deleted','ok');
-      } catch (err) {
-        App.toast(err.message || 'Failed to delete student','err');
-      }
-    }, {danger:true,yes:'Delete',title:'Delete student'});
-  };
 
+  
   window.collectFee = async id => {
     const s = findCurrentStudent(id) || await getStudent(id).catch(()=>null);
     if (!s) return App.toast('Student not found','err');
+    if (s.feeStatus === 'Paid') return App.toast('Fees already paid','info');
 
     const now = new Date();
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -476,7 +449,6 @@ if(App.guard()){
       { value:'H2', label:'H2 (Jul - Dec)' }
     ];
 
-    // Default period type guessed from the fee type name, but the staff can override.
     const feeTypeLower = String(s.feeType || '').toLowerCase();
     const defaultPeriodType = feeTypeLower.includes('quarter') ? 'quarterly'
       : feeTypeLower.includes('half') || feeTypeLower.includes('semi') ? 'half'
@@ -489,13 +461,13 @@ if(App.guard()){
       if (type === 'monthly') return `${b.querySelector('#cf_month').value} ${year}`;
       if (type === 'quarterly') return `${b.querySelector('#cf_quarter').value} ${year}`;
       if (type === 'half') return `${b.querySelector('#cf_half').value} ${year}`;
-      return year; // yearly
+      return year;
     };
 
     const fetchDue = async (period) => {
       if (usingFallback) return s.feeAmt;
       try {
-       const payload = await API.get(`/pending-fees/${encodeURIComponent(s.code || s.id)}?feeType=${encodeURIComponent(s.feeType)}&period=${encodeURIComponent(period)}`);
+        const payload = await API.get(`/pending-fees/${encodeURIComponent(s.code || s.id)}?feeType=${encodeURIComponent(s.feeType)}&period=${encodeURIComponent(period)}`);
         const row = payload?.data;
         return (row && row.due != null) ? Number(row.due) : s.feeAmt;
       } catch (err) {
@@ -599,7 +571,7 @@ if(App.guard()){
         };
       }
     });
-};
+  };
 
   (async () => {
     await loadDropdownData();
