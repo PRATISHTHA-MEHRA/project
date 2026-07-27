@@ -18,6 +18,7 @@ const mapToFrontend = (e) => {
         demoDate: e.demo_date ? new Date(e.demo_date).toISOString().split("T")[0] : "",
         demoTime: e.demo_time || "",
         source: e.source || "",
+        sourceDetail: e.source_detail || "",
         timing: e.preferred_timing || "",
         followup: e.followup_date ? new Date(e.followup_date).toISOString().split("T")[0] : "",
         counselor: e.counselor || "",
@@ -38,6 +39,7 @@ const mapToDatabase = (f) => ({
     demo_date: f.demoDate || null,
     demo_time: f.demoTime || null,
     source: f.source,
+    source_detail: f.sourceDetail || null,
     preferred_timing: f.timing,
     followup_date: f.followup || null,
     counselor: f.counselor,
@@ -144,24 +146,20 @@ const validateMobile = (mobile) => {
 
 exports.createEnquiry = async (req, res) => {
     try {
-        if (!validateMobile(req.body.mobile)) {
-            return res.status(400).json({ success: false, message: "Enter a valid mobile number." });
-        }
-
         const dbReady = mapToDatabase(req.body);
         const created = await Enquiry.create(dbReady);
 
-        // Auto-create Demo Class if "Demo Scheduled" is selected
+        // Auto-create Demo Class directly for course interest when Demo Scheduled is chosen
         if (created.status === 'Demo Scheduled') {
             await Demo.create({
                 student_name: created.student_name,
                 course_name: created.course_interest,
-                batch_name: req.body.batch || "TBD",
-                teacher_name: req.body.teacher || created.counselor || "Unassigned",
+                batch_name: created.batch_name || "Auto-Assigned",
+                teacher_name: created.teacher_name || "Unassigned",
                 demo_date: created.followup_date || new Date().toISOString().slice(0, 10),
                 demo_time: "10:00 AM",
                 status: "Scheduled",
-                feedback: created.remarks || "Scheduled from Enquiry"
+                feedback: created.remarks || "Direct Demo via Enquiry"
             });
         }
 

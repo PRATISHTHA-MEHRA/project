@@ -25,8 +25,9 @@ const mapToDatabase = (f) => {
         teacher_name: f.teacher,
         demo_date: f.date || null,
         demo_time: f.time || null,
-        status: f.status,
-        feedback: f.feedback || null
+        status: f.status || "Scheduled",
+        feedback: f.feedback || null,
+        enquiry_id: f.enquiry_id || null
     };
 };
 
@@ -42,19 +43,42 @@ exports.getDemos = async (req, res) => {
 exports.createDemo = async (req, res) => {
     try {
         const dbReady = mapToDatabase(req.body);
+
         if (!dbReady.student_name) {
             return res.status(400).json({ success: false, message: "Student name is required" });
+        }
+        if (!dbReady.course_name) {
+            return res.status(400).json({ success: false, message: "Course name is required" });
+        }
+
+        // Auto-assign Teacher, Batch, and Time from the registered course if not explicitly passed
+        const courseInfo = await Demo.getCourseDetails(dbReady.course_name);
+        if (courseInfo) {
+            if (!dbReady.teacher_name) dbReady.teacher_name = courseInfo.teacher_name || "Assigned Teacher";
+            if (!dbReady.batch_name) dbReady.batch_name = courseInfo.batch_name || "Regular Batch";
+            if (!dbReady.demo_time) dbReady.demo_time = courseInfo.timing || "10:00 AM";
         }
 
         const created = await Demo.create(dbReady);
 
         // Update corresponding enquiry status safely
-        await db.query(
-            "UPDATE enquiries SET status = 'Demo Scheduled' WHERE student_name = $1 AND status NOT IN ('Converted', 'Enrolled')",
-            [dbReady.student_name]
-        );
+        if (dbReady.enquiry_id) {
+            await db.query(
+                "UPDATE enquiries SET status = 'Demo Scheduled' WHERE id = $1 AND status NOT IN ('Converted', 'Enrolled')",
+                [dbReady.enquiry_id]
+            );
+        } else {
+            await db.query(
+                "UPDATE enquiries SET status = 'Demo Scheduled' WHERE student_name = $1 AND status NOT IN ('Converted', 'Enrolled')",
+                [dbReady.student_name]
+            );
+        }
 
-        res.status(201).json({ success: true, message: "Demo scheduled", data: mapToFrontend(created) });
+        res.status(201).json({
+            success: true,
+            message: "Demo scheduled and student assigned to course batch/teacher",
+            data: mapToFrontend(created)
+        });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -71,11 +95,14 @@ exports.updateDemo = async (req, res) => {
 
         const dbReady = mapToDatabase(req.body);
 
-        if (!dbReady.student_name || !dbReady.course_name || !dbReady.batch_name || !dbReady.teacher_name || !dbReady.demo_date || !dbReady.demo_time) {
-            return res.status(400).json({
-                success: false,
-                message: "Student, course, batch, teacher, date and time are all required"
-            });
+        // Auto-fill teacher/batch/time if updated course requires it
+        if (dbReady.course_name) {
+            const courseInfo = await Demo.getCourseDetails(dbReady.course_name);
+            if (courseInfo) {
+                if (!dbReady.teacher_name) dbReady.teacher_name = courseInfo.teacher_name;
+                if (!dbReady.batch_name) dbReady.batch_name = courseInfo.batch_name;
+                if (!dbReady.demo_time) dbReady.demo_time = courseInfo.timing;
+            }
         }
 
         const updated = await Demo.update(id, dbReady);
@@ -84,27 +111,16 @@ exports.updateDemo = async (req, res) => {
             return res.status(404).json({ success: false, message: "Demo class record not found" });
         }
 
-        // Synchronize with active enquiry pipelines if marked completed
-        if (dbReady.status === 'Completed') {
-            await db.query(
-                "UPDATE enquiries SET status = 'Demo Completed' WHERE student_name = $1 AND status NOT IN ('Converted', 'Enrolled')",
-                [dbReady.student_name]
-            );
-            if (linked.rows[0]) Object.assign(updated, linked.rows[0]);
-        }
-
-        // Synchronize with active enquiry pipelines if marked completed.
-        // Prefer the real enquiry_id link; fall back to name matching only
-        // for older demo records created before that link existed.
+        // Synchronize active enquiry pipelines if demo is marked completed
         if (dbReady.status === 'Completed') {
             if (updated.enquiry_id) {
                 await db.query(
-                    "UPDATE enquiries SET status = 'Demo Completed' WHERE id = $1 AND status != 'Converted'",
+                    "UPDATE enquiries SET status = 'Demo Completed' WHERE id = $1 AND status NOT IN ('Converted', 'Enrolled')",
                     [updated.enquiry_id]
                 );
             } else {
                 await db.query(
-                    "UPDATE enquiries SET status = 'Demo Completed' WHERE student_name = $1 AND status != 'Converted'",
+                    "UPDATE enquiries SET status = 'Demo Completed' WHERE student_name = $1 AND status NOT IN ('Converted', 'Enrolled')",
                     [dbReady.student_name]
                 );
             }
@@ -129,7 +145,6 @@ exports.convertDemoToAdmission = async (req, res) => {
         client = await db.connect();
         await client.query("BEGIN");
 
-        // Fetch demo inside the transaction block
         const demoRes = await client.query("SELECT * FROM demo_classes WHERE id = $1", [id]);
         const demoRow = demoRes.rows[0];
 
@@ -149,7 +164,6 @@ exports.convertDemoToAdmission = async (req, res) => {
 
         const e = enquiry.rows[0];
 
-        // Clean & validate mobile number before sending to admission record creation
         const cleanMobile = String(e.mobile || "").trim().replace(/[\s-]/g, "");
         if (!cleanMobile) {
             throw Object.assign(
@@ -160,11 +174,12 @@ exports.convertDemoToAdmission = async (req, res) => {
 
         const result = await admissionController.createAdmissionRecord({
             name: e.student_name,
-            mobile: cleanMobile, // Sanitized mobile number
+            mobile: cleanMobile,
             parent: e.parent_name,
             cls: e.class_level,
             course: demoRow.course_name,
             batch: demoRow.batch_name,
+            teacher: demoRow.teacher_name,
             feeType: "Demo Conversion",
             feeAmt: 0,
             paid: 0,
@@ -181,7 +196,7 @@ exports.convertDemoToAdmission = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "Demo converted to admission.",
+            message: "Demo converted to admission and assigned to teacher/batch.",
             data: admissionController.mapToFrontend(result.admission),
             receiptId: result.receiptId
         });

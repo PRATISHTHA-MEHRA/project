@@ -3,17 +3,33 @@ const db = require("../config/db");
 const getAll = async () => {
     const result = await db.query(`
         SELECT id, student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
-               demo_date, demo_time,
-               source, preferred_timing, followup_date, counselor, status, remarks, created_at
+               demo_date, demo_time, source, source_detail, preferred_timing, followup_date, counselor, status, remarks, created_at
         FROM enquiries
         ORDER BY id DESC;
     `);
     return result.rows;
 };
 
+const create = async (data) => {
+    const result = await db.query(`
+        INSERT INTO enquiries (
+            student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
+            demo_date, demo_time, source, source_detail, preferred_timing, followup_date, counselor, status, remarks, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, 'New'), $16, COALESCE($17, CURRENT_DATE))
+        RETURNING *;
+    `, [
+        data.student_name, data.parent_name, data.mobile, data.class_level, data.course_interest, data.batch_name, data.teacher_name,
+        data.demo_date, data.demo_time,
+        data.source, data.source_detail, data.preferred_timing, data.followup_date, data.counselor, data.status, data.remarks, data.date
+    ]);
+    return result.rows[0];
+};
+
+
 const getById = async (id, client = db) => {
     const result = await client.query(`
-        SELECT id, student_name, parent_name, mobile, class_level, course_interest,
+        SELECT id, student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
+               demo_date, demo_time,
                source, preferred_timing, followup_date, counselor, status, remarks, created_at
         FROM enquiries
         WHERE id = $1;
@@ -21,9 +37,6 @@ const getById = async (id, client = db) => {
     return result.rows[0];
 };
 
-// Used only as a fallback when a demo is created directly from the Demo
-// Classes page (not via the enquiry's own status field), so we can still
-// link it back to the right enquiry and update that enquiry's status.
 const getOpenByName = async (name) => {
     const result = await db.query(`
         SELECT id, student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
@@ -36,25 +49,6 @@ const getOpenByName = async (name) => {
     return result.rows[0];
 };
 
-const create = async (data) => {
-    const result = await db.query(`
-        INSERT INTO enquiries (
-            student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
-            demo_date, demo_time,
-            source, preferred_timing, followup_date, counselor, status, remarks, created_at
-<<<<<<< HEAD
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, CURRENT_DATE))
-=======
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 'New'), $11, COALESCE($12, CURRENT_DATE))
->>>>>>> teacher-payment-fix
-        RETURNING *;
-    `, [
-        data.student_name, data.parent_name, data.mobile, data.class_level, data.course_interest, data.batch_name, data.teacher_name,
-        data.demo_date, data.demo_time,
-        data.source, data.preferred_timing, data.followup_date, data.counselor, data.status, data.remarks, data.date
-    ]);
-    return result.rows[0];
-};
 
 const update = async (id, data) => {
     const result = await db.query(`

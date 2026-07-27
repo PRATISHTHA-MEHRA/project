@@ -10,8 +10,6 @@ const getById = async (id) => {
     return result.rows[0];
 };
 
-// One enquiry should only ever have one "current" demo record. This is what
-// lets us find that record reliably instead of matching on student_name text.
 const getByEnquiryId = async (enquiryId) => {
     if (!enquiryId) return null;
     const result = await db.query(
@@ -21,6 +19,16 @@ const getByEnquiryId = async (enquiryId) => {
     return result.rows[0];
 };
 
+// Helper: Fetch default Teacher, Batch, and Timing associated with a course name
+const getCourseDetails = async (courseName) => {
+    if (!courseName) return null;
+    const result = await db.query(
+        "SELECT course_name, teacher_name, batch_name, timing FROM courses WHERE LOWER(TRIM(course_name)) = LOWER(TRIM($1)) LIMIT 1",
+        [courseName]
+    );
+    return result.rows[0] || null;
+};
+
 const create = async (data) => {
     const result = await db.query(`
         INSERT INTO demo_classes (
@@ -28,8 +36,15 @@ const create = async (data) => {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '-'), $9)
         RETURNING *;
     `, [
-        data.student_name, data.course_name, data.batch_name, data.teacher_name,
-        data.demo_date, data.demo_time, data.status || 'Scheduled', data.feedback, data.enquiry_id || null
+        data.student_name,
+        data.course_name,
+        data.batch_name || 'Default Batch',
+        data.teacher_name || 'Unassigned',
+        data.demo_date,
+        data.demo_time,
+        data.status || 'Scheduled',
+        data.feedback,
+        data.enquiry_id || null
     ]);
     return result.rows[0];
 };
@@ -41,10 +56,17 @@ const update = async (id, data) => {
             demo_date = $5, demo_time = $6, status = $7, feedback = $8
         WHERE id = $9 RETURNING *;
     `, [
-        data.student_name, data.course_name, data.batch_name, data.teacher_name,
-        data.demo_date, data.demo_time, data.status, data.feedback, id
+        data.student_name,
+        data.course_name,
+        data.batch_name,
+        data.teacher_name,
+        data.demo_date,
+        data.demo_time,
+        data.status,
+        data.feedback,
+        id
     ]);
     return result.rows[0];
 };
 
-module.exports = { getAll, getById, getByEnquiryId, create, update };
+module.exports = { getAll, getById, getByEnquiryId, getCourseDetails, create, update };

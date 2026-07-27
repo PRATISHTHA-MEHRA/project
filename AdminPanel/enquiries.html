@@ -19,8 +19,10 @@ if(App.guard()){
   const STATUSES = ['New','Contacted','Interested','Demo Scheduled','Demo Completed','Converted','Lost'];
   const FEE_TYPES = ['Monthly Fee','Quarterly Fee','Semi-Annual Fee','Annual Fee'];
   const FEE_FIELD_BY_TYPE = {
-    'Monthly Fee':'monthly_fee','Quarterly Fee':'quarterly_fee',
-    'Semi-Annual Fee':'semi_annual_fee','Annual Fee':'annual_fee'
+    'Monthly Fee':'monthly_fee',
+    'Quarterly Fee':'quarterly_fee',
+    'Semi-Annual Fee':'semi_annual_fee',
+    'Annual Fee':'annual_fee'
   };
 
   const head = `<button class="btn btn-primary" onclick="addEnq()">${App.svg('plus')}New Enquiry</button>`;
@@ -32,8 +34,6 @@ if(App.guard()){
 
   let currentEnquiries = [];
   let courses = [];
-  let batches = [];
-  let teacherList = [];
 
   const findCurrentEnquiry = id => currentEnquiries.find(e => String(e.id) === String(id));
 
@@ -42,80 +42,89 @@ if(App.guard()){
 
   function mapEnquiry(item = {}){
     return {
-      id: item.id || '', name: item.name || 'Unnamed Student', parent: item.parent || '',
-      mobile: item.mobile || '', cls: item.cls || '', course: item.course || '', batch: item.batch || '',
-      teacher: item.teacher || '', demoDate: item.demoDate || '', demoTime: item.demoTime || '',
-      source: item.source || '', timing: item.timing || '', followup: item.followup || '',
-      counselor: item.counselor || '', status: item.status || 'New',
-      teacher: item.teacher || '', batch: item.batch || '',
-      remarks: item.remarks || '', date: item.date || ''
+      id: item.id || '', 
+      name: item.name || 'Unnamed Student', 
+      parent: item.parent || '',
+      mobile: item.mobile || '', 
+      cls: item.cls || '', 
+      course: item.course || '', 
+      demoDate: item.demoDate || '', 
+      demoTime: item.demoTime || '',
+      source: item.source || 'Walk-in',
+      sourceDetail: item.sourceDetail || item.source_detail || '',
+      timing: item.timing || '', 
+      followup: item.followup || '',
+      counselor: item.counselor || '', 
+      status: item.status || 'New',
+      remarks: item.remarks || '', 
+      date: item.date || ''
     };
   }
 
   function toApiPayload(e){
     return {
-      name: e.name, parent: e.parent, mobile: e.mobile, cls: e.cls, course: e.course, batch: e.batch,
-      teacher: e.teacher, demoDate: e.demoDate, demoTime: e.demoTime,
-      source: e.source, timing: e.timing, followup: e.followup, counselor: e.counselor,
-      status: e.status, teacher: e.teacher, batch: e.batch, remarks: e.remarks
+      name: e.name, 
+      parent: e.parent, 
+      mobile: e.mobile, 
+      cls: e.cls, 
+      course: e.course, 
+      demoDate: e.demoDate, 
+      demoTime: e.demoTime,
+      source: e.source, 
+      sourceDetail: e.sourceDetail,
+      timing: e.timing, 
+      followup: e.followup, 
+      counselor: e.counselor,
+      status: e.status, 
+      remarks: e.remarks
     };
   }
 
+  // Toggle Source Detail field dynamically
+  window.toggleSourceDetail = function(sourceVal) {
+    const detailBox = document.getElementById('source_detail_wrap');
+    if (detailBox) {
+      const needsDetail = ['Referral', 'Newspaper', 'Social Media', 'Website', 'Other'].includes(sourceVal);
+      detailBox.style.display = needsDetail ? 'block' : 'none';
+    }
+  };
+
   function readForm(box){
     const status = box.querySelector('#e_status')?.value || 'New';
+    const source = box.querySelector('#e_source')?.value || 'Walk-in';
+
     return {
       name: box.querySelector('#e_name').value.trim(),
       parent: box.querySelector('#e_parent').value.trim(),
       mobile: box.querySelector('#e_mobile').value.trim(),
       cls: box.querySelector('#e_cls').value,
       course: box.querySelector('#e_course').value,
-      batch: box.querySelector('#e_batch').value,
-      teacher: box.querySelector('#e_teacher').value.trim(),
-      demoDate: box.querySelector('#e_demodate').value,
-      demoTime: box.querySelector('#e_demotime').value.trim(),
-      source: box.querySelector('#e_source').value,
+      demoDate: box.querySelector('#e_demodate')?.value || box.querySelector('#e_follow')?.value || '',
+      demoTime: box.querySelector('#e_demotime')?.value.trim() || '',
+      source: source,
+      sourceDetail: box.querySelector('#e_source_detail')?.value.trim() || '',
       timing: box.querySelector('#e_timing').value,
       followup: box.querySelector('#e_follow').value,
-      counselor: box.querySelector('#e_couns').value,
+      counselor: box.querySelector('#e_couns').value.trim(),
       status: status,
-      teacher: status === 'Demo Scheduled' ? (box.querySelector('#e_demo_teacher')?.value.trim() || 'Unassigned') : '',
-      batch: status === 'Demo Scheduled' ? (box.querySelector('#e_demo_batch')?.value || 'TBD') : '',
       remarks: box.querySelector('#e_rem').value.trim()
     };
   }
 
-  // Mobile is optional, but if entered it must be exactly 10 digits.
-  function isValidMobile(mobile){
-    return !mobile || /^\d{10}$/.test(mobile);
-  }
-
-  // A batch, teacher, date and time are only required once a demo needs to
-  // exist for this enquiry (Demo Scheduled / Demo Completed) - demo_classes
-  // requires all four fields.
-  function needsDemoDetails(status){
-    return status === 'Demo Scheduled' || status === 'Demo Completed';
-  }
-
-  function batchesForCourse(courseName){
-    const matchedCourse = findMatchingCourse(courseName);
-    if (!matchedCourse) return [];
-    return batches.filter(b =>
-      (b.course && b.course === matchedCourse.course_name) ||
-      String(b.course) === String(matchedCourse.id)
-    );
+  function validateEnquiry(data) {
+    if (!data.name) return 'Please enter the student\'s full name.';
+    if (data.mobile && !/^\d{10}$/.test(data.mobile)) return 'Contact mobile number must be exactly 10 digits.';
+    if (!data.course) return 'Please select a course of interest.';
+    return null;
   }
 
   async function loadLookups(){
     try {
-      const [courseRes, batchRes, teacherRes] = await Promise.all([
-        API.get('/courses'), API.get('/batches'), API.get('/teachers')
-      ]);
+      const courseRes = await API.get('/courses');
       courses = courseRes?.data || [];
-      batches = batchRes?.data || [];
-      teacherList = teacherRes?.data || [];
     } catch (err) {
-      console.warn('Could not load lookup datasets:', err);
-      courses = []; batches = []; teacherList = [];
+      console.warn('Could not load course datasets:', err);
+      courses = [];
     }
   }
 
@@ -133,14 +142,14 @@ if(App.guard()){
     </div><div id="tbl"></div>`;
 
     if (!rows.length){
-      document.getElementById('tbl').innerHTML = `<div class="empty-state">No records available yet.</div>`;
+      document.getElementById('tbl').innerHTML = `<div class="empty-state">No enquiry records available yet.</div>`;
       return;
     }
 
     App.table('tbl',{
       rows,
-      searchKeys:['id','name','mobile','course','counselor'],
-      searchPlaceholder:'Search enquiries...',
+      searchKeys:['id','name','mobile','course','counselor','sourceDetail'],
+      searchPlaceholder:'Search by student, mobile, course, counselor...',
       pageSize:9,
       dateFilter:true,
       filters:[
@@ -149,17 +158,17 @@ if(App.guard()){
         {label:'Counselor',key:'counselor',options:unique(rows.map(e=>e.counselor))}
       ],
       columns:[
-        {key:'name',label:'Student',render:r=>esc(r.name)},
-        {key:'mobile',label:'Contact',render:r=>esc(r.mobile)},
-        {key:'course',label:'Course Interest',render:r=>esc(r.course)},
-        {key:'source',label:'Source',render:r=>`<span class="chip">${esc(r.source)}</span>`},
-        {key:'counselor',label:'Counselor',render:r=>esc(r.counselor)},
-        {key:'followup',label:'Follow-up',render:r=>esc(r.followup)},
+        {key:'name',label:'Student Name',render:r=>`<div><strong>${esc(r.name)}</strong>${r.parent ? `<br><small class="text-muted">Parent: ${esc(r.parent)}</small>` : ''}</div>`},
+        {key:'mobile',label:'Contact No.',render:r=>esc(r.mobile || '-')},
+        {key:'course',label:'Course Interest',render:r=>esc(r.course || '-')},
+        {key:'source',label:'Source Details',render:r=>`<span class="chip">${esc(r.source)}${r.sourceDetail ? ` - ${esc(r.sourceDetail)}` : ''}</span>`},
+        {key:'counselor',label:'Counselor',render:r=>esc(r.counselor || '-')},
+        {key:'followup',label:'Follow-up Date',render:r=>esc(r.followup || '-')},
         {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
       ],
       actions:r=>{
-        const convertBtn = r.status === 'Converted' ? '' : App.actBtn('admit','Convert',`onclick="convertE('${jsStr(r.id)}')"`);
-        return `${App.actBtn('eye','View',`onclick="viewE('${jsStr(r.id)}')"`)}${App.actBtn('edit','Edit',`onclick="editE('${jsStr(r.id)}')"`)}${convertBtn}${App.actBtn('trash','Delete',`class="danger" onclick="delE('${jsStr(r.id)}')"`)}`;
+        const convertBtn = r.status === 'Converted' ? '' : App.actBtn('admit','Convert',`onclick="convertE('${jsStr(r.id)}')"` );
+        return `${App.actBtn('eye','View',`onclick="viewE('${jsStr(r.id)}')"`)}${App.actBtn('edit','Edit',`onclick="editE('${jsStr(r.id)}')"`)}${convertBtn}`;
       }
     });
   }
@@ -169,83 +178,98 @@ if(App.guard()){
       const payload = await API.get('/enquiries');
       renderPage((payload?.data || []).map(mapEnquiry));
     } catch (err) {
-      App.toast(err.message || 'Failed to load enquiries','err');
+      App.toast(err.message || 'Failed to load enquiries from server','err');
       renderPage([]);
     }
   }
 
-  window.toggleDemoFields = function(status) {
-    const demoFields = document.getElementById('demo_fields');
-    if (demoFields) {
-      demoFields.style.display = (status === 'Demo Scheduled') ? 'grid' : 'none';
-    }
-  };
-
   function eForm(x) {
     const courseNames = unique(courses.map(c => c.course_name));
     const editableStatuses = STATUSES.filter(s => s !== 'Converted');
-    const isDemoScheduled = (x?.status || 'New') === 'Demo Scheduled';
+    const selectedSource = x?.source || SOURCES[0];
+    const showSourceDetail = ['Referral', 'Newspaper', 'Social Media', 'Website', 'Other'].includes(selectedSource);
 
     return `<div class="form-grid">
-      <div><label>Student Name</label><input id="e_name" value="${esc(x?.name || '')}"></div>
-      <div><label>Parent Name</label><input id="e_parent" value="${esc(x?.parent || '')}"></div>
-      <div><label>Mobile</label><input id="e_mobile" value="${esc(x?.mobile || '')}" maxlength="10" inputmode="numeric" placeholder="10-digit number" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,10)"></div>
-      <div><label>Class</label><select id="e_cls">${CLASS_LEVELS.map(k=>`<option ${x?.cls===k?'selected':''}>${esc(k)}</option>`).join('')}</select></div>
-      <div><label>Course Interested</label><select id="e_course">${courseNames.map(cn=>`<option ${x?.course===cn?'selected':''}>${esc(cn)}</option>`).join('')}</select></div>
-      <div><label>Batch</label><select id="e_batch">${batchOptions}</select></div>
-      <div><label>Teacher</label><input id="e_teacher" value="${esc(x?.teacher || '')}" placeholder="Teacher name"></div>
-      <div><label>Demo Date</label><input type="date" id="e_demodate" value="${esc(x?.demoDate || '')}"></div>
-      <div><label>Demo Time</label><input id="e_demotime" value="${esc(x?.demoTime || '')}" placeholder="e.g. 04:30 PM"></div>
-      <div><label>Source</label><select id="e_source">${SOURCES.map(s=>`<option ${x?.source===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
-      <div><label>Preferred Timing</label><select id="e_timing">${TIMINGS.map(t=>`<option ${x?.timing===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Follow-up Date / Demo Date</label><input type="date" id="e_follow" value="${esc(x?.followup || '')}"></div>
-      <div><label>Counselor</label><input id="e_couns" value="${esc(x?.counselor || '')}"></div>
       <div>
-        <label>Status</label>
-        <select id="e_status" onchange="toggleDemoFields(this.value)">
+        <label>Student Name <span class="text-danger">*</span></label>
+        <input id="e_name" value="${esc(x?.name || '')}" placeholder="e.g. Rahul Sharma">
+      </div>
+      <div>
+        <label>Parent Name</label>
+        <input id="e_parent" value="${esc(x?.parent || '')}" placeholder="e.g. Suresh Sharma">
+      </div>
+      <div>
+        <label>Mobile Number</label>
+        <input id="e_mobile" value="${esc(x?.mobile || '')}" maxlength="10" inputmode="numeric" placeholder="10-digit mobile number" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,10)">
+      </div>
+      <div>
+        <label>Class / Level</label>
+        <select id="e_cls">${CLASS_LEVELS.map(k=>`<option ${x?.cls===k?'selected':''}>${esc(k)}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Course Interested <span class="text-danger">*</span></label>
+        <select id="e_course">
+          <option value="">-- Select Course --</option>
+          ${courseNames.map(cn=>`<option ${x?.course===cn?'selected':''}>${esc(cn)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div>
+        <label>Source Type</label>
+        <select id="e_source" onchange="toggleSourceDetail(this.value)">
+          ${SOURCES.map(s=>`<option ${selectedSource===s?'selected':''}>${esc(s)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div id="source_detail_wrap" style="display: ${showSourceDetail ? 'block' : 'none'};">
+        <label>Source Name / Platform Details</label>
+        <input id="e_source_detail" value="${esc(x?.sourceDetail || '')}" placeholder="e.g., Referred by Amit, Facebook, Times Ad">
+      </div>
+
+      <div>
+        <label>Preferred Timing</label>
+        <select id="e_timing">${TIMINGS.map(t=>`<option ${x?.timing===t?'selected':''}>${t}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Follow-up Date</label>
+        <input type="date" id="e_follow" value="${esc(x?.followup || '')}">
+      </div>
+      <div>
+        <label>Counselor Name</label>
+        <input id="e_couns" value="${esc(x?.counselor || '')}" placeholder="Assigned Counselor">
+      </div>
+      <div>
+        <label>Enquiry Status</label>
+        <select id="e_status">
           ${editableStatuses.map(s=>`<option ${x?.status===s?'selected':''}>${esc(s)}</option>`).join('')}
         </select>
       </div>
 
-      <div id="demo_fields" class="full" style="display: ${isDemoScheduled ? 'grid' : 'none'}; grid-template-columns: 1fr 1fr; gap: 12px; background: var(--bg-2, #f8f9fa); padding: 12px; border-radius: 8px; border: 1px solid var(--line, #e0e0e0);">
-        <div>
-          <label>Assigned Teacher</label>
-          <select id="e_demo_teacher">
-            <option value="">-- Select Teacher --</option>
-            ${teacherList.map(t => {
-              const name = typeof t === 'string' ? t : (t.teacher_name || t.name);
-              return `<option value="${esc(name)}" ${x?.teacher === name ? 'selected' : ''}>${esc(name)}</option>`;
-            }).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Batch</label>
-          <select id="e_demo_batch">
-            <option value="">-- Select Batch --</option>
-            ${batches.map(b => `<option value="${esc(b.name)}" ${x?.batch === b.name ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
-          </select>
-        </div>
+      <div class="full">
+        <label>Remarks / Notes</label>
+        <textarea id="e_rem" rows="2" placeholder="Enter any additional notes or conversation summary...">${esc(x?.remarks || '')}</textarea>
       </div>
-
-      <div class="full"><label>Remarks</label><textarea id="e_rem" rows="2">${esc(x?.remarks || '')}</textarea></div>
     </div>`;
   }
 
   function showEnquiryModal(x){
-    if (!x || !x.id) return App.toast('Enquiry not found', 'err');
+    if (!x || !x.id) return App.toast('Selected enquiry record not found', 'err');
     App.modal({
-      size:'lg',title:esc(x.name),sub:`${esc(x.id)} - ${esc(x.status)}`,
+      size:'lg',
+      title:esc(x.name),
+      sub:`Enquiry ID: ${esc(x.id)} - Status: ${esc(x.status)}`,
       body:`<div class="dl cols-2">
-        <div class="it"><div class="k">Parent</div><div class="v">${esc(x.parent)}</div></div>
-        <div class="it"><div class="k">Mobile</div><div class="v">${esc(x.mobile)}</div></div>
-        <div class="it"><div class="k">Class</div><div class="v">${esc(x.cls)}</div></div>
-        <div class="it"><div class="k">Course Interest</div><div class="v">${esc(x.course)}</div></div>
-        <div class="it"><div class="k">Source</div><div class="v">${esc(x.source)}</div></div>
-        <div class="it"><div class="k">Preferred Timing</div><div class="v">${esc(x.timing)}</div></div>
-        <div class="it"><div class="k">Counselor</div><div class="v">${esc(x.counselor)}</div></div>
-        <div class="it"><div class="k">Follow-up Date</div><div class="v">${esc(x.followup)}</div></div>
+        <div class="it"><div class="k">Parent Name</div><div class="v">${esc(x.parent) || '-'}</div></div>
+        <div class="it"><div class="k">Contact Mobile</div><div class="v">${esc(x.mobile) || '-'}</div></div>
+        <div class="it"><div class="k">Class Level</div><div class="v">${esc(x.cls) || '-'}</div></div>
+        <div class="it"><div class="k">Course Interest</div><div class="v">${esc(x.course) || '-'}</div></div>
+        <div class="it"><div class="k">Lead Source & Details</div><div class="v">${esc(x.source)}${x.sourceDetail ? ` (${esc(x.sourceDetail)})` : ''}</div></div>
+        <div class="it"><div class="k">Preferred Timing</div><div class="v">${esc(x.timing) || '-'}</div></div>
+        <div class="it"><div class="k">Counselor</div><div class="v">${esc(x.counselor) || '-'}</div></div>
+        <div class="it"><div class="k">Follow-up Date</div><div class="v">${esc(x.followup) || '-'}</div></div>
       </div>
-      <div class="sec-title">Remarks</div><p style="color:var(--ink-2)">${esc(x.remarks) || 'No remarks recorded.'}</p>`,
+      <div class="sec-title" style="margin-top:16px;">Remarks</div>
+      <p style="color:var(--ink-2); background: var(--bg-2, #f8f9fa); padding: 8px 12px; border-radius: 6px;">${esc(x.remarks) || 'No additional remarks recorded.'}</p>`,
       foot:`<button class="btn btn-light" data-close>Close</button>${x.status === 'Converted' ? '' : `<button class="btn btn-primary" onclick="App.closeModal();convertE('${jsStr(x.id)}')">Convert to Admission</button>`}`
     });
   }
@@ -253,84 +277,87 @@ if(App.guard()){
   window.viewE = id => showEnquiryModal(findCurrentEnquiry(id));
 
   window.addEnq = () => App.modal({
-    size:'lg',title:'New Enquiry',body:eForm(null),
+    size:'lg',
+    title:'New Enquiry',
+    body: eForm(null),
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Enquiry</button>`,
     onOpen: box => box.querySelector('#sv').onclick = async () => {
       const enquiry = readForm(box);
-      if (!enquiry.name) return App.toast('Enter name','err');
+      const errorMsg = validateEnquiry(enquiry);
+      if (errorMsg) return App.toast(errorMsg, 'err');
+
       try {
         await API.post('/enquiries', toApiPayload(enquiry));
         App.closeModal();
         await loadEnquiries();
-        App.toast('Enquiry added','ok');
+        App.toast('New enquiry saved successfully','ok');
       } catch (err) {
-        App.toast(err.message || 'Failed to add enquiry','err');
+        App.toast(err.message || 'Error saving enquiry. Please try again.','err');
       }
     }
   });
 
-  window.editE = id => {
+window.editE = id => {
     const x = findCurrentEnquiry(id);
-    if (!x) return App.toast('Enquiry not found', 'err');
+    if (!x) return App.toast('Selected enquiry record not found', 'err');
+    
     App.modal({
-      size:'lg',title:'Edit Enquiry',sub:esc(x.id),body:eForm(x),
-      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
-      onOpen: box => box.querySelector('#sv').onclick = async () => {
-        const enquiry = readForm(box);
-        if (!enquiry.name) return App.toast('Enter name','err');
-        try {
-          await API.put(`/enquiries/${encodeURIComponent(x.id)}`, toApiPayload(enquiry));
-          App.closeModal();
-          await loadEnquiries();
-          App.toast('Enquiry updated','ok');
-        } catch (err) {
-          App.toast(err.message || 'Failed to update enquiry','err');
-        }
+      size: 'lg',
+      title: 'Edit Enquiry',
+      sub: `ID: ${esc(x.id)}`,
+      body: eForm(x),
+      foot: `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="sv">Save Changes</button>`,
+      onOpen: box => {
+        box.querySelector('#sv').onclick = async () => {
+          const enquiry = readForm(box);
+          const errorMsg = validateEnquiry(enquiry);
+          if (errorMsg) return App.toast(errorMsg, 'err');
+
+          try {
+            await API.put(`/enquiries/${encodeURIComponent(x.id)}`, toApiPayload(enquiry));
+            App.closeModal();
+            await loadEnquiries();
+            App.toast('Enquiry details updated successfully', 'ok');
+          } catch (err) {
+            App.toast(err.message || 'Error updating enquiry details', 'err');
+          }
+        };
       }
     });
   };
-
   function convertForm(x, matchedCourse){
     if (!matchedCourse) {
       return `<div class="empty-state">
-        Course "${esc(x.course)}" from this enquiry doesn't match any course in your Courses list.
-        Please update the enquiry's course to an existing course before converting.
+        Course "${esc(x.course)}" from this enquiry doesn't match any registered course.
+        Please update the enquiry's course to an active course before converting.
       </div>`;
     }
 
-    const matchingBatches = batches.filter(b =>
-      (b.course && b.course === matchedCourse.course_name) ||
-      String(b.course) === String(matchedCourse.id)
-    );
-
-    const batchOptions = matchingBatches.length
-      ? matchingBatches.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')
-      : '';
-
     return `<div class="dl cols-2">
         <div class="it"><div class="k">Student</div><div class="v">${esc(x.name)} (${esc(x.cls)})</div></div>
-        <div class="it"><div class="k">Course (from enquiry)</div><div class="v">${esc(matchedCourse.course_name)}</div></div>
+        <div class="it"><div class="k">Selected Course</div><div class="v">${esc(matchedCourse.course_name)}</div></div>
       </div>
       <div class="form-grid">
-        <div><label>Batch</label><select id="cv_batch">${batchOptions || '<option value="">No batches for this course</option>'}</select></div>
-        <div><label>Fee Type</label><select id="cv_feetype">${FEE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-        <div><label>Fee Amount</label><input type="number" id="cv_feeamount" step="0.01"></div>
+        <div><label>Fee Schedule</label><select id="cv_feetype">${FEE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+        <div><label>Fee Amount</label><input type="number" id="cv_feeamount" step="0.01" placeholder="0.00"></div>
         <div><label>Admission Date</label><input type="date" id="cv_date" value="${new Date().toISOString().split('T')[0]}"></div>
-        <div><label>Fee Status</label><select id="cv_feestatus"><option>Paid</option><option>Pending</option></select></div>
+        <div><label>Initial Fee Status</label><select id="cv_feestatus"><option>Paid</option><option>Pending</option></select></div>
       </div>`;
   }
 
   window.convertE = id => {
     const x = findCurrentEnquiry(id);
-    if (!x) return App.toast('Enquiry not found', 'err');
+    if (!x) return App.toast('Enquiry record not found', 'err');
 
     const matchedCourse = findMatchingCourse(x.course);
 
     App.modal({
-      size:'lg',title:`Convert ${esc(x.name)} to Admission`,sub:esc(x.id),
+      size:'lg',
+      title:`Convert ${esc(x.name)} to Admission`,
+      sub:`Enquiry Reference: ${esc(x.id)}`,
       body: convertForm(x, matchedCourse),
       foot: matchedCourse
-        ? `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cv_sv">Convert</button>`
+        ? `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cv_sv">Convert to Student</button>`
         : `<button class="btn btn-light" data-close>Close</button>`,
       onOpen: box => {
         if (!matchedCourse) return;
@@ -346,42 +373,26 @@ if(App.guard()){
         refreshFeeAmount();
 
         box.querySelector('#cv_sv').onclick = async () => {
-          const batchId = box.querySelector('#cv_batch').value;
           const feeType = feeTypeSel.value;
           const feeAmount = feeAmountInput.value;
           const feeStatus = box.querySelector('#cv_feestatus').value;
           const admissionDate = box.querySelector('#cv_date').value;
 
-          if (!batchId) return App.toast('Select a batch','err');
-          if (!feeAmount) return App.toast('Enter a fee amount','err');
+          if (!feeAmount || Number(feeAmount) < 0) return App.toast('Please enter a valid fee amount','err');
 
           try {
             await API.post(`/enquiries/${encodeURIComponent(x.id)}/convert`, {
-              batchId, feeType, feeAmount, feeStatus, admissionDate
+              feeType, feeAmount, feeStatus, admissionDate
             });
             App.closeModal();
-            App.toast('Enquiry converted to admission','ok');
+            App.toast('Enquiry converted into student admission successfully!','ok');
             location.href = 'admissions.html';
           } catch (err) {
-            App.toast(err.message || 'Failed to convert enquiry','err');
+            App.toast(err.message || 'Failed to complete admission conversion','err');
           }
         };
       }
     });
-  };
-
-  window.delE = id => {
-    const x = findCurrentEnquiry(id);
-    const label = x ? esc(x.name) : esc(id);
-    App.confirmModal(`Delete enquiry from <b>${label}</b>?`, async()=>{
-      try {
-        await API.delete(`/enquiries/${encodeURIComponent(id)}`);
-        await loadEnquiries();
-        App.toast('Enquiry deleted','ok');
-      } catch (err) {
-        App.toast(err.message || 'Failed to delete enquiry','err');
-      }
-    },{danger:true,yes:'Delete'});
   };
 
   (async function init(){
