@@ -176,7 +176,7 @@ if(App.guard()){
 
     const head = `<button class="btn btn-light" onclick="downloadStudentStatement()">${App.svg('download')}Statement</button>
       <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
-   const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,'Full Profile'],head);
+    const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,s.id],head);
     const initials = s.name.split(' ').map(w=>w[0]).join('');
 
     // Derive KPIs from real data where we have it; fall back to a dash rather than a fake number.

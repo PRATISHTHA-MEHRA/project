@@ -2,6 +2,7 @@ const Marks = require("../models/marksModel");
 
 // Automated grade assigner matching front-end badges
 const calculateGrade = (obtained, total) => {
+    if (!total || total <= 0) return 'D';
     const pct = (obtained / total) * 100;
     if (pct >= 90) return 'A+';
     if (pct >= 75) return 'A';
@@ -25,16 +26,24 @@ exports.submitBulkMarks = async (req, res) => {
         const { examId, examName, batch, subject, total, scores } = req.body;
 
         if (!examId || !Array.isArray(scores) || scores.length === 0) {
-            return res.status(400).json({ success: false, message: "Missing exam context parameters or student marks payload arrays." });
+            return res.status(400).json({ 
+                success: false, 
+                message: "Missing exam context parameters or student marks payload arrays." 
+            });
         }
 
+        const totalMax = parseInt(total, 10) || 100;
+
         const processedRecords = scores.map(s => {
-            const obtained = parseInt(s.obtained);
-            const totalMax = parseInt(total);
+            const obtained = parseInt(s.obtained, 10) || 0;
             return {
-                examId, examName, batch, subject, total: totalMax,
-                studentId: s.studentId,
-                studentName: s.studentName,
+                examId: String(examId),
+                examName: examName || '',
+                batch: batch || '',
+                subject: subject || '',
+                total: totalMax,
+                studentId: String(s.studentId),
+                studentName: s.studentName || '',
                 obtained,
                 grade: calculateGrade(obtained, totalMax),
                 remarks: s.remarks || ""

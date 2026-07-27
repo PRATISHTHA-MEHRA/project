@@ -1,6 +1,5 @@
 const db = require("../config/db");
 
-
 const getAll = async () => {
     const result = await db.query(`
         SELECT id, student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
@@ -12,10 +11,9 @@ const getAll = async () => {
     return result.rows;
 };
 
-const getById = async (id) => {
-    const result = await db.query(`
-        SELECT id, student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
-               demo_date, demo_time,
+const getById = async (id, client = db) => {
+    const result = await client.query(`
+        SELECT id, student_name, parent_name, mobile, class_level, course_interest,
                source, preferred_timing, followup_date, counselor, status, remarks, created_at
         FROM enquiries
         WHERE id = $1;
@@ -44,7 +42,11 @@ const create = async (data) => {
             student_name, parent_name, mobile, class_level, course_interest, batch_name, teacher_name,
             demo_date, demo_time,
             source, preferred_timing, followup_date, counselor, status, remarks, created_at
+<<<<<<< HEAD
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16, CURRENT_DATE))
+=======
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 'New'), $11, COALESCE($12, CURRENT_DATE))
+>>>>>>> teacher-payment-fix
         RETURNING *;
     `, [
         data.student_name, data.parent_name, data.mobile, data.class_level, data.course_interest, data.batch_name, data.teacher_name,

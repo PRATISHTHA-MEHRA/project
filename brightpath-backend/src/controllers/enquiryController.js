@@ -3,7 +3,7 @@ const Demo = require("../models/demoModel");
 const db = require("../config/db");
 const admissionController = require("./admissionController");
 
-
+const Demo = require("../models/demoModel");
 const mapToFrontend = (e) => {
     if (!e) return null;
     return {
@@ -136,21 +136,36 @@ exports.getEnquiry = async (req, res) => {
     }
 };
 
+const validateMobile = (mobile) => {
+    if (!mobile) return false;
+    const cleaned = String(mobile).replace(/[\s-]/g, "");
+    return /^\+?[0-9]{7,15}$/.test(cleaned);
+};
+
 exports.createEnquiry = async (req, res) => {
     try {
+        if (!validateMobile(req.body.mobile)) {
+            return res.status(400).json({ success: false, message: "Enter a valid mobile number." });
+        }
+
         const dbReady = mapToDatabase(req.body);
-        if (!dbReady.student_name) {
-            return res.status(400).json({ success: false, message: "Student name is required" });
-        }
-        if (!isValidMobile(dbReady.mobile)) {
-            return res.status(400).json({ success: false, message: "Mobile number must be exactly 10 digits" });
-        }
-        if ((dbReady.status === "Demo Scheduled" || dbReady.status === "Demo Completed") && (!dbReady.batch_name || !dbReady.teacher_name || !dbReady.demo_date || !dbReady.demo_time)) {
-            return res.status(400).json({ success: false, message: "Select a batch, teacher, date and time before setting this status" });
-        }
         const created = await Enquiry.create(dbReady);
-        await syncDemoWithStatus(created, dbReady.status);
-        res.status(201).json({ success: true, message: "Enquiry added", data: mapToFrontend(created) });
+
+        // Auto-create Demo Class if "Demo Scheduled" is selected
+        if (created.status === 'Demo Scheduled') {
+            await Demo.create({
+                student_name: created.student_name,
+                course_name: created.course_interest,
+                batch_name: req.body.batch || "TBD",
+                teacher_name: req.body.teacher || created.counselor || "Unassigned",
+                demo_date: created.followup_date || new Date().toISOString().slice(0, 10),
+                demo_time: "10:00 AM",
+                status: "Scheduled",
+                feedback: created.remarks || "Scheduled from Enquiry"
+            });
+        }
+
+        res.status(201).json({ success: true, message: "Enquiry created", data: mapToFrontend(created) });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -158,31 +173,31 @@ exports.createEnquiry = async (req, res) => {
 
 exports.updateEnquiry = async (req, res) => {
     try {
-        const id = parseId(req.params.id);
-        if (!id) return res.status(400).json({ success: false, message: "Invalid enquiry id" });
+        if (!validateMobile(req.body.mobile)) {
+            return res.status(400).json({ success: false, message: "Enter a valid mobile number." });
+        }
 
+        const id = req.params.id.replace("ENQ-", "");
         const dbReady = mapToDatabase(req.body);
-        if (!dbReady.student_name) {
-            return res.status(400).json({ success: false, message: "Student name is required" });
-        }
-        if (!isValidMobile(dbReady.mobile)) {
-            return res.status(400).json({ success: false, message: "Mobile number must be exactly 10 digits" });
-        }
-
-        // Conversion (and the resulting admission record) only ever happens
-        // through /convert, so an edit-form status change can't fake it.
-        if (dbReady.status === "Converted") {
-            return res.status(400).json({
-                success: false,
-                message: "Use the Convert action to mark an enquiry as converted"
-            });
-        }
-        if ((dbReady.status === "Demo Scheduled" || dbReady.status === "Demo Completed") && (!dbReady.batch_name || !dbReady.teacher_name || !dbReady.demo_date || !dbReady.demo_time)) {
-            return res.status(400).json({ success: false, message: "Select a batch, teacher, date and time before setting this status" });
-        }
-
         const updated = await Enquiry.update(id, dbReady);
-        if (!updated) return res.status(404).json({ success: false, message: "Enquiry not found" });
+
+        if (updated.status === 'Demo Scheduled') {
+            const existingDemos = await Demo.getAll();
+            const exists = existingDemos.some(d => d.student_name === updated.student_name && d.status === 'Scheduled');
+
+            if (!exists) {
+                await Demo.create({
+                    student_name: updated.student_name,
+                    course_name: updated.course_interest,
+                    batch_name: req.body.batch || "TBD",
+                    teacher_name: req.body.teacher || updated.counselor || "Unassigned",
+                    demo_date: updated.followup_date || new Date().toISOString().slice(0, 10),
+                    demo_time: "10:00 AM",
+                    status: "Scheduled",
+                    feedback: updated.remarks || "Scheduled from Enquiry"
+                });
+            }
+        }
 
         // Keep the Demo Classes module in sync when the status is changed
         // here on the Enquiries page, instead of from the Demo Classes page.
@@ -193,8 +208,6 @@ exports.updateEnquiry = async (req, res) => {
         res.status(500).json({ success: false, message: err.message });
     }
 };
-
-
 exports.convertEnquiry = async (req, res) => {
     let client;
     try {

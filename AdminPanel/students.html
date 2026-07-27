@@ -185,49 +185,51 @@ if(App.guard()){
   XLSX.writeFile(wb, `students-${toDateStr(new Date())}.xlsx`);
 };
   function renderPage(rows){
-    currentStudents = rows;
-    const total = rows.length;
-    const active = rows.filter(s => s.status === 'Active').length;
-    const due = rows.filter(s => s.feeStatus !== 'Paid').length;
-    const avgAtt = total ? Math.round(rows.reduce((a,s)=>a + asNum(s.att), 0) / total) : 0;
+  // Enforce a consistent sort order so actions (edit/collect fee) don't shift rows around
+  currentStudents = [...rows].sort((a, b) => 
+    String(a.code || a.id).localeCompare(String(b.code || b.id), undefined, { numeric: true })
+  );
 
-    c.innerHTML = `<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-      <div class="kpi"><div class="top"><span class="label">Total Students</span><span class="ic b-brand">${App.svg('students')}</span></div><div class="val">${total}</div></div>
-      <div class="kpi"><div class="top"><span class="label">Active</span><span class="ic b-green">${App.svg('check')}</span></div><div class="val">${active}</div></div>
-      <div class="kpi"><div class="top"><span class="label">Fee Due</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${due}</div></div>
-      <div class="kpi"><div class="top"><span class="label">Avg Attendance</span><span class="ic b-amber">${App.svg('attendance')}</span></div><div class="val">${avgAtt}%</div></div>
-    </div><div id="tbl"></div>`;
+  const total = currentStudents.length;
+  const active = currentStudents.filter(s => s.status === 'Active').length;
+  const due = currentStudents.filter(s => s.feeStatus !== 'Paid').length;
+  const avgAtt = total ? Math.round(currentStudents.reduce((a,s)=>a + asNum(s.att), 0) / total) : 0;
 
-    App.table('tbl', {
-      rows,
-      searchKeys:['id','code','name','mobile','parent','batch','course','cls'],
-      searchPlaceholder:'Search by name, ID, mobile...',
-      pageSize:10,
-      filters:[
-        {label:'All Classes',key:'cls',options:DB.classes},
-        {label:'All Batches',key:'batch',options:unique(rows.map(s=>s.batch))},
-        {label:'Fee Type',key:'feeType',options:unique([...(DB.feeTypes||[]), ...rows.map(s=>s.feeType)])},
-        {label:'Status',key:'status',options:statuses},
-        {label:'Fee Status',key:'feeStatus',options:feeStatuses}
-      ],
-      columns:[
-       {key:'name',label:'Student',render:r=>App.whoCell(esc(r.name))},
-        {key:'mobile',label:'Mobile',render:r=>`<div>${esc(r.mobile || '-')}</div>`},
-        {key:'batch',label:'Batch',render:r=>`<div class="t-main" style="font-weight:500">${esc(r.batch || '-')}</div><div class="t-sub">${esc(r.course || '-')}</div>`},
-        {key:'feeType',label:'Fee',render:r=>`<div>${esc(String(r.feeType || '-').replace(' Fee',''))}</div><div class="t-sub num">${App.money(r.feeAmt)}</div>`},
-        {key:'att',label:'Attendance',num:true,render:r=>`<div class="pct-cell"><div class="progress ${r.att<75?'danger':r.att<85?'warn':''}"><span style="width:${Math.min(100, r.att)}%"></span></div><span class="num">${r.att}%</span></div>`},
-        {key:'feeStatus',label:'Fee Status',render:r=>App.badge(esc(r.feeStatus || '-'))},
-        {key:'status',label:'Status',render:r=>App.badge(esc(r.status || '-'))}
-      ],
-      actions:r=>`
-        ${App.actBtn('eye','View',`onclick="viewStudent('${jsStr(r.id)}')"`) }
-        ${App.actBtn('rupee','Collect Fee',`onclick="collectFee('${jsStr(r.id)}')"`) }
-        ${App.actBtn('edit','Edit',`onclick="editStudent('${jsStr(r.id)}')"`) }
-        ${App.actBtn('trash','Delete',`class="danger" onclick="delStudent('${jsStr(r.id)}')"`) }`
-    });
-  }
+  c.innerHTML = `<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kpi"><div class="top"><span class="label">Total Students</span><span class="ic b-brand">${App.svg('students')}</span></div><div class="val">${total}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Active</span><span class="ic b-green">${App.svg('check')}</span></div><div class="val">${active}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Fee Due</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${due}</div></div>
+    <div class="kpi"><div class="top"><span class="label">Avg Attendance</span><span class="ic b-amber">${App.svg('attendance')}</span></div><div class="val">${avgAtt}%</div></div>
+  </div><div id="tbl"></div>`;
 
-  
+  App.table('tbl', {
+    rows: currentStudents,
+    searchKeys:['id','code','name','mobile','parent','batch','course','cls'],
+    searchPlaceholder:'Search by name, ID, mobile...',
+    pageSize:10,
+    filters:[
+      {label:'All Classes',key:'cls',options:DB.classes},
+      {label:'All Batches',key:'batch',options:unique(currentStudents.map(s=>s.batch))},
+      {label:'Fee Type',key:'feeType',options:unique([...(DB.feeTypes||[]), ...currentStudents.map(s=>s.feeType)])},
+      {label:'Status',key:'status',options:statuses},
+      {label:'Fee Status',key:'feeStatus',options:feeStatuses}
+    ],
+    columns:[
+      {key:'name',label:'Student',render:r=>App.whoCell(esc(r.name),`${esc(r.code || r.id)} - ${esc(r.cls)}`)},
+      {key:'mobile',label:'Mobile',render:r=>`<div>${esc(r.mobile || '-')}</div><div class="t-sub">${esc(r.parent || '-')}</div>`},
+      {key:'batch',label:'Batch',render:r=>`<div class="t-main" style="font-weight:500">${esc(r.batch || '-')}</div><div class="t-sub">${esc(r.course || '-')}</div>`},
+      {key:'feeType',label:'Fee',render:r=>`<div>${esc(String(r.feeType || '-').replace(' Fee',''))}</div><div class="t-sub num">${App.money(r.feeAmt)}</div>`},
+      {key:'att',label:'Attendance',num:true,render:r=>`<div class="pct-cell"><div class="progress ${r.att<75?'danger':r.att<85?'warn':''}"><span style="width:${Math.min(100, r.att)}%"></span></div><span class="num">${r.att}%</span></div>`},
+      {key:'feeStatus',label:'Fee Status',render:r=>App.badge(esc(r.feeStatus || '-'))},
+      {key:'status',label:'Status',render:r=>App.badge(esc(r.status || '-'))}
+    ],
+    actions:r=>`
+      ${App.actBtn('eye','View',`onclick="viewStudent('${jsStr(r.id)}')"`) }
+      ${App.actBtn('rupee','Collect Fee',`onclick="collectFee('${jsStr(r.id)}')"`) }
+      ${App.actBtn('edit','Edit',`onclick="editStudent('${jsStr(r.id)}')"`) }
+      ${App.actBtn('trash','Delete',`class="danger" onclick="delStudent('${jsStr(r.id)}')"`) }`
+  });
+}
   async function loadStudents(){
     try {
       const payload = await API.get(API_BASE); 

@@ -102,3 +102,15 @@ exports.delete = async (id) => {
     const { rows } = await db.query(query, [id]);
     return rows[0];
 };
+
+// 6. Get Teachers for Dropdown Selection
+exports.getDropdownList = async () => {
+    const query = `
+        SELECT id, teacher_name 
+        FROM teachers 
+        WHERE status = 'Active' OR status IS NULL
+        ORDER BY teacher_name ASC;
+    `;
+    const { rows } = await db.query(query);
+    return rows;
+};

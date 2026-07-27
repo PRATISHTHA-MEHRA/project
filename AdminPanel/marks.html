@@ -19,19 +19,18 @@
       let examsList = [];
       let studentsList = [];
 
-     
       const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
       const jsStr = v => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const asNum = v => Number(v ?? 0) || 0;
       const unique = values => [...new Set(values.filter(Boolean))];
 
       function unwrapList(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.data?.data)) return payload.data.data;
-  if (Array.isArray(payload?.rows)) return payload.rows;
-  return [];
-}
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.data)) return payload.data;
+        if (Array.isArray(payload?.data?.data)) return payload.data.data;
+        if (Array.isArray(payload?.rows)) return payload.rows;
+        return [];
+      }
 
       function mapMark(item = {}) {
         return {
@@ -40,7 +39,6 @@
           batch: item.batch || item.batch_name || '',
           subject: item.subject || item.subject_name || '',
           total: asNum(item.total ?? item.total_marks ?? 100),
-          
           studentId: item.studentId || item.student_id || '',
           student: item.student || item.student_name || 'Unknown',
           obtained: asNum(item.obtained ?? item.marks_obtained ?? 0),
@@ -60,10 +58,12 @@
       }
 
       function fallbackMarks() {
-        return (DB.marks || []).slice(0, 50).map(mapMark);
+        return (typeof DB !== 'undefined' && DB.marks ? DB.marks : []).slice(0, 50).map(mapMark);
       }
 
-      function calcPct(m) { return m.total ? Math.round(m.obtained / m.total * 100) : 0; }
+      function calcPct(m) { 
+        return m.total ? Math.round((m.obtained / m.total) * 100) : 0; 
+      }
 
       function studentsForExam(exam) {
         if (!exam) return [];
@@ -96,12 +96,12 @@
             { key: 'exam', label: 'Test', render: r => `<div>${esc(r.exam)}</div><div class="t-sub">${esc(r.batch)}</div>` },
             { key: 'subject', label: 'Subject' },
             { key: 'obtained', label: 'Score', num: true, render: r => `<b>${r.obtained}</b> / ${r.total}` },
-            { key: 'pct', label: '%', num: true, render: r => `<div class="pct-cell"><div class="progress ${r.obtained / r.total < 0.4 ? 'danger' : r.obtained / r.total < 0.6 ? 'warn' : ''}"><span style="width:${Math.round(r.obtained / r.total * 100)}%"></span></div><span class="num">${Math.round(r.obtained / r.total * 100)}%</span></div>` },
+            { key: 'pct', label: '%', num: true, render: r => `<div class="pct-cell"><div class="progress ${r.obtained / r.total < 0.4 ? 'danger' : r.obtained / r.total < 0.6 ? 'warn' : ''}"><span style="width:${calcPct(r)}%"></span></div><span class="num">${calcPct(r)}%</span></div>` },
             { key: 'rank', label: 'Rank', num: true, render: r => `#${r.rank || '-'}` },
             { key: 'grade', label: 'Grade', render: r => `<span class="badge ${r.grade && r.grade.startsWith('A') ? 'b-green' : r.grade && r.grade.startsWith('B') ? 'b-blue' : 'b-amber'}"><span class="pip"></span>${esc(r.grade || '-')}</span>` },
             { key: 'remarks', label: 'Remark' }
           ],
-          actions: r => `${App.actBtn('eye', 'View', `onclick="viewMark('${jsStr(r.examId)}','${jsStr(r.student)}')"`)}${App.actBtn('edit', 'Edit', "App.toast('Edit marks','info')")}`
+          actions: r => `${App.actBtn('eye', 'View', `onclick="viewMark('${jsStr(r.examId)}','${jsStr(r.student)}')"`)}`
         });
       }
 
@@ -123,8 +123,8 @@
           studentsList = unwrapList(studentsRes).map(normStudent);
         } catch (err) {
           App.toast('Failed to load exams/students — falling back to sample list', 'err');
-          examsList = DB.exams || [];
-          studentsList = (DB.students || []).map(normStudent);
+          examsList = (typeof DB !== 'undefined' && DB.exams) ? DB.exams : [];
+          studentsList = (typeof DB !== 'undefined' && DB.students ? DB.students : []).map(normStudent);
         }
       }
 
@@ -133,12 +133,14 @@
         if (!m) return App.toast('Marks not found', 'err');
         App.modal({
           size: 'md', title: esc(m.student) + ' · ' + esc(m.exam), sub: esc(m.batch),
-          body: `<div class="dl cols-2"><div class="it"><div class="k">Subject</div><div class="v">${esc(m.subject)}</div></div>
-<div class="it"><div class="k">Score</div><div class="v num">${m.obtained} / ${m.total}</div></div>
-<div class="it"><div class="k">Percentage</div><div class="v num">${calcPct(m)}%</div></div>
-<div class="it"><div class="k">Rank</div><div class="v num">#${m.rank || '-'}</div></div>
-<div class="it"><div class="k">Grade</div><div class="v">${esc(m.grade || '-')}</div></div></div>
-<div class="sec-title">Remarks</div><p style="color:var(--ink-2)">${esc(m.remarks || '—')}</p>`
+          body: `<div class="dl cols-2">
+            <div class="it"><div class="k">Subject</div><div class="v">${esc(m.subject)}</div></div>
+            <div class="it"><div class="k">Score</div><div class="v num">${m.obtained} / ${m.total}</div></div>
+            <div class="it"><div class="k">Percentage</div><div class="v num">${calcPct(m)}%</div></div>
+            <div class="it"><div class="k">Rank</div><div class="v num">#${m.rank || '-'}</div></div>
+            <div class="it"><div class="k">Grade</div><div class="v">${esc(m.grade || '-')}</div></div>
+          </div>
+          <div class="sec-title">Remarks</div><p style="color:var(--ink-2)">${esc(m.remarks || '—')}</p>`
         });
       };
 
@@ -147,8 +149,14 @@
 
         function studentRowsHtml(exam) {
           const studs = studentsForExam(exam);
-          if (!studs.length) return `<tr><td colspan="3" style="text-align:center;color:var(--ink-2)">No students found for ${esc(exam.batch)}</td></tr>`;
-          return studs.map(s => `<tr data-stu="${esc(s.id)}" data-name="${esc(s.name)}"><td>${App.whoCell(esc(s.name), esc(s.id))}</td><td><input class="num m-obt" style="width:80px;padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" value="${Math.round((exam.total || 100) * 0.7)}"></td><td><input class="m-remark" style="padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" placeholder="Optional remark"></td></tr>`).join('');
+          if (!studs.length) return `<tr><td colspan="3" style="text-align:center;color:var(--ink-2);padding:16px;">No students found for batch: ${esc(exam.batch)}</td></tr>`;
+          return studs.map(s => `
+            <tr data-stu="${esc(s.id)}" data-name="${esc(s.name)}">
+              <td>${App.whoCell(esc(s.name), esc(s.id))}</td>
+              <td><input type="number" class="num m-obt" style="width:80px;padding:5px 8px;border:1px solid var(--line-2);border-radius:6px" value="${Math.round((exam.total || 100) * 0.7)}"></td>
+              <td><input class="m-remark" style="padding:5px 8px;border:1px solid var(--line-2);border-radius:6px;width:100%" placeholder="Optional remark"></td>
+            </tr>
+          `).join('');
         }
 
         const examOptionsHtml = examsList.map(e => `<option value="${esc(e.id)}">${esc(e.name)} · ${esc(e.batch)}</option>`).join('');
@@ -158,12 +166,17 @@
           size: 'lg',
           title: 'Enter Marks (Bulk)',
           sub: 'Pick a test, then enter scores for its students',
-          body: `<div class="form-grid" style="margin-bottom:16px">
-<div><label>Test</label><select id="m_exam">${examOptionsHtml}</select></div>
-<div><label>Total Marks</label><input id="m_total" class="num" value="${esc(initialExam.total)}" disabled></div>
-</div>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Student</th><th style="width:120px">Marks</th><th>Remark</th></tr></thead>
-<tbody id="m_rows">${studentRowsHtml(initialExam)}</tbody></table></div>`,
+          body: `
+            <div class="form-grid" style="margin-bottom:16px">
+              <div><label>Test</label><select id="m_exam">${examOptionsHtml}</select></div>
+              <div><label>Total Marks</label><input id="m_total" class="num" value="${esc(initialExam.total || 100)}" disabled></div>
+            </div>
+            <div class="tbl-wrap">
+              <table class="tbl">
+                <thead><tr><th>Student</th><th style="width:120px">Marks</th><th>Remark</th></tr></thead>
+                <tbody id="m_rows">${studentRowsHtml(initialExam)}</tbody>
+              </table>
+            </div>`,
           foot: `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveMarksBtn">Save & Publish</button>`,
           onOpen: box => {
             const examSelect = box.querySelector('#m_exam');
@@ -172,26 +185,32 @@
 
             examSelect.onchange = () => {
               const exam = examsList.find(e => String(e.id) === examSelect.value);
-              totalInput.value = exam.total;
-              rowsBody.innerHTML = studentRowsHtml(exam);
+              if (exam) {
+                totalInput.value = exam.total || 100;
+                rowsBody.innerHTML = studentRowsHtml(exam);
+              }
             };
 
             box.querySelector('#saveMarksBtn').onclick = async () => {
               const exam = examsList.find(e => String(e.id) === examSelect.value);
-              const rows = [...box.querySelectorAll('#m_rows tr[data-stu]')].map(tr => ({
+              if (!exam) return App.toast('Selected exam invalid', 'err');
+
+              const trs = box.querySelectorAll('#m_rows tr[data-stu]');
+              const rows = [...trs].map(tr => ({
                 studentId: tr.getAttribute('data-stu'),
                 studentName: tr.getAttribute('data-name'),
                 obtained: asNum(tr.querySelector('.m-obt').value),
                 remarks: tr.querySelector('.m-remark').value.trim()
               }));
-              if (!rows.length) return App.toast('No students to save marks for', 'err');
+
+              if (!rows.length) return App.toast('No students found to save marks for', 'err');
 
               const payload = {
                 examId: exam.id,
-                examName: exam.name,
-                batch: exam.batch,
-                subject: exam.subject,
-                total: asNum(exam.total),
+                examName: exam.name || '',
+                batch: exam.batch || '',
+                subject: exam.subject || '',
+                total: asNum(exam.total || 100),
                 scores: rows
               };
 

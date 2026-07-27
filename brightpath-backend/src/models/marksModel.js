@@ -4,6 +4,7 @@ const getMarksWithRankings = async () => {
     const query = `
         SELECT 
             student_name as "student",
+            student_id as "studentId",
             exam_name as "exam",
             exam_id as "examId",
             batch_name as "batch",
@@ -38,7 +39,7 @@ const getMarksByStudentId = async (studentId, studentCode) => {
            OR TRIM(LOWER(student_id)) = TRIM(LOWER($2))
         ORDER BY created_at DESC;
     `;
-    const result = await db.query(query, [String(studentId), studentCode || '']);
+    const result = await db.query(query, [String(studentId || ''), String(studentCode || '')]);
     return result.rows;
 };
 
@@ -54,7 +55,12 @@ const saveBulkMarks = async (records) => {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (exam_id, student_id) 
             DO UPDATE SET 
+                exam_name = EXCLUDED.exam_name,
+                batch_name = EXCLUDED.batch_name,
+                subject_name = EXCLUDED.subject_name,
+                student_name = EXCLUDED.student_name,
                 marks_obtained = EXCLUDED.marks_obtained,
+                total_marks = EXCLUDED.total_marks,
                 grade = EXCLUDED.grade,
                 remarks = EXCLUDED.remarks,
                 created_at = CURRENT_TIMESTAMP
@@ -64,9 +70,16 @@ const saveBulkMarks = async (records) => {
         const saved = [];
         for (const record of records) {
             const values = [
-                record.examId, record.examName, record.batch, record.subject,
-                record.studentId, record.studentName, record.obtained, 
-                record.total, record.grade, record.remarks
+                String(record.examId),
+                record.examName || '',
+                record.batch || '',
+                record.subject || '',
+                String(record.studentId),
+                record.studentName || '',
+                Number(record.obtained) || 0,
+                Number(record.total) || 100,
+                record.grade || 'D',
+                record.remarks || ''
             ];
             const res = await client.query(query, values);
             saved.push(res.rows[0]);
