@@ -14,4 +14,7 @@ router.put("/:id", auth, teacherController.updateTeacher);
 
 router.delete("/:id", auth, teacherController.deleteTeacher);
 
+// Dynamic dropdown route MUST be placed before /:id routes
+router.get("/dropdown", auth, teacherController.getTeacherDropdown);
+
 module.exports = router;

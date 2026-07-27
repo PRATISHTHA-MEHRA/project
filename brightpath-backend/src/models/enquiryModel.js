@@ -1,6 +1,5 @@
 const db = require("../config/db");
 
-
 const getAll = async () => {
     const result = await db.query(`
         SELECT id, student_name, parent_name, mobile, class_level, course_interest,
@@ -11,8 +10,8 @@ const getAll = async () => {
     return result.rows;
 };
 
-const getById = async (id) => {
-    const result = await db.query(`
+const getById = async (id, client = db) => {
+    const result = await client.query(`
         SELECT id, student_name, parent_name, mobile, class_level, course_interest,
                source, preferred_timing, followup_date, counselor, status, remarks, created_at
         FROM enquiries
@@ -26,7 +25,7 @@ const create = async (data) => {
         INSERT INTO enquiries (
             student_name, parent_name, mobile, class_level, course_interest,
             source, preferred_timing, followup_date, counselor, status, remarks, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, CURRENT_DATE))
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 'New'), $11, COALESCE($12, CURRENT_DATE))
         RETURNING *;
     `, [
         data.student_name, data.parent_name, data.mobile, data.class_level, data.course_interest,

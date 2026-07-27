@@ -138,3 +138,17 @@ exports.deleteTeacher = async (req, res) => {
         res.status(500).json({ success: false, message: err.message || "Failed to delete teacher" });
     }
 };
+
+// Get Simple Teacher List for Dropdowns
+exports.getTeacherDropdown = async (req, res) => {
+    try {
+        const teachers = await Teacher.getDropdownList();
+        res.status(200).json({
+            success: true,
+            data: teachers
+        });
+    } catch (err) {
+        console.error("Error in getTeacherDropdown:", err);
+        res.status(500).json({ success: false, message: err.message || "Failed to fetch teacher dropdown options" });
+    }
+};
