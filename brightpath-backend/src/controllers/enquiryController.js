@@ -3,7 +3,7 @@ const Demo = require("../models/demoModel");
 const db = require("../config/db");
 const admissionController = require("./admissionController");
 
-const Demo = require("../models/demoModel");
+
 const mapToFrontend = (e) => {
     if (!e) return null;
     return {
