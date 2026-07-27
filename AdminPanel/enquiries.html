@@ -117,17 +117,22 @@ if(App.guard()){
     if (!data.course) return 'Please select a course of interest.';
     return null;
   }
+let batches = [];
 
-  async function loadLookups(){
-    try {
-      const courseRes = await API.get('/courses');
-      courses = courseRes?.data || [];
-    } catch (err) {
-      console.warn('Could not load course datasets:', err);
-      courses = [];
-    }
+async function loadLookups(){
+  try {
+    const [courseRes, batchRes] = await Promise.all([
+      API.get('/courses'),
+      API.get('/batches').catch(() => ({ data: [] }))
+    ]);
+    courses = courseRes?.data || [];
+    batches = batchRes?.data || [];
+  } catch (err) {
+    console.warn('Could not load lookup datasets:', err);
+    courses = [];
+    batches = [];
   }
-
+}
   function renderPage(rows){
     currentEnquiries = rows;
     const converted = rows.filter(e => e.status === 'Converted').length;
@@ -325,27 +330,131 @@ window.editE = id => {
       }
     });
   };
-  function convertForm(x, matchedCourse){
-    if (!matchedCourse) {
-      return `<div class="empty-state">
-        Course "${esc(x.course)}" from this enquiry doesn't match any registered course.
-        Please update the enquiry's course to an active course before converting.
-      </div>`;
-    }
-
-    return `<div class="dl cols-2">
-        <div class="it"><div class="k">Student</div><div class="v">${esc(x.name)} (${esc(x.cls)})</div></div>
-        <div class="it"><div class="k">Selected Course</div><div class="v">${esc(matchedCourse.course_name)}</div></div>
-      </div>
-      <div class="form-grid">
-        <div><label>Fee Schedule</label><select id="cv_feetype">${FEE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-        <div><label>Fee Amount</label><input type="number" id="cv_feeamount" step="0.01" placeholder="0.00"></div>
-        <div><label>Admission Date</label><input type="date" id="cv_date" value="${new Date().toISOString().split('T')[0]}"></div>
-        <div><label>Initial Fee Status</label><select id="cv_feestatus"><option>Paid</option><option>Pending</option></select></div>
-      </div>`;
+function convertForm(x, matchedCourse){
+  if (!matchedCourse) {
+    return `<div class="empty-state">
+      Course "${esc(x.course)}" from this enquiry doesn't match any registered course.
+      Please update the enquiry's course to an active course before converting.
+    </div>`;
   }
 
-  window.convertE = id => {
+  // Safely filter batches matching the course name returned by mapToFrontend
+  const targetCourseName = (matchedCourse.course_name || '').trim().toLowerCase();
+  const courseBatches = batches.filter(b => 
+    (b.course || '').trim().toLowerCase() === targetCourseName
+  );
+
+  return `<div class="form-grid">
+    <div class="full">
+      <div class="sec-title" style="font-weight:600; margin-bottom: 8px;">1. Personal & Contact Info</div>
+    </div>
+    
+    <div>
+      <label>Student Name <span class="text-danger">*</span></label>
+      <input id="cv_name" value="${esc(x.name)}" placeholder="Full Name">
+    </div>
+    <div>
+      <label>Student Mobile <span class="text-danger">*</span></label>
+      <input id="cv_mobile" value="${esc(x.mobile)}" maxlength="10" placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,10)">
+    </div>
+    <div>
+      <label>Parent Name <span class="text-danger">*</span></label>
+      <input id="cv_parent" value="${esc(x.parent)}" placeholder="Parent / Guardian Name">
+    </div>
+    <div>
+      <label>Parent Mobile <span class="text-danger">*</span></label>
+      <input id="cv_parent_mobile" maxlength="10" placeholder="10-digit parent mobile" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,10)">
+    </div>
+    <div>
+      <label>Gender <span class="text-danger">*</span></label>
+      <select id="cv_gender">
+        <option value="M">Male</option>
+        <option value="F">Female</option>
+        <option value="O">Other</option>
+      </select>
+    </div>
+    <div>
+      <label>Date of Birth <span class="text-danger">*</span></label>
+      <input type="date" id="cv_dob">
+    </div>
+    <div>
+      <label>School Name <span class="text-danger">*</span></label>
+      <input id="cv_school" placeholder="Current or Previous School">
+    </div>
+    <div>
+      <label>Address <span class="text-danger">*</span></label>
+      <input id="cv_address" placeholder="Residential Address">
+    </div>
+
+    <div class="full" style="margin-top: 12px;">
+      <div class="sec-title" style="font-weight:600; margin-bottom: 8px;">2. Course & Batch Assignment</div>
+    </div>
+
+    <div>
+      <label>Class Level <span class="text-danger">*</span></label>
+      <select id="cv_cls">
+        ${CLASS_LEVELS.map(k => `<option ${x.cls === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <label>Course Selected</label>
+      <input id="cv_course" value="${esc(matchedCourse.course_name)}" disabled style="background:#f1f5f9;">
+    </div>
+    <div class="full">
+      <label>Assigned Batch <span class="text-danger">*</span></label>
+      <select id="cv_batch">
+        ${courseBatches.length > 0 
+          ? courseBatches.map(b => {
+              // Extract batch name from b.name (mapped by backend mapToFrontend)
+              const batchName = b.name || b.batch_name || 'Unnamed Batch';
+              return `<option value="${esc(batchName)}">${esc(batchName)}</option>`;
+            }).join('')
+          : `<option value="Regular Batch">Regular Batch</option>`
+        }
+      </select>
+    </div>
+    
+
+
+    <div class="full" style="margin-top: 12px;">
+      <div class="sec-title" style="font-weight:600; margin-bottom: 8px;">3. Fee Details & Initial Payment</div>
+    </div>
+
+    <div>
+      <label>Fee Schedule <span class="text-danger">*</span></label>
+      <select id="cv_feetype">
+        ${FEE_TYPES.map(t => `<option>${t}</option>`).join('')}
+      </select>
+    </div>
+    <div>
+      <label>Total Fee Amount <span class="text-danger">*</span></label>
+      <input type="number" id="cv_feeamount" step="0.01" placeholder="0.00">
+    </div>
+    <div>
+      <label>Amount Paid Now</label>
+      <input type="number" id="cv_paid" step="0.01" value="0.00">
+    </div>
+    <div>
+      <label>Discount</label>
+      <input type="number" id="cv_discount" step="0.01" value="0.00">
+    </div>
+    <div>
+      <label>Payment Mode</label>
+      <select id="cv_mode">
+        <option>Cash</option>
+        <option>UPI</option>
+        <option>Card</option>
+        <option>Bank Transfer</option>
+      </select>
+    </div>
+    <div>
+      <label>Admission Date <span class="text-danger">*</span></label>
+      <input type="date" id="cv_date" value="${new Date().toISOString().split('T')[0]}">
+    </div>
+  </div>`;
+}
+
+window.convertE = id => {
     const x = findCurrentEnquiry(id);
     if (!x) return App.toast('Enquiry record not found', 'err');
 
@@ -372,28 +481,55 @@ window.editE = id => {
         feeTypeSel.onchange = refreshFeeAmount;
         refreshFeeAmount();
 
-        box.querySelector('#cv_sv').onclick = async () => {
-          const feeType = feeTypeSel.value;
-          const feeAmount = feeAmountInput.value;
-          const feeStatus = box.querySelector('#cv_feestatus').value;
-          const admissionDate = box.querySelector('#cv_date').value;
-
-          if (!feeAmount || Number(feeAmount) < 0) return App.toast('Please enter a valid fee amount','err');
+box.querySelector('#cv_sv').onclick = async () => {
+          const payload = {
+  name: box.querySelector('#cv_name').value.trim(),
+  mobile: box.querySelector('#cv_mobile').value.trim(),
+  parent: box.querySelector('#cv_parent').value.trim(),
+  parentMobile: box.querySelector('#cv_parent_mobile').value.trim(),
+  gender: box.querySelector('#cv_gender').value,
+  dob: box.querySelector('#cv_dob').value,
+  school: box.querySelector('#cv_school').value.trim(),
+  address: box.querySelector('#cv_address').value.trim(),
+  cls: box.querySelector('#cv_cls').value,
+  batch: box.querySelector('#cv_batch').value,
+  feeType: feeTypeSel.value,
+  feeAmt: Number(feeAmountInput.value) || 0,
+  paid: Number(box.querySelector('#cv_paid').value) || 0,
+  discount: Number(box.querySelector('#cv_discount').value) || 0,
+  fine: 0,
+  mode: box.querySelector('#cv_mode').value,
+  admission: box.querySelector('#cv_date').value,
+  feeStatus: box.querySelector('#cv_feeStatus')?.value || undefined
+};
+          // Validation matching your controller constraints
+          if (!payload.name) return App.toast('Student Name is required', 'err');
+          if (!payload.mobile || !/^\d{10}$/.test(payload.mobile)) return App.toast('Enter a valid 10-digit student mobile number', 'err');
+          if (!payload.parent) return App.toast('Parent Name is required', 'err');
+          if (!payload.parentMobile || !/^\d{10}$/.test(payload.parentMobile)) return App.toast('Enter a valid 10-digit parent mobile number', 'err');
+          if (!payload.gender) return App.toast('Gender is required', 'err');
+          if (!payload.dob) return App.toast('Date of Birth is required', 'err');
+          if (!payload.school) return App.toast('School Name is required', 'err');
+          if (!payload.address) return App.toast('Address is required', 'err');
+          if (!payload.batch) return App.toast('Assigned Batch is required', 'err');
+          if (!payload.feeAmt || payload.feeAmt < 0) return App.toast('Please enter a valid fee amount', 'err');
+          if (!payload.admission) return App.toast('Admission Date is required', 'err');
 
           try {
-            await API.post(`/enquiries/${encodeURIComponent(x.id)}/convert`, {
-              feeType, feeAmount, feeStatus, admissionDate
-            });
+            await API.post(`/enquiries/${encodeURIComponent(x.id)}/convert`, payload);
             App.closeModal();
-            App.toast('Enquiry converted into student admission successfully!','ok');
+            App.toast('Enquiry converted into student admission successfully!', 'ok');
             location.href = 'admissions.html';
           } catch (err) {
-            App.toast(err.message || 'Failed to complete admission conversion','err');
+            App.toast(err.message || 'Failed to complete admission conversion', 'err');
           }
+        
         };
-      }
-    });
-  };
+
+        } // Properly closed onOpen callback
+  }); // Properly closed App.modal call
+}; // Properly closed window.convertE function
+       
 
   (async function init(){
     await loadLookups();

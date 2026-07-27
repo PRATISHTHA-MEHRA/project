@@ -292,18 +292,158 @@ if(App.guard()){
     }
   };
 
-  window.convertDemo = async id => {
+window.convertDemo = async id => {
     const x = findCurrentDemo(id);
     if (!x) return App.toast('Demo class not found', 'err');
-    try {
-      await API.post(`${ENDPOINT}/${encodeURIComponent(x.id)}/convert`, {});
-      App.toast('Demo converted to admission','ok');
-      location.href = 'admissions.html';
-    } catch (err) {
-      App.toast(err.message || 'Failed to convert demo','err');
-    }
-  };
 
+    // Step A: Pre-fetch details or locate matched enquiry info if available
+    let matchedEnquiry = null;
+    try {
+      const enqPayload = await API.get('/enquiries');
+      const allEnquiries = unwrapList(enqPayload);
+      matchedEnquiry = allEnquiries.find(e => 
+        (e.student_name || e.student || '').trim().toLowerCase() === (x.student || '').trim().toLowerCase() &&
+        e.status !== 'Converted'
+      ) || null;
+    } catch (err) {
+      console.warn('Could not load enquiry details for pre-filling:', err);
+    }
+
+    // Default fallback values extracted from demo record or matched enquiry
+    const initName = x.student || matchedEnquiry?.student_name || matchedEnquiry?.name || '';
+    const initMobile = matchedEnquiry?.mobile || '';
+    const initParent = matchedEnquiry?.parent_name || matchedEnquiry?.parent || '';
+    const initClass = matchedEnquiry?.class_level || matchedEnquiry?.cls || 'Class 10';
+
+    // Step B: Build Modal Layout
+    App.modal({
+      size: 'lg',
+      title: 'Convert Demo to Admission',
+      sub: `Demo ID: ${esc(x.id)}`,
+      body: `
+        <div class="form-grid">
+          <div class="full"><div class="sec-title" style="font-weight:600; margin-bottom:8px;">1. Personal & Contact Info</div></div>
+          <div>
+            <label>Student Name <span class="text-danger">*</span></label>
+            <input id="cv_name" value="${esc(initName)}" placeholder="Full Name">
+          </div>
+          <div>
+            <label>Student Mobile <span class="text-danger">*</span></label>
+            <input id="cv_mobile" value="${esc(initMobile)}" maxlength="10" placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,10)">
+          </div>
+          <div>
+            <label>Parent Name <span class="text-danger">*</span></label>
+            <input id="cv_parent" value="${esc(initParent)}" placeholder="Parent / Guardian Name">
+          </div>
+          <div>
+            <label>Parent Mobile <span class="text-danger">*</span></label>
+            <input id="cv_parent_mobile" maxlength="10" placeholder="10-digit parent mobile" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,10)">
+          </div>
+          <div>
+            <label>Gender <span class="text-danger">*</span></label>
+            <select id="cv_gender">
+              <option value="M">Male</option>
+              <option value="F">Female</option>
+              <option value="O">Other</option>
+            </select>
+          </div>
+          <div>
+            <label>Date of Birth <span class="text-danger">*</span></label>
+            <input type="date" id="cv_dob">
+          </div>
+          <div>
+            <label>School Name <span class="text-danger">*</span></label>
+            <input id="cv_school" placeholder="Current or Previous School">
+          </div>
+          <div>
+            <label>Address <span class="text-danger">*</span></label>
+            <input id="cv_address" placeholder="Residential Address">
+          </div>
+
+          <div class="full" style="margin-top:12px;"><div class="sec-title" style="font-weight:600; margin-bottom:8px;">2. Class & Course Details</div></div>
+          <div>
+            <label>Class Level <span class="text-danger">*</span></label>
+            <input id="cv_cls" value="${esc(initClass)}">
+          </div>
+          <div>
+            <label>Course Selected</label>
+            <input id="cv_course" value="${esc(x.course)}" disabled style="background:#f1f5f9;">
+          </div>
+          <div>
+            <label>Assigned Batch</label>
+            <input id="cv_batch" value="${esc(x.batch)}" disabled style="background:#f1f5f9;">
+          </div>
+          <div>
+            <label>Assigned Teacher</label>
+            <input id="cv_teacher" value="${esc(x.teacher)}" disabled style="background:#f1f5f9;">
+          </div>
+
+          <div class="full" style="margin-top:12px;"><div class="sec-title" style="font-weight:600; margin-bottom:8px;">3. Initial Fee & Payment</div></div>
+          <div>
+            <label>Total Fee Amount (₹)</label>
+            <input type="number" id="cv_feeAmt" value="0" min="0">
+          </div>
+          <div>
+            <label>Amount Paid (₹)</label>
+            <input type="number" id="cv_paid" value="0" min="0">
+          </div>
+          <div>
+            <label>Payment Mode</label>
+            <select id="cv_mode">
+              <option value="Cash">Cash</option>
+              <option value="UPI">UPI / Online</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </select>
+          </div>
+          <div>
+            <label>Admission Date</label>
+            <input type="date" id="cv_admission" value="${new Date().toISOString().slice(0, 10)}">
+          </div>
+        </div>
+      `,
+      foot: `<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="confirm_cv_btn">Confirm & Convert</button>`,
+      onOpen: (box) => {
+        box.querySelector('#confirm_cv_btn').onclick = async () => {
+          const payload = {
+            name: box.querySelector('#cv_name').value.trim(),
+            mobile: box.querySelector('#cv_mobile').value.trim(),
+            parent: box.querySelector('#cv_parent').value.trim(),
+            parentMobile: box.querySelector('#cv_parent_mobile').value.trim(),
+            gender: box.querySelector('#cv_gender').value,
+            dob: box.querySelector('#cv_dob').value,
+            school: box.querySelector('#cv_school').value.trim(),
+            address: box.querySelector('#cv_address').value.trim(),
+            cls: box.querySelector('#cv_cls').value.trim(),
+            course: x.course,
+            batch: x.batch,
+            teacher: x.teacher,
+            feeType: "Demo Conversion",
+            feeAmt: Number(box.querySelector('#cv_feeAmt').value) || 0,
+            paid: Number(box.querySelector('#cv_paid').value) || 0,
+            discount: 0,
+            fine: 0,
+            mode: box.querySelector('#cv_mode').value,
+            admission: box.querySelector('#cv_admission').value
+          };
+
+          // Basic Field Validations
+          if (!payload.name) return App.toast('Please enter student name', 'err');
+          if (!payload.mobile || payload.mobile.length !== 10) return App.toast('Please enter a valid 10-digit student mobile number', 'err');
+          if (!payload.parent) return App.toast('Please enter parent name', 'err');
+
+          try {
+            await API.post(`${ENDPOINT}/${encodeURIComponent(x.id)}/convert`, payload);
+            App.closeModal();
+            App.toast('Demo converted to admission successfully!', 'ok');
+            location.href = 'admissions.html';
+          } catch (err) {
+            App.toast(err.message || 'Failed to convert demo', 'err');
+          }
+        };
+      }
+    });
+  };
   Promise.all([loadDemos(), loadDropdownData()]);
 }
 </script>

@@ -224,24 +224,29 @@ exports.convertEnquiry = async (req, res) => {
         client = await db.connect();
         await client.query("BEGIN");
 
-      // Merge enquiry data with Convert Modal data
 const payload = {
-    name: enquiry.student_name,
-    mobile: enquiry.mobile,
-    parent: enquiry.parent_name,
-    cls: enquiry.class_level,
-
-    // Course from enquiry
-    course: enquiry.course_interest,
-
-    // Values coming from the Convert modal
-    batchId: req.body.batchId,
-    feeType: req.body.feeType,
-    feeAmt: req.body.feeAmount,
-    admission: req.body.admissionDate,
-    feeStatus: req.body.feeStatus
+  name: enquiry.student_name,
+  mobile: req.body.mobile || enquiry.mobile,
+  parent: req.body.parent || enquiry.parent_name,
+  parentMobile: req.body.parentMobile,
+  gender: req.body.gender,
+  dob: req.body.dob,
+  school: req.body.school,
+  address: req.body.address,
+  cls: req.body.cls || enquiry.class_level,
+  course: enquiry.course_interest,
+  batchId: req.body.batchId,
+  batch: req.body.batch,
+  feeType: req.body.feeType,
+  feeAmt: req.body.feeAmt,
+  paid: req.body.paid,
+  discount: req.body.discount,
+  fine: req.body.fine,
+  mode: req.body.mode,
+  admission: req.body.admission,
+  feeStatus: req.body.feeStatus,
+  remarks: req.body.remarks
 };
-
         // Reuse existing admission logic
         const result = await admissionController.createAdmissionRecord(payload, { client, source: "enquiry" });
 

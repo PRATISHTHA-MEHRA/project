@@ -153,50 +153,50 @@ exports.convertDemoToAdmission = async (req, res) => {
             return res.status(404).json({ success: false, message: "Demo instance record not found" });
         }
 
-        const enquiry = await client.query(
-            "SELECT * FROM enquiries WHERE student_name = $1 AND status != 'Converted' ORDER BY id DESC LIMIT 1",
-            [demoRow.student_name]
-        );
+        // Gather parameters sent from frontend modal fallback to demo record
+        const body = req.body || {};
+        const cleanMobile = String(body.mobile || "").trim().replace(/[\s-]/g, "");
 
-        if (!enquiry.rows.length) {
-            throw Object.assign(new Error("A matching active enquiry with contact details is required before conversion."), { status: 400 });
-        }
-
-        const e = enquiry.rows[0];
-
-        const cleanMobile = String(e.mobile || "").trim().replace(/[\s-]/g, "");
         if (!cleanMobile) {
-            throw Object.assign(
-                new Error("The matching enquiry has no mobile number recorded. Please update the enquiry with a valid mobile number first."),
-                { status: 400 }
-            );
+            throw Object.assign(new Error("A valid student mobile number is required for conversion."), { status: 400 });
         }
 
         const result = await admissionController.createAdmissionRecord({
-            name: e.student_name,
+            name: body.name || demoRow.student_name,
             mobile: cleanMobile,
-            parent: e.parent_name,
-            cls: e.class_level,
+            parent: body.parent || "",
+            parentMobile: body.parentMobile || "",
+            gender: body.gender || "M",
+            dob: body.dob || null,
+            school: body.school || "",
+            address: body.address || "",
+            cls: body.cls || "Class 10",
             course: demoRow.course_name,
             batch: demoRow.batch_name,
             teacher: demoRow.teacher_name,
             feeType: "Demo Conversion",
-            feeAmt: 0,
-            paid: 0,
-            discount: 0,
-            fine: 0,
-            mode: "Cash",
-            admission: new Date().toISOString().slice(0, 10)
+            feeAmt: Number(body.feeAmt) || 0,
+            paid: Number(body.paid) || 0,
+            discount: Number(body.discount) || 0,
+            fine: Number(body.fine) || 0,
+            mode: body.mode || "Cash",
+            admission: body.admission || new Date().toISOString().slice(0, 10)
         }, { client, source: "demo" });
 
+        // Update Demo status to Completed
         await client.query("UPDATE demo_classes SET status = 'Completed' WHERE id = $1", [id]);
-        await client.query("UPDATE enquiries SET status = 'Converted' WHERE id = $1", [e.id]);
+        
+        // Mark associated enquiry as Converted if matching name exists
+        await client.query(
+            "UPDATE enquiries SET status = 'Converted' WHERE student_name = $1 AND status != 'Converted'", 
+            [demoRow.student_name]
+        );
         
         await client.query("COMMIT");
 
         res.status(200).json({
             success: true,
-            message: "Demo converted to admission and assigned to teacher/batch.",
+            message: "Demo converted to admission successfully.",
             data: admissionController.mapToFrontend(result.admission),
             receiptId: result.receiptId
         });
