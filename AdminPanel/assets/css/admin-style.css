@@ -754,3 +754,108 @@ table.tbl td.num, table.tbl th.num { font-family: var(--font-num); text-align: r
 .multiselect-item input {
   cursor: pointer;
 }
+
+
+
+/* ============================== STUDENT TABLE — enhanced UI ============================== */
+#tbl .card {
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+#tbl .tbl-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Header */
+#tbl table.tbl thead th {
+  border-bottom: 2px solid var(--line-2);
+  background: var(--surface-2);
+}
+#tbl table.tbl thead th[data-sort] {
+  transition: color .15s ease;
+}
+#tbl table.tbl thead th[data-sort]:hover {
+  color: var(--brand-700);
+}
+
+/* Rows — clear, visible hover with a subtle lift */
+#tbl table.tbl tbody tr {
+  transition: background-color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+#tbl table.tbl tbody tr:hover {
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+#tbl table.tbl tbody td {
+  border-bottom: 1px solid var(--line);
+}
+#tbl table.tbl tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Optional soft zebra striping for readability on long lists — comment out if you prefer flat white */
+#tbl table.tbl tbody tr:nth-child(even) {
+  background: var(--surface-2);
+}
+#tbl table.tbl tbody tr:nth-child(even):hover {
+  background: var(--brand-soft);
+}
+
+/* Action buttons — crisper hover states per action */
+#tbl .act button {
+  transition: background-color .13s ease, color .13s ease, border-color .13s ease, transform .08s ease;
+}
+#tbl .act button:hover {
+  transform: translateY(-1px);
+}
+#tbl .act button:active {
+  transform: translateY(0);
+}
+
+/* Badges — tiny lift on row hover so status feels reactive */
+#tbl table.tbl tbody tr:hover .badge {
+  filter: brightness(0.97);
+}
+
+/* Serial number column: quieter than the rest */
+#tbl table.tbl td:first-child .t-sub {
+  font-family: var(--font-num);
+  font-weight: 600;
+  color: var(--ink-4);
+}
+
+/* Pager — more tactile */
+#tbl .pager button {
+  transition: background-color .13s ease, border-color .13s ease, color .13s ease;
+}
+#tbl .pager button:hover:not(.active):not(:disabled) {
+  background: var(--brand-tint);
+  border-color: var(--brand-soft);
+  color: var(--brand-700);
+}
+#tbl .pager button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+/* Toolbar — tighter, more grounded */
+#tbl .toolbar {
+  background: var(--surface-2);
+}
+#tbl .search-in input:hover {
+  border-color: var(--line-2);
+}
+#tbl .filter-sel:hover {
+  border-color: var(--line-2);
+}
+
+@media (max-width: 768px) {
+  #tbl table.tbl thead th,
+  #tbl table.tbl tbody td {
+    padding: 9px 10px;
+    font-size: 12.5px;
+  }
+}
