@@ -5,6 +5,17 @@
 <title>Students - BrightPath Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/admin-style.css">
+<style>
+
+  .locked-field, .locked-field:disabled {
+    background: #f1f2f4 !important;
+    color: #8a8f98 !important;
+    -webkit-text-fill-color: #8a8f98 !important; 
+    opacity: 1 !important;
+    cursor: not-allowed !important;
+    border-color: #e2e4e8 !important;
+  }
+</style>
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
@@ -22,6 +33,18 @@ if(App.guard()){
   let currentStudents = [];
   let courseList = []; 
   let batchList = [];  
+
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const quarters = [
+    { value:'Q1', label:'Q1 (Jan-Mar)' },
+    { value:'Q2', label:'Q2 (Apr-Jun)' },
+    { value:'Q3', label:'Q3 (Jul-Sep)' },
+    { value:'Q4', label:'Q4 (Oct-Dec)' }
+  ];
+  const halves = [
+    { value:'H1', label:'H1 (Jan-Jun)' },
+    { value:'H2', label:'H2 (Jul-Dec)' }
+  ];
 
   const head = `<button class="btn btn-light" onclick="exportStudents()">${App.svg('download')}Export</button>
     <button class="btn btn-primary" onclick="addStudent()">${App.svg('plus')}Add Student</button>`;
@@ -154,11 +177,19 @@ if(App.guard()){
     };
   }
 
+
+  const cleanPhone = v => String(v || '').replace(/[^\d+]/g, '');
+
   function validateStudentForm(s){
     const required = [['name','student name'],['mobile','student mobile'],['parent','parent name'],['parentMobile','parent mobile'],['cls','class'],['course','course'],['feeType','fee type'],['admission','admission date']];
     const missing = required.find(([key]) => !s[key]);
     if (missing) return `Enter ${missing[1]}.`;
-    if (!/^\+?[0-9]{7,15}$/.test(s.mobile.replace(/[\s-]/g,'')) || !/^\+?[0-9]{7,15}$/.test(s.parentMobile.replace(/[\s-]/g,''))) return 'Enter valid student and parent mobile numbers.';
+    const studentPhone = cleanPhone(s.mobile);
+    const parentPhone = cleanPhone(s.parentMobile);
+    if (!/^\+?[0-9]{7,15}$/.test(studentPhone)) return 'Enter a valid student mobile number.';
+    if (!/^\+?[0-9]{7,15}$/.test(parentPhone)) return 'Enter a valid parent mobile number.';
+    s.mobile = studentPhone;
+    s.parentMobile = parentPhone;
     const fee = Number(s.feeAmt), attendance = Number(s.att);
     if (!Number.isFinite(fee) || fee < 0) return 'Fee amount must be zero or greater.';
     if (!Number.isFinite(attendance) || attendance < 0 || attendance > 100) return 'Attendance must be between 0 and 100.';
@@ -342,7 +373,11 @@ if(App.guard()){
     catch (err) { App.toast(err.message || 'Failed to load student', 'err'); }
   };
 
+
   function studentForm(s){
+    const editMode = !!s;
+    const lockAttr = editMode ? 'disabled' : '';
+    const lockClass = editMode ? 'locked-field' : '';
     const classOptions = DB.classes || [];
     const feeTypeOptions = unique(['Regular Fee','Scholarship', ...(DB.feeTypes||[]), ...currentStudents.map(x=>x.feeType)]);
 
@@ -352,23 +387,24 @@ if(App.guard()){
       : unique(currentStudents.map(x=>x.batch)).map(name => ({ id:'', name }));
 
     return `<div class="form-grid">
-       <div><label>Full Name</label><input id="f_name" maxlength="120" required value="${esc(s?.name || '')}"></div>
-       <div><label>Mobile</label><input id="f_mobile" type="tel" inputmode="numeric" required value="${esc(s?.mobile || '')}"></div>
-       <div><label>Parent Name</label><input id="f_parent" required value="${esc(s?.parent || '')}"></div>
-       <div><label>Parent Mobile</label><input id="f_pmobile" type="tel" inputmode="numeric" required value="${esc(s?.parentMobile || '')}"></div>
-      <div><label>Class / Standard</label><select id="f_cls">${classOptions.map(x=>`<option ${s?.cls===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
-      <div><label>Course</label><select id="f_course">${courseOpts.map(cItem=>`<option value="${esc(cItem.name)}" data-id="${esc(cItem.id)}" ${(s?.courseId && s.courseId===cItem.id) || (!s?.courseId && s?.course===cItem.name)?'selected':''}>${esc(cItem.name)}${cItem.code?` (${esc(cItem.code)})`:''}</option>`).join('')}</select></div>
-      <div><label>Batch</label><select id="f_batch"><option value="" data-id="">— No batch —</option>${batchOpts.map(bItem=>`<option value="${esc(bItem.name)}" data-id="${esc(bItem.id)}" ${s?.batch===bItem.name?'selected':''}>${esc(bItem.name)}</option>`).join('')}</select></div>
-      <div><label>Fee Type</label><select id="f_feetype">${feeTypeOptions.map(x=>`<option ${s?.feeType===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
-       <div><label>Fee Amount</label><input class="num" id="f_feeamt" type="number" min="0" step="0.01" required value="${esc(s?.feeAmt ?? 0)}"></div>
-       <div><label>Attendance %</label><input class="num" id="f_att" type="number" min="0" max="100" step="1" required value="${esc(s?.att ?? 0)}"></div>
-      <div><label>Fee Status</label><select id="f_fee_status">${feeStatuses.map(x=>`<option ${s?.feeStatus===x?'selected':''}>${x}</option>`).join('')}</select></div>
-      <div><label>Admission Date</label><input type="date" id="f_adm" value="${esc(s?.admission || toDateStr(new Date()))}"></div>
-      <div><label>Status</label><select id="f_status">${statuses.map(x=>`<option ${s?.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
+       <div><label>Full Name</label><input id="f_name" maxlength="120" placeholder="e.g. Aarav Sharma" required value="${esc(s?.name || '')}"></div>
+       <div><label>Mobile</label><input id="f_mobile" type="tel" inputmode="numeric" placeholder="e.g. 9876543210" required value="${esc(s?.mobile || '')}"></div>
+       <div><label>Parent Name</label><input id="f_parent" placeholder="e.g. Rakesh Sharma" required value="${esc(s?.parent || '')}"></div>
+       <div><label>Parent Mobile</label><input id="f_pmobile" type="tel" inputmode="numeric" placeholder="e.g. 9876543211" required value="${esc(s?.parentMobile || '')}"></div>
+      <div><label>Class / Standard</label><select id="f_cls" class="${lockClass}" ${lockAttr}>${classOptions.map(x=>`<option ${s?.cls===x?'selected':''}>${esc(x)}</option>`).join('')}</select></div>
+      <div><label>Course</label><select id="f_course" class="${lockClass}" ${lockAttr}>${courseOpts.map(cItem=>`<option value="${esc(cItem.name)}" data-id="${esc(cItem.id)}" ${(s?.courseId && s.courseId===cItem.id) || (!s?.courseId && s?.course===cItem.name)?'selected':''}>${esc(cItem.name)}${cItem.code?` (${esc(cItem.code)})`:''}</option>`).join('')}</select></div>
+      <div><label>Batch</label><select id="f_batch" class="${lockClass}" ${lockAttr}><option value="" data-id="">— No batch —</option>${batchOpts.map(bItem=>`<option value="${esc(bItem.name)}" data-id="${esc(bItem.id)}" ${s?.batch===bItem.name?'selected':''}>${esc(bItem.name)}</option>`).join('')}</select></div>
+      <div><label>Fee Type</label><select id="f_feetype" class="${lockClass}" ${lockAttr}>${feeTypeOptions.map(x=>`<option ${s?.feeType===x?'selected':''}>${x}</option>`).join('')}</select></div>
+       <div><label>Fee Amount</label><input class="num ${lockClass}" id="f_feeamt" type="number" min="0" step="0.01" placeholder="0.00" required value="${esc(s?.feeAmt ?? 0)}" ${lockAttr}></div>
+       <div><label>Attendance %</label><input class="num ${lockClass}" id="f_att" type="number" min="0" max="100" step="1" placeholder="0-100" required value="${esc(s?.att ?? 0)}" ${lockAttr}></div>
+      <div><label>Fee Status</label><select id="f_fee_status" class="${lockClass}" ${lockAttr}>${feeStatuses.map(x=>`<option ${s?.feeStatus===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label>Admission Date</label><input type="date" id="f_adm" class="${lockClass}" value="${esc(s?.admission || toDateStr(new Date()))}" ${lockAttr}></div>
+      <div><label>Status</label><select id="f_status" ">${statuses.map(x=>`<option ${s?.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label>Gender</label><select id="f_gender"><option value="M" ${s?.gender==='M'?'selected':''}>Male</option><option value="F" ${s?.gender==='F'?'selected':''}>Female</option></select></div>
-      <div><label>Date of Birth</label><input type="date" id="f_dob" value="${esc(s?.dob || '')}"></div>
-      <div><label>School</label><input id="f_school" value="${esc(s?.school || '')}"></div>
-      <div class="full"><label>Address</label><input id="f_addr" value="${esc(s?.address || '')}"></div>
+      <div><label>Date of Birth</label><input type="date" id="f_dob" placeholder="Date of birth" value="${esc(s?.dob || '')}"></div>
+      <div><label>School</label><input id="f_school" placeholder="e.g. Delhi Public School" value="${esc(s?.school || '')}"></div>
+      <div class="full"><label>Address</label><input id="f_addr" placeholder="House no., street, city" value="${esc(s?.address || '')}"></div>
+      ${editMode ? `<div class="full t-sub">Academic and fee details are locked here - update them from Batches, Fee Collection, or Admissions instead.</div>` : ''}
     </div>`;
   }
 
@@ -430,24 +466,12 @@ if(App.guard()){
   };
 
 
-  
   window.collectFee = async id => {
     const s = findCurrentStudent(id) || await getStudent(id).catch(()=>null);
     if (!s) return App.toast('Student not found','err');
-    if (s.feeStatus === 'Paid') return App.toast('Fees already paid','info');
+
 
     const now = new Date();
-    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const quarters = [
-      { value:'Q1', label:'Q1 (Jan - Mar)' },
-      { value:'Q2', label:'Q2 (Apr - Jun)' },
-      { value:'Q3', label:'Q3 (Jul - Sep)' },
-      { value:'Q4', label:'Q4 (Oct - Dec)' }
-    ];
-    const halves = [
-      { value:'H1', label:'H1 (Jan - Jun)' },
-      { value:'H2', label:'H2 (Jul - Dec)' }
-    ];
 
     const feeTypeLower = String(s.feeType || '').toLowerCase();
     const defaultPeriodType = feeTypeLower.includes('quarter') ? 'quarterly'
@@ -469,6 +493,7 @@ if(App.guard()){
       try {
         const payload = await API.get(`/pending-fees/${encodeURIComponent(s.code || s.id)}?feeType=${encodeURIComponent(s.feeType)}&period=${encodeURIComponent(period)}`);
         const row = payload?.data;
+        
         return (row && row.due != null) ? Number(row.due) : s.feeAmt;
       } catch (err) {
         console.warn('Could not fetch current due, falling back to course fee:', err);
@@ -486,6 +511,7 @@ if(App.guard()){
       : `${defaultMonth} ${defaultYear}`;
 
     const initialDue = await fetchDue(defaultInitialPeriod);
+    const initialAlreadyPaid = initialDue <= 0;
 
     App.modal({ size:'lg', title:'Collect Fee', sub:`${esc(s.name)} - ${esc(s.batch || s.course || '-')}`,
       body:`<div class="form-grid">
@@ -506,15 +532,27 @@ if(App.guard()){
         <div><label>Paid Amount</label><input class="num" id="cf_paid" value="${esc(initialDue)}"></div>
         <div><label>Payment Mode</label><select id="cf_mode">${(DB.modes||[]).map(m=>`<option>${m}</option>`).join('')}</select></div>
         <div><label>Transaction ID</label><input id="cf_txn" placeholder="UPI / Ref no."></div>
-        <div class="full"><label>Remarks</label><input id="cf_rem" placeholder="Optional note"></div></div>`,
-      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave">Collect & Generate Receipt</button>`,
+        <div class="full"><label>Remarks</label><input id="cf_rem" placeholder="Optional note"></div></div>
+        <div class="full" id="cf_already_paid" style="display:${initialAlreadyPaid ? 'block' : 'none'};color:var(--green);font-size:12.5px;font-weight:600;padding-top:4px">
+  ✓ Fees already paid for this period.
+</div>`,
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave" ${initialAlreadyPaid ? 'disabled' : ''}>Collect & Generate Receipt</button>`,
       onOpen:b=>{
-        const refreshDue = async () => {
-          const period = buildPeriodLabel(b);
-          const due = await fetchDue(period);
-          b.querySelector('#cf_due').value = due;
-          b.querySelector('#cf_paid').value = due;
-        };
+       const refreshDue = async () => {
+  const period = buildPeriodLabel(b);
+  const due = await fetchDue(period);
+  b.querySelector('#cf_due').value = due;
+  b.querySelector('#cf_paid').value = due;
+  const saveBtn = b.querySelector('#cfSave');
+  const alreadyPaidMsg = b.querySelector('#cf_already_paid');
+  if (due <= 0) {
+    saveBtn.disabled = true;
+    alreadyPaidMsg.style.display = 'block';
+  } else {
+    saveBtn.disabled = false;
+    alreadyPaidMsg.style.display = 'none';
+  }
+};
 
         b.querySelector('#cf_period_type').onchange = (e) => {
           b.querySelector('#cf_month_wrap').style.display = e.target.value === 'monthly' ? '' : 'none';

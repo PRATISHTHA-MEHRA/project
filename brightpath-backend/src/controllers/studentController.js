@@ -34,8 +34,12 @@ const validateStudentPayload = (body, { creating = false } = {}) => {
     });
     if (creating && !data.name) throw new RequestError("Student name is required.");
     if (has(data, "name") && (!data.name || data.name.length > 120)) throw new RequestError("Enter a valid student name.");
+  
     [["mobile", "Student"], ["parentMobile", "Parent"]].forEach(([field, label]) => {
-        if (data[field] && !/^\+?[0-9]{7,15}$/.test(data[field].replace(/[\s-]/g, ""))) throw new RequestError(`${label} mobile must contain 7 to 15 digits.`);
+        if (!data[field]) return;
+        const cleaned = data[field].replace(/[^\d+]/g, "");
+        if (!/^\+?[0-9]{7,15}$/.test(cleaned)) throw new RequestError(`${label} mobile must contain 7 to 15 digits.`);
+        data[field] = cleaned;
     });
     if (has(data, "status") && !allowedStatuses.has(data.status)) throw new RequestError("Invalid student status.");
     if (has(data, "feeStatus") && !allowedFeeStatuses.has(data.feeStatus)) throw new RequestError("Invalid fee status.");
@@ -194,10 +198,11 @@ exports.getStudent = async (req, res) => {
             });
         }
 
-        const [fees, attendanceLogs, exams] = await Promise.all([
+        const [fees, attendanceLogs, exams, pendingDues] = await Promise.all([
             Fee.getReceiptsByStudentId(req.params.id, student.student_code).catch(() => []),
             Attendance.getRecentLogsByStudent(req.params.id).catch(() => []),
-            Marks.getMarksByStudentId(student.id, student.student_code).catch(() => [])
+            Marks.getMarksByStudentId(student.id, student.student_code).catch(() => []),
+            PendingFee.getTotalDueForStudent(student.student_code).catch(() => 0)
         ]);
 
         const attendance = attendanceLogs.map(l => ({
@@ -212,7 +217,8 @@ exports.getStudent = async (req, res) => {
         res.status(200).json({
             success: true,
             data: {
-                student,
+    
+                student: { ...student, pendingDues },
                 fees,
                 attendance,
                 exams

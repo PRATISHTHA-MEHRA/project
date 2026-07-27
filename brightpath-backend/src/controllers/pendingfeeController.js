@@ -1,5 +1,12 @@
 const Fee = require("../models/pendingfeeModel");
 
+
+const sendFeeError = (res, err) => {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    console.error("Pending fee request failed:", err);
+    return res.status(500).json({ success: false, message: "Unable to process the pending fee request." });
+};
+
 exports.getPendingFeesSummary = async (req, res) => {
     try {
         const records = await Fee.getPendingFeesList();

@@ -342,7 +342,7 @@ a { color: var(--brand); text-decoration: none; }
 .filter-sel:focus { outline: none; border-color: var(--brand); }
 
 /* ============================== TABLES ============================== */
-.tbl-wrap { overflow-x: auto; }
+.tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.tbl thead th {
   text-align: left; padding: 11px 16px; background: var(--surface-2);
@@ -619,6 +619,29 @@ table.tbl td.num, table.tbl th.num { font-family: var(--font-num); text-align: r
   .auth-wrap { grid-template-columns: 1fr; }
   .auth-art { display: none; }
 }
+
+/* ---- Extra responsive polish: KPI cards, workflow strip, and modal
+   forms weren't collapsing to a single column on phones/small tablets ---- */
+@media (max-width: 640px) {
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { padding: 13px 14px; }
+  .kpi .val { font-size: 21px; }
+
+  .flow-steps { flex-wrap: wrap; row-gap: 18px; justify-content: center; }
+  .flow-step { flex: 0 0 33.33%; }
+  .flow-step::before { display: none; }
+
+  .form-grid { grid-template-columns: 1fr; }
+  .dl, .dl.cols-3 { grid-template-columns: 1fr; }
+  .modal { max-width: 100% !important; }
+  .modal-body { padding: 16px; }
+  .modal-head, .modal-foot { padding: 14px 16px; }
+}
+@media (max-width: 420px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .flow-step { flex: 0 0 50%; }
+}
+
 @media print {
   .sidebar, .topbar, .modal-foot, .head-actions, .toolbar { display: none !important; }
   .main { margin-left: 0; }
@@ -757,7 +780,7 @@ table.tbl td.num, table.tbl th.num { font-family: var(--font-num); text-align: r
 
 
 
-/* ============================== STUDENT TABLE — enhanced UI ============================== */
+/* ============================== TABLE — enhanced UI (Students & Admissions) ============================== */
 #tbl .card {
   border-radius: var(--radius);
   overflow: hidden;
@@ -858,4 +881,19 @@ table.tbl td.num, table.tbl th.num { font-family: var(--font-num); text-align: r
     padding: 9px 10px;
     font-size: 12.5px;
   }
+  #tbl .toolbar { padding: 12px; gap: 8px; }
+  #tbl .search-in { min-width: 100%; flex: 1 1 100%; }
+  #tbl .filter-sel { flex: 1 1 auto; }
+  #tbl .tbl-foot { flex-direction: column; align-items: flex-start; gap: 8px; }
+  #tbl .pager { flex-wrap: wrap; }
+}
+
+@media (max-width: 480px) {
+  #tbl table.tbl thead th,
+  #tbl table.tbl tbody td {
+    padding: 8px 8px;
+    font-size: 12px;
+  }
+  #tbl .act { gap: 4px; }
+  #tbl .act button { width: 27px; height: 27px; }
 }

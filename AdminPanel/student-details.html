@@ -14,6 +14,21 @@
 <script src="assets/js/api.js"></script>
 <script>
 if(App.guard()){
+ 
+  (function hideTopSearchBar(){
+    const tryHide = () => {
+      const input = document.querySelector('input[placeholder*="Search"]');
+      if (!input) return false;
+      const wrap = input.closest('div') || input;
+      wrap.style.display = 'none';
+      return true;
+    };
+    if (tryHide()) return;
+    const observer = new MutationObserver(() => { if (tryHide()) observer.disconnect(); });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    setTimeout(() => observer.disconnect(), 5000);
+  })();
+
   const API_BASE = "/students";
   const requestedId = new URLSearchParams(location.search).get('id') || DB.students[0].id;
   let usingFallback = false;
@@ -25,18 +40,6 @@ if(App.guard()){
     if (typeof v === 'string') return v.slice(0,10);
     try { return new Date(v).toISOString().slice(0,10); } catch { return ''; }
   };
-
-  function unwrapOne(payload){
-    return payload?.data?.student || payload?.data || payload?.student || payload;
-  }
-
-  function unwrapList(payload){
-    if (Array.isArray(payload)) return payload;
-    if (Array.isArray(payload?.data)) return payload.data;
-    if (Array.isArray(payload?.rows)) return payload.rows;
-    if (Array.isArray(payload?.result)) return payload.result;
-    return [];
-  }
 
   function mapStudent(item = {}){
     const id = item.id ?? item.student_id ?? item.student_code ?? '';
@@ -56,7 +59,8 @@ if(App.guard()){
       admission: toDateStr(item.admission ?? item.admission_date),
       status: item.status ?? 'Active',
       feeStatus: item.feeStatus ?? item.fee_status ?? 'Pending',
-      pendingDues: asNum(item.pendingDues ?? item.pending_dues ?? item.pending_fee ?? 0), // <-- ADD THIS LINE
+
+      pendingDues: asNum(item.pendingDues ?? item.pending_dues ?? item.pending_fee ?? 0),
       att: asNum(item.att ?? item.attendance),
       gender: item.gender ?? 'M',
       dob: toDateStr(item.dob),
@@ -69,32 +73,27 @@ if(App.guard()){
     return mapStudent((DB.students || []).find(x => String(x.id) === String(id)) || DB.students[0]);
   }
 
+
   async function loadStudent(id){
     try {
       const payload = await API.get(`${API_BASE}/${encodeURIComponent(id)}`);
       usingFallback = false;
-      return mapStudent(unwrapOne(payload));
+      const data = payload?.data || {};
+      const rawStudent = data.student || data;
+      return {
+        student: mapStudent(rawStudent),
+        extras: {
+          fees: Array.isArray(data.fees) ? data.fees : [],
+          attendance: Array.isArray(data.attendance) ? data.attendance : [],
+          exams: Array.isArray(data.exams) ? data.exams : []
+        }
+      };
     } catch (err) {
       console.warn('Student API unavailable, showing local profile:', err);
       App.toast('Student API unavailable. Showing local profile.', 'info');
       usingFallback = true;
-      return fallbackStudent(id);
+      return { student: fallbackStudent(id), extras: { fees: [], attendance: [], exams: [] } };
     }
-  }
-
-  async function loadExtras(id){
-    if (usingFallback) return { fees: [], attendance: [], exams: [] };
-    const results = await Promise.allSettled([
-      API.get(`${API_BASE}/${encodeURIComponent(id)}/fees`),
-      API.get(`${API_BASE}/${encodeURIComponent(id)}/attendance`),
-      API.get(`${API_BASE}/${encodeURIComponent(id)}/exams`)
-    ]);
-    const unwrap = r => r.status === 'fulfilled' ? unwrapList(r.value) : [];
-    return {
-      fees: unwrap(results[0]),
-      attendance: unwrap(results[1]),
-      exams: unwrap(results[2])
-    };
   }
 
   function emptyRow(colspan, text){
@@ -192,7 +191,10 @@ if(App.guard()){
     const feesPaidYtd = extras.fees.length
       ? extras.fees.reduce((sum,f)=> sum + asNum(f.amount ?? f.paid), 0)
       : null;
-const pendingDues = s.pendingDues > 0 ? s.pendingDues : (s.feeStatus === 'Paid' ? 0 : Math.max(0, s.feeAmt - (feesPaidYtd || 0)));
+   
+    const pendingDues = usingFallback
+      ? Math.max(0, s.feeAmt - (feesPaidYtd || 0))
+      : s.pendingDues;
     const ledgerRows = extras.fees.length
       ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date) || '-')}</td></tr>`).join('')
       : emptyRow(5, 'No payment records available yet.');
@@ -257,10 +259,7 @@ const pendingDues = s.pendingDues > 0 ? s.pendingDues : (s.feeStatus === 'Paid' 
   }
 
   loadStudent(requestedId)
-    .then(async s => {
-      const extras = await loadExtras(s.id);
-      render(s, extras);
-    })
+    .then(({ student, extras }) => render(student, extras))
     .catch(err => App.toast(err.message || 'Failed to load student profile', 'err'));
 }
 </script>

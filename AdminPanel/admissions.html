@@ -162,15 +162,20 @@ if (App.guard()) {
       ],
       columns: [
         {
+          key:'_index',
+          label:'#',
+          sort:false,
+          render:(r,i)=>`<span class="t-sub">${i+1}</span>`
+        },
+        {
           key:'name',
           label:'Student',
-          render:r=>App.whoCell(esc(r.name), esc(r.id || r.mobile))
+          render:r=>App.whoCell(esc(r.name))
         },
         {
           key:'mobile',
           label:'Contact',
-          render:r=>`<div>${esc(r.mobile || '-')}</div>
-                     <div class="t-sub">${esc(r.parent || '-')}</div>`
+          render:r=>`<div>${esc(r.mobile || '-')}</div>`
         },
         {
           key:'course',
@@ -463,15 +468,15 @@ if (App.guard()) {
 
       if (step === 1) {
         body = `<div class="form-grid">
-          <div><label>Student Name *</label><input id="a_name" maxlength="120" required placeholder="Full name" value="${esc(data.name)}"></div>
-          <div><label>Mobile *</label><input id="a_mobile" type="tel" inputmode="numeric" required value="${esc(data.mobile)}"></div>
-          <div><label>Parent Name *</label><input id="a_parent" required value="${esc(data.parent)}"></div>
-          <div><label>Parent Mobile *</label><input id="a_pmobile" type="tel" inputmode="numeric" required value="${esc(data.parentMobile)}"></div>
+          <div><label>Student Name *</label><input id="a_name" maxlength="120" required placeholder="e.g. Aarav Sharma" value="${esc(data.name)}"></div>
+          <div><label>Mobile *</label><input id="a_mobile" type="tel" inputmode="numeric" required placeholder="e.g. 9876543210" value="${esc(data.mobile)}"></div>
+          <div><label>Parent Name *</label><input id="a_parent" required placeholder="e.g. Rakesh Sharma" value="${esc(data.parent)}"></div>
+          <div><label>Parent Mobile *</label><input id="a_pmobile" type="tel" inputmode="numeric" required placeholder="e.g. 9876543211" value="${esc(data.parentMobile)}"></div>
           <div><label>Class *</label><select id="a_cls">${optionList(['Class 9','Class 10','Class 11','Class 12','Class A','Class B'], data.cls)}</select></div>
           <div><label>Gender *</label><select id="a_gender"><option value="">Select Gender</option>${optionList(['Male','Female','Other'], data.gender)}</select></div>
           <div><label>Date of Birth *</label><input id="a_dob" type="date" required value="${esc(data.dob)}"></div>
-          <div><label>School Name *</label><input id="a_school" required placeholder="Current School" value="${esc(data.school)}"></div>
-          <div class="full"><label>Address *</label><input id="a_address" required placeholder="Residential Address" value="${esc(data.address)}"></div>
+          <div><label>School Name *</label><input id="a_school" required placeholder="e.g. Delhi Public School" value="${esc(data.school)}"></div>
+          <div class="full"><label>Address *</label><input id="a_address" required placeholder="House no., street, city" value="${esc(data.address)}"></div>
         </div>`;
       } else if (step === 2) {
         const courseOptions = courseList;
@@ -484,13 +489,13 @@ if (App.guard()) {
         if (!data.feeAmt) data.feeAmt = amountForFee(data.course, data.feeType);
         body = `<div class="form-grid">
           <div><label>Select Fee Type</label><select id="a_fee">${optionList(['Monthly Fee','Quarterly Fee','Semi-Annual Fee','Annual Fee', ...DB.feeTypes], data.feeType)}</select></div>
-          <div><label>Fee Amount</label><input class="num" id="a_fee_amt" type="number" min="0" step="0.01" value="${esc(data.feeAmt)}"></div>
-          <div><label>Paid Amount</label><input class="num" id="a_paid" type="number" min="0" step="0.01" value="${esc(data.paid || data.feeAmt)}"></div>
-          <div><label>Discount</label><input class="num" id="a_discount" type="number" min="0" step="0.01" value="${esc(data.discount)}"></div>
-          <div><label>Late Fine</label><input class="num" id="a_fine" type="number" min="0" step="0.01" value="${esc(data.fine)}"></div>
+          <div><label>Fee Amount</label><input class="num" id="a_fee_amt" type="number" min="0" step="0.01" placeholder="0.00" value="${esc(data.feeAmt)}"></div>
+          <div><label>Paid Amount</label><input class="num" id="a_paid" type="number" min="0" step="0.01" placeholder="0.00" value="${esc(data.paid || data.feeAmt)}"></div>
+          <div><label>Discount</label><input class="num" id="a_discount" type="number" min="0" step="0.01" placeholder="0.00" value="${esc(data.discount)}"></div>
+          <div><label>Late Fine</label><input class="num" id="a_fine" type="number" min="0" step="0.01" placeholder="0.00" value="${esc(data.fine)}"></div>
           <div><label>Payment Mode</label><select id="a_mode">${optionList(DB.modes || ['Cash'], data.mode)}</select></div>
-          <div><label>Transaction ID</label><input id="a_txn" value="${esc(data.txn)}"></div>
-          <div class="full"><label>Remarks</label><input id="a_remarks" value="${esc(data.remarks)}"></div>
+          <div><label>Transaction ID</label><input id="a_txn" placeholder="UPI / Ref no." value="${esc(data.txn)}"></div>
+          <div class="full"><label>Remarks</label><input id="a_remarks" placeholder="Optional note" value="${esc(data.remarks)}"></div>
         </div>
         <p class="hint">Tuition fees are recurring - choose Monthly, Quarterly, Semi-Annual or Annual.</p>`;
       } else {
