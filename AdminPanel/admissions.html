@@ -49,13 +49,18 @@ if (App.guard()) {
       name: item.name || item.student_name || 'Unnamed Student',
       mobile: item.mobile || '',
       parent: item.parent || item.parent_name || '',
+      parentMobile: item.parentMobile || item.parent_mobile || '',
       cls: item.cls || item.class || '',
       course: item.course || '', courseId: String(item.courseId ?? item.course_id ?? ''),
       batch: item.batch || '', batchId: String(item.batchId ?? item.batch_id ?? ''),
       feeType: item.feeType || item.fee_type || 'Monthly Fee',
       feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
       admission: item.admission || item.admission_date || item.created_at || '',
-      feeStatus: item.feeStatus || item.fee_status || 'Pending'
+      feeStatus: item.feeStatus || item.fee_status || 'Pending',
+      gender: item.gender || '',
+      dob: item.dob || '',
+      address: item.address || '',
+      school: item.school || item.school_name || ''
     };
   }
 
@@ -64,13 +69,15 @@ if (App.guard()) {
       name: a.name,
       mobile: a.mobile,
       parent: a.parent,
+      parentMobile: a.parentMobile,
       cls: a.cls,
       course: a.course,
       batch: a.batch,
       feeType: a.feeType,
       feeAmt: a.feeAmt, courseId: a.courseId, batchId: a.batchId,
       admission: a.admission, paid: a.paid, discount: a.discount, fine: a.fine,
-      mode: a.mode, txn: a.txn, remarks: a.remarks
+      mode: a.mode, txn: a.txn, remarks: a.remarks,
+      gender: a.gender, dob: a.dob, address: a.address, school: a.school
     };
   }
 
@@ -226,112 +233,109 @@ if (App.guard()) {
     }).filter(x => x.name && x.courseId);
   }
 
-
-
   window.downloadReceipt = id => {
-  const a = currentAdmissions.find(x => String(x.id) === String(id));
+    const a = currentAdmissions.find(x => String(x.id) === String(id));
 
-  if (!a) {
-    return App.toast("Admission not found", "err");
-  }
+    if (!a) {
+      return App.toast("Admission not found", "err");
+    }
 
-  App.modal({
-    size: "lg",
-    title: "Admission Receipt",
-    sub: a.id,
-    foot: `
-      <button class="btn btn-light" data-close>Close</button>
-      <button class="btn btn-primary" onclick="printAdmissionReceipt()">
-        ${App.svg("print")} Download PDF
-      </button>
-    `,
-    body: `
-      <div id="admissionReceipt" >
+    App.modal({
+      size: "lg",
+      title: "Admission Receipt",
+      sub: a.id,
+      foot: `
+        <button class="btn btn-light" data-close>Close</button>
+        <button class="btn btn-primary" onclick="printAdmissionReceipt()">
+          ${App.svg("print")} Download PDF
+        </button>
+      `,
+      body: `
+        <div id="admissionReceipt" >
 
-        <div class="receipt-head">
-          <div class="org">
-            <h3>BrightPath Coaching Centre</h3>
-            <p>
-              12, Scholars Lane, Andheri West,
-              Mumbai 400058
-            </p>
-          </div>
-
-          <div class="rno">
-            <div class="k">Receipt No.</div>
-            <div class="v">${a.id}</div>
-
-            <div class="k" style="margin-top:8px">
-              Date
+          <div class="receipt-head">
+            <div class="org">
+              <h3>BrightPath Coaching Centre</h3>
+              <p>
+                12, Scholars Lane, Andheri West,
+                Mumbai 400058
+              </p>
             </div>
 
-            <div class="v">
-              ${String(a.admission).slice(0,10)}
+            <div class="rno">
+              <div class="k">Receipt No.</div>
+              <div class="v">${a.id}</div>
+
+              <div class="k" style="margin-top:8px">
+                Date
+              </div>
+
+              <div class="v">
+                ${String(a.admission).slice(0,10)}
+              </div>
             </div>
           </div>
+
+          <div class="receipt-body">
+
+            <div class="receipt-line">
+              <span class="k">Student</span>
+              <span class="v">${a.name}</span>
+            </div>
+
+            <div class="receipt-line">
+              <span class="k">Mobile</span>
+              <span class="v">${a.mobile}</span>
+            </div>
+
+            <div class="receipt-line">
+              <span class="k">Parent</span>
+              <span class="v">${a.parent}</span>
+            </div>
+
+            <div class="receipt-line">
+              <span class="k">Class</span>
+              <span class="v">${a.cls}</span>
+            </div>
+
+            <div class="receipt-line">
+              <span class="k">Course</span>
+              <span class="v">${a.course}</span>
+            </div>
+
+            <div class="receipt-line">
+              <span class="k">Batch</span>
+              <span class="v">${a.batch}</span>
+            </div>
+
+            <div class="receipt-line">
+              <span class="k">Fee Type</span>
+              <span class="v">${a.feeType}</span>
+            </div>
+
+            <div class="receipt-total">
+              <span>Total Fee</span>
+              <span>${App.money(a.feeAmt)}</span>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;margin-top:18px">
+              <span class="stamp">
+                ${a.feeStatus}
+              </span>
+            </div>
+
+          </div>
+
+          <div class="receipt-foot">
+            This is a computer generated receipt.
+          </div>
+
         </div>
+      `
+    });
+  };
 
-        <div class="receipt-body">
-
-          <div class="receipt-line">
-            <span class="k">Student</span>
-            <span class="v">${a.name}</span>
-          </div>
-
-          <div class="receipt-line">
-            <span class="k">Mobile</span>
-            <span class="v">${a.mobile}</span>
-          </div>
-
-          <div class="receipt-line">
-            <span class="k">Parent</span>
-            <span class="v">${a.parent}</span>
-          </div>
-
-          <div class="receipt-line">
-            <span class="k">Class</span>
-            <span class="v">${a.cls}</span>
-          </div>
-
-          <div class="receipt-line">
-            <span class="k">Course</span>
-            <span class="v">${a.course}</span>
-          </div>
-
-          <div class="receipt-line">
-            <span class="k">Batch</span>
-            <span class="v">${a.batch}</span>
-          </div>
-
-          <div class="receipt-line">
-            <span class="k">Fee Type</span>
-            <span class="v">${a.feeType}</span>
-          </div>
-
-          <div class="receipt-total">
-            <span>Total Fee</span>
-            <span>${App.money(a.feeAmt)}</span>
-          </div>
-
-          <div style="display:flex;justify-content:flex-end;margin-top:18px">
-            <span class="stamp">
-              ${a.feeStatus}
-            </span>
-          </div>
-
-        </div>
-
-        <div class="receipt-foot">
-          This is a computer generated receipt.
-        </div>
-
-      </div>
-    `
-  });
-};
-
-window.printAdmissionReceipt = () => {
-
+  window.printAdmissionReceipt = () => {
     const element = document.getElementById("admissionReceipt");
 
     const opt = {
@@ -362,7 +366,8 @@ window.printAdmissionReceipt = () => {
     };
 
     html2pdf().set(opt).from(element).save();
-};
+  };
+
   window.viewAdmission = id => {
     const a = currentAdmissions.find(x => String(x.id) === String(id));
     if (!a) return App.toast('Admission not found', 'err');
@@ -372,9 +377,14 @@ window.printAdmissionReceipt = () => {
       sub:`${esc(a.cls)} - ${esc(a.course)}`,
       body:`<div class="dl cols-2">
         <div class="it"><div class="k">Mobile</div><div class="v">${esc(a.mobile || '-')}</div></div>
-        <div class="it"><div class="k">Parent</div><div class="v">${esc(a.parent || '-')}</div></div>
+        <div class="it"><div class="k">Parent Name</div><div class="v">${esc(a.parent || '-')}</div></div>
+        <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(a.parentMobile || '-')}</div></div>
         <div class="it"><div class="k">Class</div><div class="v">${esc(a.cls)}</div></div>
         <div class="it"><div class="k">Batch</div><div class="v">${esc(a.batch)}</div></div>
+        <div class="it"><div class="k">Gender</div><div class="v">${esc(a.gender || '-')}</div></div>
+        <div class="it"><div class="k">DOB</div><div class="v">${esc(String(a.dob).slice(0,10) || '-')}</div></div>
+        <div class="it"><div class="k">School</div><div class="v">${esc(a.school || '-')}</div></div>
+        <div class="it full"><div class="k">Address</div><div class="v">${esc(a.address || '-')}</div></div>
         <div class="it"><div class="k">Fee Type</div><div class="v">${esc(a.feeType)}</div></div>
         <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(a.feeAmt)}</div></div>
       </div>`,
@@ -384,8 +394,6 @@ window.printAdmissionReceipt = () => {
             </button>`
     });
   };
-
-
 
   function optionList(values, selected) {
     return unique(values).map(
@@ -408,7 +416,13 @@ window.printAdmissionReceipt = () => {
       name: '',
       mobile: '',
       parent: '',
-      cls: '', course: '', courseId: '', batch: '', batchId: '', feeType: '', feeAmt: '',
+      parentMobile: '',
+      cls: '',
+      gender: '',
+      dob: '',
+      school: '',
+      address: '',
+      course: '', courseId: '', batch: '', batchId: '', feeType: '', feeAmt: '',
       paid: '', discount: 0, fine: 0, mode: 'Cash', txn: '', remarks: '', admission: new Date().toISOString().slice(0,10)
     };
 
@@ -417,7 +431,12 @@ window.printAdmissionReceipt = () => {
         data.name = box.querySelector('#a_name').value.trim();
         data.mobile = box.querySelector('#a_mobile').value.trim();
         data.parent = box.querySelector('#a_parent').value.trim();
+        data.parentMobile = box.querySelector('#a_pmobile').value.trim();
         data.cls = box.querySelector('#a_cls').value;
+        data.gender = box.querySelector('#a_gender').value;
+        data.dob = box.querySelector('#a_dob').value;
+        data.school = box.querySelector('#a_school').value.trim();
+        data.address = box.querySelector('#a_address').value.trim();
       } else if (step === 2) {
         const course = box.querySelector('#a_course').selectedOptions[0];
         const batch = box.querySelector('#a_batch').selectedOptions[0];
@@ -444,17 +463,22 @@ window.printAdmissionReceipt = () => {
 
       if (step === 1) {
         body = `<div class="form-grid">
-          <div><label>Student Name</label><input id="a_name" maxlength="120" required placeholder="Full name" value="${esc(data.name)}"></div>
-          <div><label>Mobile</label><input id="a_mobile" type="tel" inputmode="numeric" required value="${esc(data.mobile)}"></div>
-          <div><label>Parent Name</label><input id="a_parent" required value="${esc(data.parent)}"></div>
-          <div><label>Class</label><select id="a_cls">${optionList(['Class 9','Class 10','Class 11','Class 12','Class A','Class B'], data.cls)}</select></div>
+          <div><label>Student Name *</label><input id="a_name" maxlength="120" required placeholder="Full name" value="${esc(data.name)}"></div>
+          <div><label>Mobile *</label><input id="a_mobile" type="tel" inputmode="numeric" required value="${esc(data.mobile)}"></div>
+          <div><label>Parent Name *</label><input id="a_parent" required value="${esc(data.parent)}"></div>
+          <div><label>Parent Mobile *</label><input id="a_pmobile" type="tel" inputmode="numeric" required value="${esc(data.parentMobile)}"></div>
+          <div><label>Class *</label><select id="a_cls">${optionList(['Class 9','Class 10','Class 11','Class 12','Class A','Class B'], data.cls)}</select></div>
+          <div><label>Gender *</label><select id="a_gender"><option value="">Select Gender</option>${optionList(['Male','Female','Other'], data.gender)}</select></div>
+          <div><label>Date of Birth *</label><input id="a_dob" type="date" required value="${esc(data.dob)}"></div>
+          <div><label>School Name *</label><input id="a_school" required placeholder="Current School" value="${esc(data.school)}"></div>
+          <div class="full"><label>Address *</label><input id="a_address" required placeholder="Residential Address" value="${esc(data.address)}"></div>
         </div>`;
       } else if (step === 2) {
         const courseOptions = courseList;
         const batchOptions = batchList.filter(b => !data.courseId || b.courseId === data.courseId);
         body = `<div class="form-grid">
-          <div><label>Course</label><select id="a_course"><option value="" data-id="">Select course</option>${courseOptions.map(x=>`<option value="${esc(x.name)}" data-id="${esc(x.id)}" ${data.courseId===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
-          <div><label>Batch</label><select id="a_batch"><option value="" data-id="">Select batch</option>${batchOptions.map(x=>`<option value="${esc(x.name)}" data-id="${esc(x.id)}" ${data.batchId===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+          <div><label>Course *</label><select id="a_course"><option value="" data-id="">Select course</option>${courseOptions.map(x=>`<option value="${esc(x.name)}" data-id="${esc(x.id)}" ${data.courseId===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+          <div><label>Batch *</label><select id="a_batch"><option value="" data-id="">Select batch</option>${batchOptions.map(x=>`<option value="${esc(x.name)}" data-id="${esc(x.id)}" ${data.batchId===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
         </div>`;
       } else if (step === 3) {
         if (!data.feeAmt) data.feeAmt = amountForFee(data.course, data.feeType);
@@ -474,7 +498,12 @@ window.printAdmissionReceipt = () => {
           <div class="it"><div class="k">Student</div><div class="v">${esc(data.name)}</div></div>
           <div class="it"><div class="k">Mobile</div><div class="v">${esc(data.mobile)}</div></div>
           <div class="it"><div class="k">Parent</div><div class="v">${esc(data.parent)}</div></div>
+          <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(data.parentMobile)}</div></div>
+          <div class="it"><div class="k">Gender</div><div class="v">${esc(data.gender)}</div></div>
+          <div class="it"><div class="k">DOB</div><div class="v">${esc(data.dob)}</div></div>
           <div class="it"><div class="k">Class</div><div class="v">${esc(data.cls)}</div></div>
+          <div class="it"><div class="k">School</div><div class="v">${esc(data.school)}</div></div>
+          <div class="it full"><div class="k">Address</div><div class="v">${esc(data.address)}</div></div>
           <div class="it"><div class="k">Course</div><div class="v">${esc(data.course)}</div></div>
           <div class="it"><div class="k">Batch</div><div class="v">${esc(data.batch)}</div></div>
           <div class="it"><div class="k">Fee Type</div><div class="v">${esc(data.feeType)}</div></div>
@@ -518,8 +547,20 @@ window.printAdmissionReceipt = () => {
         render(box);
         box.querySelector('#wizBtn').onclick = async () => {
           saveStep(box);
-          if (step === 1 && (!data.name || !data.parent || !data.cls)) return App.toast('Complete student, parent, and class details.','err');
-          if (step === 1 && !/^\+?[0-9]{7,15}$/.test(data.mobile.replace(/[\s-]/g,''))) return App.toast('Enter a valid mobile number.','err');
+
+          // Step 1 validation for all required fields
+          if (step === 1) {
+            if (!data.name || !data.parent || !data.parentMobile || !data.cls || !data.gender || !data.dob || !data.school || !data.address) {
+              return App.toast('Please complete all student details including Parent Mobile, Gender, DOB, School, and Address.', 'err');
+            }
+            if (!/^\+?[0-9]{7,15}$/.test(data.mobile.replace(/[\s-]/g,''))) {
+              return App.toast('Enter a valid student mobile number.', 'err');
+            }
+            if (!/^\+?[0-9]{7,15}$/.test(data.parentMobile.replace(/[\s-]/g,''))) {
+              return App.toast('Enter a valid parent mobile number.', 'err');
+            }
+          }
+
           if (step === 2 && (!data.courseId || !data.batchId)) return App.toast('Select a course and a batch.','err');
           if (step === 3) {
             const numbers = [data.feeAmt, data.paid, data.discount, data.fine].map(Number);
@@ -559,7 +600,6 @@ window.printAdmissionReceipt = () => {
     });
   };
 
-  
   (async () => {
     try { await loadAdmissionOptions(); }
     catch (err) { App.toast(err.message || 'Course and batch options could not be loaded.', 'err'); }

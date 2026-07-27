@@ -98,29 +98,47 @@ const syncPendingBalance = async (receipt) => {
     }
 };
 
-const seedInitialPendingFee = async (student) => {
-    if (!["Pending", "Overdue"].includes(student.fee_status) || !(Number(student.fee_amount) > 0)) return;
+const seedInitialPendingFee = async (student, client = db) => {
+    // Check fee status or explicitly passed balance
+    const balanceAmount = student.balance !== undefined ? Number(student.balance) : Number(student.fee_amount);
+    if (!["Pending", "Overdue"].includes(student.fee_status) || balanceAmount <= 0) return;
 
-    const period = new Date(student.admission_date).toLocaleString("en-US", { month: "short", year: "numeric" });
+    // Use passed period or format admission_date
+    const period = student.period || new Date(student.admission_date).toLocaleString("en-US", { month: "short", year: "numeric" });
 
-    const existing = await db.query(
+    // Check if pending fee entry already exists
+    const existing = await client.query(
         `SELECT id FROM student_pending_fees WHERE student_id = $1 AND fee_type = $2 AND billing_period = $3 LIMIT 1`,
         [student.student_code, student.fee_type, period]
     );
     if (existing.rows.length > 0) return;
 
     const parentMobile = student.parent_mobile || null;
-    const nextId = await generateNextFeeId();
+    
+    // Acquire ID generation lock within client transaction context if needed
+    const res = await client.query(
+        `SELECT MAX(CAST(SUBSTRING(id FROM 'FEE-([0-9]+)') AS INTEGER)) AS max_num
+         FROM student_pending_fees WHERE id ~ '^FEE-[0-9]+$'`
+    );
+    const nextNum = (res.rows[0].max_num ?? 4000) + 1;
+    const nextId = `FEE-${nextNum}`;
 
-    await db.query(
+    await client.query(
         `INSERT INTO student_pending_fees
             (id, student_id, student_name, parent_mobile, batch_name, fee_type, billing_period, due_amount, due_date, follow_up_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, 'Not Contacted')`,
-        [nextId, student.student_code, student.student_name, parentMobile, student.batch_name, student.fee_type, period, student.fee_amount]
+        [
+            nextId, 
+            student.student_code, 
+            student.student_name, 
+            parentMobile, 
+            student.batch_name, 
+            student.fee_type, 
+            period, 
+            balanceAmount
+        ]
     );
 };
-
-
 const getCurrentDueForStudent = async (studentId, feeType, period) => {
     const result = await db.query(
         `SELECT due_amount::FLOAT AS due
