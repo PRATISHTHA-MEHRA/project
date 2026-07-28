@@ -56,39 +56,43 @@ const App = (function () {
      (and its group, if it ends up empty) is hidden for any logged-in user
      whose role isn't in that list. Items with no `roles` are visible to
      everyone, same as before. */
-  const NAV = [
-    { group:"Overview", items:[ {k:"dashboard",t:"Dashboard",ic:"dash"} ]},
-    { group:"Academics", items:[
-      {k:"students",t:"Students",ic:"students"},
-      {k:"admissions",t:"Admissions",ic:"admit"},
-      {k:"enquiries",t:"Enquiries",ic:"enquiry"},
-      {k:"demo-classes",t:"Demo Classes",ic:"demo"},
-      {k:"teachers",t:"Teachers",ic:"teacher"},
-      {k:"courses",t:"Courses & Subjects",ic:"course"},
-      {k:"batches",t:"Batches",ic:"batch"},
-      {k:"timetable",t:"Timetable",ic:"timetable"},
-      {k:"attendance",t:"Attendance",ic:"attendance"}
-    ]},
-    { group:"Finance", items:[
-      {k:"fees",t:"Fee Collection",ic:"fees"},
-      {k:"pending-fees",t:"Pending Fees",ic:"pending"},
-      {k:"teacher-payments",t:"Teacher Payments",ic:"payment"},
-      {k:"income-expense",t:"Income & Expense",ic:"money"}
-    ]},
-    { group:"Assessment", items:[
-      {k:"exams",t:"Exams",ic:"exam"},
-      {k:"marks",t:"Marks",ic:"marks"},
-      {k:"homework",t:"Homework",ic:"homework"},
-      {k:"study-material",t:"Study Material",ic:"material"}
-    ]},
-    { group:"Administration", items:[
-      {k:"admin-users",t:"Admin Users",ic:"user",roles:["Super Admin"]}
-    ]},
-    { group:"Insights", items:[
-      {k:"reports",t:"Reports",ic:"reports"},
-      {k:"settings",t:"Settings",ic:"settings"}
-    ]}
-  ];
+ const NAV = [
+  { group: "Overview", items: [ 
+      { k: "dashboard", t: "Dashboard", ic: "dash" } 
+  ]},
+  { group: "Academics", items: [
+      { k: "students", t: "Students", ic: "students" },
+      { k: "admissions", t: "Admissions", ic: "admit" },
+      { k: "teachers", t: "Teachers", ic: "teacher" },
+      { k: "courses", t: "Courses & Subjects", ic: "course" },
+      { k: "batches", t: "Batches", ic: "batch" },
+      { k: "timetable", t: "Timetable", ic: "timetable" },
+      { k: "attendance", t: "Attendance", ic: "attendance" }
+  ]},
+  { group: "Finance", items: [
+      { k: "fees", t: "Fee Collection", ic: "fees" },
+      { k: "pending-fees", t: "Pending Fees", ic: "pending", badge: "24" },
+      { k: "teacher-payments", t: "Teacher Payments", ic: "payment" },
+      { k: "income-expense", t: "Income & Expense", ic: "money" }
+  ]},
+  { group: "Assessment", items: [
+      { k: "exams", t: "Exams", ic: "exam" },
+      { k: "marks", t: "Marks", ic: "marks" },
+      { k: "homework", t: "Homework", ic: "homework" },
+      { k: "study-material", t: "Study Material", ic: "material" }
+  ]},
+  { group: "Administration", items: [
+      { k: "admin-users", t: "Admin Users", ic: "user", roles: ["Super Admin"] }
+  ]},
+   { group: "Leads", items: [
+      { k: "enquiries", t: "Enquiries", ic: "enquiry", badge: "8" },
+      { k: "demo-classes", t: "Demo Classes", ic: "demo" }
+  ]},
+  { group: "Insights", items: [
+      { k: "reports", t: "Reports", ic: "reports" },
+      { k: "settings", t: "Settings", ic: "settings" }
+  ]}
+];
 
   /* ---------- AUTH ----------
      bp_admin / JWT_TOKEN can live in either localStorage (Remember Me
