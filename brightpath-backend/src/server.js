@@ -1,68 +1,64 @@
 const express = require("express");
-
 const cors = require("cors");
+require("dotenv").config();
 
-
-
-const courseRoutes = require("./routes/courseRoutes");
-const teacherRoutes = require("./routes/teacherRoutes");
-const studentRoutes = require("./routes/studentRoutes");
-const authRoutes=require("./routes/authRoutes");
-const batchRoutes = require("./routes/batchRoutes");
-const admissionRoutes = require("./routes/admissionRoutes");
-const enquiryRoutes = require("./routes/enquiryRoutes");
-const demoRoutes = require("./routes/demoRoutes");
-const attendanceRoutes = require("./routes/attendanceRoutes");
-const feeRoutes = require("./routes/feeRoutes");
-const teacherPaymentRoutes = require("./routes/teacherPaymentRoutes");
-const timetableRoutes = require("./routes/timetableRoutes");
-const examRoutes = require("./routes/examRoutes");
-const marksRoutes = require("./routes/marksRoutes");
-const pendingFeeRoutes = require("./routes/pendingfeeRoutes");
-const incomeExpenseRoutes = require("./routes/incomeExpenseRoutes");
-const homeworkRoutes=require("./routes/homeworkRoutes");
-const studyMaterialRoutes=require("./routes/studyMaterialRoutes");
-const reportRoutes=require("./routes/reportRoutes");
-const settingsRoutes=require("./routes/settingsRoutes");
-const dashboardRoutes=require("./routes/dashboardRoutes");
-const adminRoutes=require("./routes/adminRoutes");
 const app = express();
 
+// ==========================
+// Middlewares
+// ==========================
 app.use(cors());
-
 app.use(express.json());
 
-require("dotenv").config();
 app.use((req, res, next) => {
-    console.log(req.method, req.url);
+    console.log(`${req.method} ${req.originalUrl}`);
     next();
 });
 
-app.use("/api/courses", courseRoutes);
-app.use("/api/teachers", teacherRoutes);
-app.use("/api/students", studentRoutes);
-app.use("/api/auth",authRoutes);
-app.use("/api/batches", batchRoutes);
-app.use("/api/admissions", admissionRoutes);
-app.use("/api/enquiries", enquiryRoutes);
-app.use("/api/demo-classes", demoRoutes);
-app.use("/api/attendance", attendanceRoutes);
-app.use("/api/fees", feeRoutes);
-app.use("/api/teacher-payments",teacherPaymentRoutes);
-app.use("/api/timetable", require("./routes/timetableRoutes"));
-app.use("/api/exams", require("./routes/examRoutes"));
-app.use("/api/marks", require("./routes/marksRoutes"));
-app.use("/api/pending-fees", require("./routes/pendingfeeRoutes"));
-app.use("/api/income-expense", incomeExpenseRoutes);
-app.use("/api/homework",homeworkRoutes);
-app.use("/api/study-material",studyMaterialRoutes);
-app.use("/api/reports",reportRoutes);
-app.use("/api/settings",settingsRoutes);
-app.use("/api/dashboard",dashboardRoutes);
-app.use("/api/admin-users",adminRoutes);
+// ==========================
+// Routes
+// ==========================
 
+// Admin Portal
+app.use("/api/admin", require("./routes/admin.routes"));
+
+// //Teacher Portal
+// app.use("/api/teacher", require("./routes/teacher.routes"));
+
+// // Student Portal
+// app.use("/api/student", require("./routes/student.routes"));
+
+// Health Check
+app.get("/", (req, res) => {
+    res.status(200).json({
+        success: true,
+        message: "BrightPath Backend API is running."
+    });
+});
+
+// 404 Handler
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: "Route not found."
+    });
+});
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+    console.error(err);
+
+    res.status(err.status || 500).json({
+        success: false,
+        message: err.message || "Internal Server Error"
+    });
+});
+
+// ==========================
+// Server
+// ==========================
 const PORT = process.env.PORT || 5001;
 
 app.listen(PORT, () => {
-    console.log(`Server running on ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
 });

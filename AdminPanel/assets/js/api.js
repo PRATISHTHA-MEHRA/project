@@ -3,7 +3,7 @@
 const API = (() => {
 
     // Change this only when deploying
-    const BASE_URL = "http://localhost:5001/api";
+    const BASE_URL = "http://localhost:5001/api/admin";
 
     function getToken() {
         return localStorage.getItem("JWT_TOKEN");
