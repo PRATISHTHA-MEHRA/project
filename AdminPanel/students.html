@@ -516,7 +516,7 @@ return '';
 
     const initialDue = await fetchDue(defaultInitialPeriod);
     const initialAlreadyPaid = initialDue <= 0;
- 
+  
     const paidBtnStyle = 'background:#c9ccd3;border-color:#c9ccd3;color:#6b7280;cursor:not-allowed;box-shadow:none;';
 
     App.modal({ size:'lg', title:'Collect Fee', sub:`${esc(s.name)} - ${esc(s.batch || s.course || '-')}`,
@@ -533,34 +533,68 @@ return '';
         <div id="cf_half_wrap" style="${defaultPeriodType==='half'?'':'display:none'}"><label>Half</label><select id="cf_half">${halves.map(h=>`<option value="${h.value}" ${h.value===defaultHalf?'selected':''}>${h.label}</option>`).join('')}</select></div>
         <div><label>Year</label><input type="number" id="cf_year" value="${defaultYear}" min="2000" max="2100" step="1"></div>
         <div><label>Due Amount</label><input class="num" id="cf_due" value="${esc(initialDue)}" disabled></div>
-        <div><label>Discount</label><input class="num" id="cf_disc" value="0"></div>
-        <div><label>Late Fine</label><input class="num" id="cf_fine" value="0"></div>
-        <div><label>Paid Amount</label><input class="num" id="cf_paid" value="${esc(initialDue)}"></div>
+        <div><label>Discount</label><input class="num" id="cf_disc" type="number" min="0" step="0.01" value="0"></div>
+        <div><label>Late Fine</label><input class="num" id="cf_fine" type="number" min="0" step="0.01" value="0"></div>
+        <div><label>Paid Amount</label><input class="num" id="cf_paid" type="number" min="0" step="0.01" max="${esc(initialDue)}" value="${esc(initialDue)}"></div>
         <div><label>Payment Mode</label><select id="cf_mode">${(DB.modes||[]).map(m=>`<option>${m}</option>`).join('')}</select></div>
         <div><label>Transaction ID</label><input id="cf_txn" placeholder="UPI / Ref no."></div>
         <div class="full"><label>Remarks</label><input id="cf_rem" placeholder="Optional note"></div></div>
         <div class="full" id="cf_already_paid" style="display:${initialAlreadyPaid ? 'block' : 'none'};color:var(--green);font-size:12.5px;font-weight:600;padding-top:4px">
   ✓ Fees already paid for this period.
+</div>
+        <div class="full" id="cf_overpay_error" style="display:none;color:var(--red);font-size:12.5px;font-weight:600;padding-top:4px">
+  Paid amount cannot exceed the amount due for this period.
 </div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave" ${initialAlreadyPaid ? `disabled style="${paidBtnStyle}"` : ''}>Collect & Generate Receipt</button>`,
       onOpen:b=>{
+       const paidInput = b.querySelector('#cf_paid');
+       const discInput = b.querySelector('#cf_disc');
+       const fineInput = b.querySelector('#cf_fine');
+       const dueInput = b.querySelector('#cf_due');
+       const saveBtn = b.querySelector('#cfSave');
+       const alreadyPaidMsg = b.querySelector('#cf_already_paid');
+       const overpayMsg = b.querySelector('#cf_overpay_error');
+
+  
+       const getPayable = () => {
+         const due = Number(dueInput.value) || 0;
+         const discount = Number(discInput.value) || 0;
+         const fine = Number(fineInput.value) || 0;
+         return Math.max(0, due - discount + fine);
+       };
+
+       const updateSaveButtonState = () => {
+         const due = Number(dueInput.value) || 0;
+         const payable = getPayable();
+         const paid = Number(paidInput.value) || 0;
+         const isPeriodPaid = due <= 0;
+         const isOverpaying = !isPeriodPaid && paid > payable;
+
+         paidInput.max = payable;
+         alreadyPaidMsg.style.display = isPeriodPaid ? 'block' : 'none';
+         overpayMsg.style.display = isOverpaying ? 'block' : 'none';
+
+         if (isPeriodPaid || isOverpaying) {
+           saveBtn.disabled = true;
+           saveBtn.style.cssText = paidBtnStyle;
+         } else {
+           saveBtn.disabled = false;
+           saveBtn.style.cssText = '';
+         }
+       };
+
        const refreshDue = async () => {
   const period = buildPeriodLabel(b);
   const due = await fetchDue(period);
-  b.querySelector('#cf_due').value = due;
-  b.querySelector('#cf_paid').value = due;
-  const saveBtn = b.querySelector('#cfSave');
-  const alreadyPaidMsg = b.querySelector('#cf_already_paid');
-  if (due <= 0) {
-    saveBtn.disabled = true;
-    saveBtn.style.cssText = paidBtnStyle;
-    alreadyPaidMsg.style.display = 'block';
-  } else {
-    saveBtn.disabled = false;
-    saveBtn.style.cssText = '';
-    alreadyPaidMsg.style.display = 'none';
-  }
+  dueInput.value = due;
+  paidInput.value = due;
+  discInput.value = 0;
+  fineInput.value = 0;
+  updateSaveButtonState();
 };
+
+        [paidInput, discInput, fineInput].forEach(el => el.addEventListener('input', updateSaveButtonState));
+        updateSaveButtonState();
 
         b.querySelector('#cf_period_type').onchange = (e) => {
           b.querySelector('#cf_month_wrap').style.display = e.target.value === 'monthly' ? '' : 'none';
@@ -589,6 +623,8 @@ return '';
             const year = Number(b.querySelector('#cf_year').value);
             if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error('Enter a valid year.');
             if (![due, discount, fine, paid].every(Number.isFinite) || due < 0 || discount < 0 || fine < 0 || paid < 0) throw new Error('Enter valid non-negative fee amounts.');
+            const payable = Math.max(0, due - discount + fine);
+            if (paid > payable) throw new Error(`Paid amount cannot exceed the amount due (${App.money(payable)}) for this period.`);
             const balance = Math.max(0, due - discount + fine - paid);
             await API.post('/fees/collect', {
               studentId: s.code || s.id,
