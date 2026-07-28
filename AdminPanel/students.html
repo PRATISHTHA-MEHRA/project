@@ -193,8 +193,12 @@ if(App.guard()){
     const fee = Number(s.feeAmt), attendance = Number(s.att);
     if (!Number.isFinite(fee) || fee < 0) return 'Fee amount must be zero or greater.';
     if (!Number.isFinite(attendance) || attendance < 0 || attendance > 100) return 'Attendance must be between 0 and 100.';
-    if (s.dob && s.dob > s.admission) return 'Date of birth cannot be after admission date.';
-    return '';
+   if (s.dob) {
+  const dobCheck = App.validateDob(s.dob);
+  if (!dobCheck.valid) return dobCheck.msg;
+  if (s.dob > s.admission) return 'Date of birth cannot be after admission date.';
+}
+return '';
   }
 
   window.exportStudents = () => {
@@ -401,7 +405,7 @@ if(App.guard()){
       <div><label>Admission Date</label><input type="date" id="f_adm" class="${lockClass}" value="${esc(s?.admission || toDateStr(new Date()))}" ${lockAttr}></div>
       <div><label>Status</label><select id="f_status" ">${statuses.map(x=>`<option ${s?.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label>Gender</label><select id="f_gender"><option value="M" ${s?.gender==='M'?'selected':''}>Male</option><option value="F" ${s?.gender==='F'?'selected':''}>Female</option></select></div>
-      <div><label>Date of Birth</label><input type="date" id="f_dob" placeholder="Date of birth" value="${esc(s?.dob || '')}"></div>
+    <div><label>Date of Birth</label><input type="date" id="f_dob" max="${toDateStr(new Date())}" value="${esc(s?.dob || '')}"><div class="field-error" id="f_dob_error"></div></div>
       <div><label>School</label><input id="f_school" placeholder="e.g. Delhi Public School" value="${esc(s?.school || '')}"></div>
       <div class="full"><label>Address</label><input id="f_addr" placeholder="House no., street, city" value="${esc(s?.address || '')}"></div>
       ${editMode ? `<div class="full t-sub">Academic and fee details are locked here - update them from Batches, Fee Collection, or Admissions instead.</div>` : ''}

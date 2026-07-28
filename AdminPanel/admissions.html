@@ -474,7 +474,7 @@ if (App.guard()) {
           <div><label>Parent Mobile *</label><input id="a_pmobile" type="tel" inputmode="numeric" required placeholder="e.g. 9876543211" value="${esc(data.parentMobile)}"></div>
           <div><label>Class *</label><select id="a_cls">${optionList(['Class 9','Class 10','Class 11','Class 12','Class A','Class B'], data.cls)}</select></div>
           <div><label>Gender *</label><select id="a_gender"><option value="">Select Gender</option>${optionList(['Male','Female','Other'], data.gender)}</select></div>
-          <div><label>Date of Birth *</label><input id="a_dob" type="date" required value="${esc(data.dob)}"></div>
+         <div><label>Date of Birth *</label><input id="a_dob" type="date" required max="${new Date().toISOString().slice(0,10)}" value="${esc(data.dob)}"><div class="field-error" id="a_dob_error"></div></div>
           <div><label>School Name *</label><input id="a_school" required placeholder="e.g. Delhi Public School" value="${esc(data.school)}"></div>
           <div class="full"><label>Address *</label><input id="a_address" required placeholder="House no., street, city" value="${esc(data.address)}"></div>
         </div>`;
@@ -555,16 +555,18 @@ if (App.guard()) {
 
           // Step 1 validation for all required fields
           if (step === 1) {
-            if (!data.name || !data.parent || !data.parentMobile || !data.cls || !data.gender || !data.dob || !data.school || !data.address) {
-              return App.toast('Please complete all student details including Parent Mobile, Gender, DOB, School, and Address.', 'err');
-            }
-            if (!/^\+?[0-9]{7,15}$/.test(data.mobile.replace(/[\s-]/g,''))) {
-              return App.toast('Enter a valid student mobile number.', 'err');
-            }
-            if (!/^\+?[0-9]{7,15}$/.test(data.parentMobile.replace(/[\s-]/g,''))) {
-              return App.toast('Enter a valid parent mobile number.', 'err');
-            }
-          }
+          if (!data.name || !data.parent || !data.parentMobile || !data.cls || !data.gender || !data.dob || !data.school || !data.address) {
+          return App.toast('Please complete all student details including Parent Mobile, Gender, DOB, School, and Address.', 'err');
+         }
+        const dobCheck = App.validateDob(data.dob);
+        if (!dobCheck.valid) return App.toast(dobCheck.msg, 'err');
+        if (!/^\+?[0-9]{7,15}$/.test(data.mobile.replace(/[\s-]/g,''))) {
+        return App.toast('Enter a valid student mobile number.', 'err');
+        }
+        if (!/^\+?[0-9]{7,15}$/.test(data.parentMobile.replace(/[\s-]/g,''))) {
+         return App.toast('Enter a valid parent mobile number.', 'err');
+        }
+         }
 
           if (step === 2 && (!data.courseId || !data.batchId)) return App.toast('Select a course and a batch.','err');
           if (step === 3) {

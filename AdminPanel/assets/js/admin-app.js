@@ -61,7 +61,7 @@ const App = (function () {
     { group:"Academics", items:[
       {k:"students",t:"Students",ic:"students"},
       {k:"admissions",t:"Admissions",ic:"admit"},
-      {k:"enquiries",t:"Enquiries",ic:"enquiry",badge:"8"},
+      {k:"enquiries",t:"Enquiries",ic:"enquiry"},
       {k:"demo-classes",t:"Demo Classes",ic:"demo"},
       {k:"teachers",t:"Teachers",ic:"teacher"},
       {k:"courses",t:"Courses & Subjects",ic:"course"},
@@ -71,7 +71,7 @@ const App = (function () {
     ]},
     { group:"Finance", items:[
       {k:"fees",t:"Fee Collection",ic:"fees"},
-      {k:"pending-fees",t:"Pending Fees",ic:"pending",badge:"24"},
+      {k:"pending-fees",t:"Pending Fees",ic:"pending"},
       {k:"teacher-payments",t:"Teacher Payments",ic:"payment"},
       {k:"income-expense",t:"Income & Expense",ic:"money"}
     ]},
@@ -122,6 +122,37 @@ const App = (function () {
     location.href="login.html";
   }
   function me(){ try { return JSON.parse(getAdminRaw()) || {}; } catch(e){ return {}; } }
+
+  /* ---------- DOB / AGE VALIDATION ---------- */
+// BrightPath enrolls from Class 8 upward — youngest ~12, oldest ~19 (school-only, incl. repeaters)
+const AGE_RULES = { minYears: 12, maxYears: 20 };
+
+function calcAge(dobStr){
+  const dob = new Date(dobStr);
+  if (isNaN(dob)) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+}
+
+function validateDob(dobStr){
+  if (!dobStr) return { valid:false, msg:'Date of birth is required.' };
+  const dob = new Date(dobStr);
+  const today = new Date();
+  if (isNaN(dob)) return { valid:false, msg:'Enter a valid date.' };
+  if (dob > today) return { valid:false, msg:'Date of birth cannot be in the future.' };
+
+  const age = calcAge(dobStr);
+  if (age < AGE_RULES.minYears) {
+    return { valid:false, msg:`Enter a valid Date Of Birth` };
+  }
+  if (age > AGE_RULES.maxYears) {
+    return { valid:false, msg:`Enter a valid Date Of Birth` };
+  }
+  return { valid:true, age };
+}
 
   /* ---------- LAYOUT ---------- */
   function layout(active, title, crumbs, headActions){
@@ -377,5 +408,5 @@ const App = (function () {
   }
 
   return { svg, I, guard, requireRole, logout, me, layout, toast, modal, closeModal, confirmModal,
-    badge, money, avatar, whoCell, table, actBtn, barChart, sparkline, donut, hbars };
+    badge, money, avatar, whoCell, table, actBtn, barChart, sparkline, donut, hbars, validateDob,calcAge };
 })();
