@@ -27,6 +27,17 @@ const validateCollection = body => {
         err.status = 400;
         throw err;
     }
+
+    const payable = Math.max(0, values.due - values.discount + values.fine);
+    if (values.paid > payable) {
+        const err = new Error(
+            payable > 0
+                ? `Paid amount cannot exceed the amount due (₹${payable}) for this period.`
+                : "Fees are already fully paid for this period - nothing left to collect."
+        );
+        err.status = 400;
+        throw err;
+    }
     return { ...body, ...values, balance: Math.max(0, values.due - values.discount + values.fine - values.paid) };
 };
 

@@ -403,7 +403,7 @@ return '';
        <div><label>Attendance %</label><input class="num ${lockClass}" id="f_att" type="number" min="0" max="100" step="1" placeholder="0-100" required value="${esc(s?.att ?? 0)}" ${lockAttr}></div>
       <div><label>Fee Status</label><select id="f_fee_status" class="${lockClass}" ${lockAttr}>${feeStatuses.map(x=>`<option ${s?.feeStatus===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label>Admission Date</label><input type="date" id="f_adm" class="${lockClass}" value="${esc(s?.admission || toDateStr(new Date()))}" ${lockAttr}></div>
-      <div><label>Status</label><select id="f_status" ">${statuses.map(x=>`<option ${s?.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label>Status</label><select id="f_status" class="${lockClass}" ${lockAttr}>${statuses.map(x=>`<option ${s?.status===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div><label>Gender</label><select id="f_gender"><option value="M" ${s?.gender==='M'?'selected':''}>Male</option><option value="F" ${s?.gender==='F'?'selected':''}>Female</option></select></div>
     <div><label>Date of Birth</label><input type="date" id="f_dob" max="${toDateStr(new Date())}" value="${esc(s?.dob || '')}"><div class="field-error" id="f_dob_error"></div></div>
       <div><label>School</label><input id="f_school" placeholder="e.g. Delhi Public School" value="${esc(s?.school || '')}"></div>
@@ -516,6 +516,8 @@ return '';
 
     const initialDue = await fetchDue(defaultInitialPeriod);
     const initialAlreadyPaid = initialDue <= 0;
+ 
+    const paidBtnStyle = 'background:#c9ccd3;border-color:#c9ccd3;color:#6b7280;cursor:not-allowed;box-shadow:none;';
 
     App.modal({ size:'lg', title:'Collect Fee', sub:`${esc(s.name)} - ${esc(s.batch || s.course || '-')}`,
       body:`<div class="form-grid">
@@ -540,7 +542,7 @@ return '';
         <div class="full" id="cf_already_paid" style="display:${initialAlreadyPaid ? 'block' : 'none'};color:var(--green);font-size:12.5px;font-weight:600;padding-top:4px">
   ✓ Fees already paid for this period.
 </div>`,
-      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave" ${initialAlreadyPaid ? 'disabled' : ''}>Collect & Generate Receipt</button>`,
+      foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave" ${initialAlreadyPaid ? `disabled style="${paidBtnStyle}"` : ''}>Collect & Generate Receipt</button>`,
       onOpen:b=>{
        const refreshDue = async () => {
   const period = buildPeriodLabel(b);
@@ -551,9 +553,11 @@ return '';
   const alreadyPaidMsg = b.querySelector('#cf_already_paid');
   if (due <= 0) {
     saveBtn.disabled = true;
+    saveBtn.style.cssText = paidBtnStyle;
     alreadyPaidMsg.style.display = 'block';
   } else {
     saveBtn.disabled = false;
+    saveBtn.style.cssText = '';
     alreadyPaidMsg.style.display = 'none';
   }
 };
