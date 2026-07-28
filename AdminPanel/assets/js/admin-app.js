@@ -156,84 +156,99 @@ function validateDob(dobStr){
 
   /* ---------- LAYOUT ---------- */
   function layout(active, title, crumbs, headActions){
-    const u = me();
-    const sb = NAV.map(g=>{
-      const visibleItems = g.items.filter(it => !it.roles || it.roles.includes(u.role));
-      if (!visibleItems.length) return '';
-      return `
-      <div class="sb-group">${g.group}</div>
-      ${visibleItems.map(it=>`
-        <a class="sb-link ${it.k===active?'active':''}" href="${it.k}.html">
-          ${svg(it.ic)}<span>${it.t}</span>
-          ${it.badge?`<span class="badge-dot num">${it.badge}</span>`:''}
-        </a>`).join('')}
-    `;
-    }).join('');
+  const u = me();
+  const sb = NAV.map(g=>{
+    const visibleItems = g.items.filter(it => !it.roles || it.roles.includes(u.role));
+    if (!visibleItems.length) return '';
+    return `
+    <div class="sb-group">${g.group}</div>
+    ${visibleItems.map(it=>`
+      <a class="sb-link ${it.k===active?'active':''}" href="${it.k}.html" title="${it.t}">
+        ${svg(it.ic)}<span>${it.t}</span>
+        ${it.badge?`<span class="badge-dot num">${it.badge}</span>`:''}
+      </a>`).join('')}
+  `;
+  }).join('');
 
-    const notif = DB.notifications.map(n=>`
-      <div class="notif">
-        <div class="ic b-${n.color}">${svg(n.type==='fee'?'rupee':n.type==='alert'?'bell':n.type==='demo'?'demo':'enquiry')}</div>
-        <div><b>${n.title}</b><p>${n.text}</p><div class="t">${n.time}</div></div>
-      </div>`).join('');
+  const notif = DB.notifications.map(n=>`
+    <div class="notif">
+      <div class="ic b-${n.color}">${svg(n.type==='fee'?'rupee':n.type==='alert'?'bell':n.type==='demo'?'demo':'enquiry')}</div>
+      <div><b>${n.title}</b><p>${n.text}</p><div class="t">${n.time}</div></div>
+    </div>`).join('');
 
-    document.body.innerHTML = `
-      <div class="app">
-        <aside class="sidebar" id="sidebar">
-          <div class="sb-brand">
-            <div class="mark">B</div>
-            <div class="name">BrightPath<small>Coaching Centre</small></div>
-          </div>
-          <nav class="sb-nav">${sb}</nav>
-        </aside>
-        <div class="main">
-          <header class="topbar">
-            <button class="tb-icon" style="display:none" id="mtoggle">${svg('menu')}</button>
-            <div class="tb-search">${svg('search')}<input type="text" placeholder="Search students, batches, receipts…" id="globalSearch"></div>
-            <div class="tb-actions">
-              <div class="dd">
-                <button class="tb-icon" id="notifBtn">${svg('bell')}<span class="dot"></span></button>
-                <div class="dd-menu" id="notifMenu" style="min-width:320px">
-                  <div class="dd-head"><b>Notifications</b><a href="#" style="font-size:12px">Mark all read</a></div>
-                  <div class="notif-list">${notif}</div>
-                </div>
-              </div>
-              <div class="dd">
-                <div class="tb-profile" id="profileBtn">
-                  <div class="av">${u.initials||'AK'}</div>
-                  <div class="who"><b>${u.name||'Admin'}</b><span>${u.role||'Administrator'}</span></div>
-                  ${svg('chevD','tb-chev')}
-                </div>
-                <div class="dd-menu" id="profileMenu">
-                  <div class="dd-item">${svg('user')}My Profile</div>
-                  <a class="dd-item" href="settings.html">${svg('settings')}Settings</a>
-                  <div class="dd-divide"></div>
-                  <a class="dd-item" href="logout.html" style="color:var(--red)">${svg('logout')}Logout</a>
-                </div>
-              </div>
-            </div>
-          </header>
-          <main class="page">
-            <div class="page-head">
-              <div>
-                <div class="crumb"><a href="dashboard.html">Home</a>${crumbs?crumbs.map(c=>`<span class="sep">›</span>${c}`).join(''):''}</div>
-                <h1>${title}</h1>
-              </div>
-              <div class="head-actions">${headActions||''}</div>
-            </div>
-            <div id="pageContent"></div>
-          </main>
+  const sidebarCollapsed = localStorage.getItem('bp_sidebar_collapsed') === '1';
+
+  document.body.innerHTML = `
+    <div class="app ${sidebarCollapsed?'sb-collapsed':''}">
+      <aside class="sidebar" id="sidebar">
+        <button class="sb-collapse-btn" id="sbCollapseBtn" title="${sidebarCollapsed?'Expand sidebar':'Collapse sidebar'}">
+          ${svg('chevron')}
+        </button>
+        <div class="sb-brand">
+          <div class="mark">B</div>
+          <div class="name">BrightPath<small>Coaching Centre</small></div>
         </div>
+        <nav class="sb-nav">${sb}</nav>
+      </aside>
+      <div class="main">
+        <header class="topbar">
+          <button class="tb-icon" style="display:none" id="mtoggle">${svg('menu')}</button>
+          <div class="tb-search">${svg('search')}<input type="text" placeholder="Search students, batches, receipts…" id="globalSearch"></div>
+          <div class="tb-actions">
+            <div class="dd">
+              <button class="tb-icon" id="notifBtn">${svg('bell')}<span class="dot"></span></button>
+              <div class="dd-menu" id="notifMenu" style="min-width:320px">
+                <div class="dd-head"><b>Notifications</b><a href="#" style="font-size:12px">Mark all read</a></div>
+                <div class="notif-list">${notif}</div>
+              </div>
+            </div>
+            <div class="dd">
+              <div class="tb-profile" id="profileBtn">
+                <div class="av">${u.initials||'AK'}</div>
+                <div class="who"><b>${u.name||'Admin'}</b><span>${u.role||'Administrator'}</span></div>
+                ${svg('chevD','tb-chev')}
+              </div>
+              <div class="dd-menu" id="profileMenu">
+                <div class="dd-item">${svg('user')}My Profile</div>
+                <a class="dd-item" href="settings.html">${svg('settings')}Settings</a>
+                <div class="dd-divide"></div>
+                <a class="dd-item" href="logout.html" style="color:var(--red)">${svg('logout')}Logout</a>
+              </div>
+            </div>
+          </div>
+        </header>
+        <main class="page">
+          <div class="page-head">
+            <div>
+              <div class="crumb"><a href="dashboard.html">Home</a>${crumbs?crumbs.map(c=>`<span class="sep">›</span>${c}`).join(''):''}</div>
+              <h1>${title}</h1>
+            </div>
+            <div class="head-actions">${headActions||''}</div>
+          </div>
+          <div id="pageContent"></div>
+        </main>
       </div>
-      <div class="modal-back" id="modalBack"></div>
-      <div class="toast-wrap" id="toastWrap"></div>`;
+    </div>
+    <div class="modal-back" id="modalBack"></div>
+    <div class="toast-wrap" id="toastWrap"></div>`;
 
-    // dropdown wiring
-    wireDD('notifBtn','notifMenu'); wireDD('profileBtn','profileMenu');
-    const mt = document.getElementById('mtoggle');
-    if (window.innerWidth <= 920){ mt.style.display='grid'; mt.onclick=()=>document.getElementById('sidebar').classList.toggle('show'); }
-    document.getElementById('globalSearch').addEventListener('keydown',e=>{ if(e.key==='Enter') toast('Search is a mock in this demo','info'); });
-    return document.getElementById('pageContent');
-  }
+  // dropdown wiring
+  wireDD('notifBtn','notifMenu'); wireDD('profileBtn','profileMenu');
+  const mt = document.getElementById('mtoggle');
+  if (window.innerWidth <= 920){ mt.style.display='grid'; mt.onclick=()=>document.getElementById('sidebar').classList.toggle('show'); }
+  document.getElementById('globalSearch').addEventListener('keydown',e=>{ if(e.key==='Enter') toast('Search is a mock in this demo','info'); });
+
+  // sidebar collapse toggle
+  const collapseBtn = document.getElementById('sbCollapseBtn');
+  const appEl = document.querySelector('.app');
+  collapseBtn.onclick = () => {
+    const nowCollapsed = appEl.classList.toggle('sb-collapsed');
+    localStorage.setItem('bp_sidebar_collapsed', nowCollapsed ? '1' : '0');
+    collapseBtn.title = nowCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  };
+
+  return document.getElementById('pageContent');
+}
   function wireDD(btn,menu){
     const b=document.getElementById(btn), m=document.getElementById(menu);
     if(!b) return;
