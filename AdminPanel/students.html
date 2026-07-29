@@ -708,28 +708,24 @@ return '';
             if (![due, discount, fine, paid].every(Number.isFinite) || due < 0 || discount < 0 || fine < 0 || paid < 0) throw new Error('Enter valid non-negative fee amounts.');
             const payable = Math.max(0, due - discount + fine);
             if (paid > payable) throw new Error(`Paid amount cannot exceed the amount due (${App.money(payable)}) for this period.`);
-            const balance = Math.max(0, due - discount + fine - paid);
-            await API.post('/fees/collect', {
-              studentId: s.code || s.id,
-              student: s.name,
-              batch: s.batch || '',
-              feeType: s.feeType || '',
-              period,
-              due,
-              discount,
-              fine,
-              paid,
-              mode: b.querySelector('#cf_mode').value,
-              txn: b.querySelector('#cf_txn').value.trim(),
-              collectedBy: App.me().name || 'Admin',
-              date: toDateStr(new Date()),
-              balance,
-              remarks: b.querySelector('#cf_rem').value.trim()
-            });
-            await API.put(`${API_BASE}/${encodeURIComponent(s.id)}`, toApiPayload({...s, feeStatus: balance === 0 ? 'Paid' : 'Pending'}));
-            App.closeModal();
-            await loadStudents();
-            App.toast('Fee collected and receipt generated','ok');
+
+const balance = Math.max(0, due - discount + fine - paid);
+await API.post('/fees/collect', {
+  studentId: s.code || s.id,
+  student: s.name,
+  batch: s.batch || '',
+  feeType: s.feeType || '',
+  period, due, discount, fine, paid,
+  mode: b.querySelector('#cf_mode').value,
+  txn: b.querySelector('#cf_txn').value.trim(),
+  collectedBy: App.me().name || 'Admin',
+  date: toDateStr(new Date()),
+  balance,
+  remarks: b.querySelector('#cf_rem').value.trim()
+});
+App.closeModal();
+await loadStudents(); // fee_status now comes back correct from the backend
+App.toast('Fee collected and receipt generated','ok');
           } catch (err) {
             App.toast(err.message || 'Failed to collect fee','err');
           }

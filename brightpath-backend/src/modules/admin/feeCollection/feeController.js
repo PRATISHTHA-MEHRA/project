@@ -1,11 +1,23 @@
 const Fee = require("../../../models/feeModel");
 const PendingFee = require("../../../models/pendingfeeModel");
+const db = require("../../../config/db"); 
 
 
 const sendFeeError = (res, err) => {
     if (err.status) return res.status(err.status).json({ success: false, message: err.message });
     console.error("Fee request failed:", err);
     return res.status(500).json({ success: false, message: "Unable to process the fee collection." });
+};
+
+
+const refreshStudentFeeStatus = async (studentId) => {
+    const totalDue = Number(await PendingFee.getTotalDueForStudent(studentId)) || 0;
+    const feeStatus = totalDue > 0 ? 'Pending' : 'Paid';
+    await db.query(
+        `UPDATE students SET fee_status = $1 WHERE student_code = $2 OR id::text = $2`,
+        [feeStatus, String(studentId)]
+    );
+    return feeStatus;
 };
 
 const validateCollection = body => {
@@ -86,58 +98,35 @@ exports.collectFees = async (req, res) => {
     try {
         const validated = validateCollection(req.body);
         const {
-            studentId, 
-            student, 
-            batch, 
-            feeType, 
-            period, 
-            due, 
-            discount, 
-            fine, 
-            paid, 
-            mode, 
-            txn, 
-            collectedBy, 
-            date, 
-            balance, 
-            remarks 
+            studentId, student, batch, feeType, period,
+            due, discount, fine, paid, mode, txn,
+            collectedBy, date, balance, remarks
         } = validated;
 
         const newReceipt = await Fee.saveCollectionReceipt({
-            studentId,
-            studentName: student, 
-            batch,
-            feeType,
-            period,
-            due,
-            discount,
-            fine,
-            paid,
-            mode,
-            txn,
-            collectedBy, 
-            date,
-            balance,
-            remarks
+            studentId, studentName: student, batch, feeType, period,
+            due, discount, fine, paid, mode, txn, collectedBy, date, balance, remarks
         });
 
-      
         try {
             await PendingFee.syncPendingBalance({
-                studentId,
-                studentName: student,
-                batch,
-                feeType,
-                period,
-                balance
+                studentId, studentName: student, batch, feeType, period, balance
             });
         } catch (syncErr) {
             console.error("Pending-fee sync failed for receipt", newReceipt?.id, ":", syncErr.message);
         }
-        
-        res.status(201).json({ 
-            success: true, 
-            data: newReceipt 
+
+        let feeStatus = null;
+        try {
+            feeStatus = await refreshStudentFeeStatus(studentId);
+        } catch (statusErr) {
+            console.error("Fee status refresh failed for student", studentId, ":", statusErr.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            data: newReceipt,
+            feeStatus 
         });
     } catch (err) {
         sendFeeError(res, err);
