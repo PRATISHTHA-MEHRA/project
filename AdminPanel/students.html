@@ -80,23 +80,57 @@ if(App.guard()){
         .map(x => ({
           id: String(x.id ?? ''),
           name: x.course_name ?? x.name ?? '',
-          code: x.course_code ?? x.code ?? ''
+          code: x.course_code ?? x.code ?? '',
+          // Fee lives entirely on the course, split by billing frequency -
+          // batches have no fee column of their own. courseFeeFor() below
+          // picks the right one based on the selected Fee Type.
+          monthlyFee: asNum(x.monthly_fee),
+          quarterlyFee: asNum(x.quarterly_fee),
+          semiAnnualFee: asNum(x.semi_annual_fee),
+          annualFee: asNum(x.annual_fee)
         }))
         .filter(x => x.name);
     } catch (err) {
       console.warn('Courses API unavailable, using local course list:', err);
-      courseList = (DB.courses || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '', code: x.id || '' }));
+      courseList = (DB.courses || []).map(x => ({
+        id: String(x.id ?? ''), name: x.name || '', code: x.id || '',
+        monthlyFee: asNum(x.monthly),
+        // Local demo data only defines a single monthly figure - approximate
+        // the other tiers from it since there's no dedicated fallback value.
+        quarterlyFee: asNum(x.monthly) * 3,
+        semiAnnualFee: asNum(x.monthly) * 6,
+        annualFee: asNum(x.monthly) * 12
+      }));
     }
     try {
       const payload = await API.get(BATCHES_ENDPOINT);
       batchList = unwrapList(payload)
-        .map(x => ({ id: String(x.id ?? x.batch_id ?? ''), name: x.name ?? x.batch_name ?? '' }))
+        .map(x => ({ id: String(x.id ?? x.batch_id ?? ''), name: x.name ?? x.batch_name ?? '', courseId: String(x.courseId ?? x.course_id ?? '') }))
         .filter(x => x.name);
     } catch (err) {
       console.warn('Batches API unavailable, using local batch list:', err);
-      batchList = (DB.batches || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '' }));
+      batchList = (DB.batches || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '', courseId: String(x.courseId ?? x.course_id ?? '') }));
     }
   }
+
+  // Batches belonging to a given course. Batches with no courseId info
+  // (e.g. the local fallback list, or older cached data) are always shown
+  // rather than hidden, since there's nothing to filter them against.
+  const batchesForCourse = (courseId) => batchList.filter(b => !b.courseId || b.courseId === courseId);
+
+  // The course's fee for a given billing frequency - reuses the same
+  // substring matching already used in collectFee() to classify a Fee Type
+  // string as monthly/quarterly/half-yearly/annual, so "Quarterly Fee",
+  // "Half Yearly Fee", "Annual Fee", etc. all resolve consistently.
+  const courseFeeFor = (courseId, feeTypeStr) => {
+    const course = courseList.find(c => c.id === courseId);
+    if (!course) return null;
+    const t = String(feeTypeStr || '').toLowerCase();
+    if (t.includes('quarter')) return course.quarterlyFee;
+    if (t.includes('half') || t.includes('semi')) return course.semiAnnualFee;
+    if (t.includes('annual') || t.includes('year')) return course.annualFee;
+    return course.monthlyFee;
+  };
 
   function mapStudent(item = {}){
     const course = item.course ?? item.course_name ?? '';
@@ -387,8 +421,13 @@ return '';
 
     const courseOpts = courseList.length ? courseList
       : unique(currentStudents.map(x=>x.course)).map(name => ({ id:'', name }));
-    const batchOpts = batchList.length ? batchList
-      : unique(currentStudents.map(x=>x.batch)).map(name => ({ id:'', name }));
+    const allBatchOpts = batchList.length ? batchList
+      : unique(currentStudents.map(x=>x.batch)).map(name => ({ id:'', name, courseId:'' }));
+    // Browsers auto-select the first <option> when nothing is explicitly
+    // marked selected (Add mode), so the batch list has to be filtered
+    // against that same default course, not just against s?.courseId.
+    const initialCourseId = s?.courseId || (courseOpts[0]?.id ?? '');
+    const batchOpts = allBatchOpts.filter(b => !b.courseId || b.courseId === initialCourseId);
 
     return `<div class="form-grid">
        <div><label>Full Name</label><input id="f_name" maxlength="120" placeholder="e.g. Aarav Sharma" required value="${esc(s?.name || '')}"></div>
@@ -415,7 +454,38 @@ return '';
   window.addStudent = () => App.modal({ size:'lg', title:'Add New Student', sub:'Create a student admission record',
     body:studentForm(null),
     foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="saveBtn">Save Student</button>`,
-    onOpen:b=>b.querySelector('#saveBtn').onclick=async()=>{
+    onOpen:b=>{
+      const courseSel = b.querySelector('#f_course');
+      const batchSel = b.querySelector('#f_batch');
+      const feeTypeSel = b.querySelector('#f_feetype');
+      const feeAmtInput = b.querySelector('#f_feeamt');
+
+      const refreshBatchOptions = () => {
+        const selectedCourseId = courseSel.selectedOptions[0]?.dataset.id || '';
+        const opts = batchesForCourse(selectedCourseId);
+        const prevValue = batchSel.value;
+        batchSel.innerHTML = `<option value="" data-id="">— No batch —</option>` +
+          opts.map(bItem=>`<option value="${esc(bItem.name)}" data-id="${esc(bItem.id)}">${esc(bItem.name)}</option>`).join('');
+        // Keep the previous batch selected only if it still belongs to the newly selected course
+        if (opts.some(o => o.name === prevValue)) batchSel.value = prevValue;
+      };
+
+      const refreshFeeAmount = () => {
+        const selectedCourseId = courseSel.selectedOptions[0]?.dataset.id || '';
+        const fee = courseFeeFor(selectedCourseId, feeTypeSel.value);
+        if (fee != null) feeAmtInput.value = fee;
+      };
+
+      courseSel.onchange = () => { refreshBatchOptions(); refreshFeeAmount(); };
+      feeTypeSel.onchange = refreshFeeAmount;
+      // Run once immediately: the browser auto-selects the first Course and
+      // Fee Type option since neither is marked "selected" in Add mode, so
+      // Batch/Fee Amount need to match that default right away, not just
+      // after the admin manually changes something.
+      refreshBatchOptions();
+      refreshFeeAmount();
+
+      b.querySelector('#saveBtn').onclick=async()=>{
       const s = readForm(b);
       const validationError = validateStudentForm(s);
       if (validationError) return App.toast(validationError,'err');
@@ -435,6 +505,7 @@ return '';
         App.toast(err.message || 'Failed to add student','err');
       }
     }
+  }
   });
 
   window.editStudent = async id => {
@@ -516,7 +587,7 @@ return '';
 
     const initialDue = await fetchDue(defaultInitialPeriod);
     const initialAlreadyPaid = initialDue <= 0;
-  
+   
     const paidBtnStyle = 'background:#c9ccd3;border-color:#c9ccd3;color:#6b7280;cursor:not-allowed;box-shadow:none;';
 
     App.modal({ size:'lg', title:'Collect Fee', sub:`${esc(s.name)} - ${esc(s.batch || s.course || '-')}`,
@@ -543,7 +614,7 @@ return '';
   ✓ Fees already paid for this period.
 </div>
         <div class="full" id="cf_overpay_error" style="display:none;color:var(--red);font-size:12.5px;font-weight:600;padding-top:4px">
-  Paid amount cannot exceed the amount due for this period.
+  Paid amount cannot exceed the amount due for this period. To pay ahead, collect fee again and select the next period.
 </div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="cfSave" ${initialAlreadyPaid ? `disabled style="${paidBtnStyle}"` : ''}>Collect & Generate Receipt</button>`,
       onOpen:b=>{
@@ -555,7 +626,7 @@ return '';
        const alreadyPaidMsg = b.querySelector('#cf_already_paid');
        const overpayMsg = b.querySelector('#cf_overpay_error');
 
-  
+
        const getPayable = () => {
          const due = Number(dueInput.value) || 0;
          const discount = Number(discInput.value) || 0;

@@ -232,9 +232,16 @@ if (App.guard()) {
       semi:x.semi_annual_fee ?? x.semi, annual:x.annual_fee ?? x.annual
     })).filter(x => x.name);
     batchList = unwrapList(batches).map(x => {
+      // batchController.js now returns a direct courseId on each batch - use
+      // that first. Fall back to matching the batch's course name against
+      // courseList only for any older cached response that predates that
+      // field; that fallback silently drops the batch if the linked course
+      // was ever deleted (join returns no name, so nothing to match), so the
+      // direct id is the more reliable path going forward.
       const courseName = x.course_name || x.course || '';
       const linkedCourse = courseList.find(c => c.name === courseName);
-      return { id:String(x.id), name:x.batch_name || x.name || '', courseId:String(x.course_id ?? linkedCourse?.id ?? '') };
+      const courseId = String(x.courseId ?? x.course_id ?? linkedCourse?.id ?? '');
+      return { id:String(x.id), name:x.batch_name || x.name || '', courseId };
     }).filter(x => x.name && x.courseId);
   }
 

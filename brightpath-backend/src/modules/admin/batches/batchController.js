@@ -8,6 +8,12 @@ const mapToFrontend = (b) => {
         id: b.id.toString(),
         name: b.batch_name,
         course: b.course_name || b.course_id,
+        // Added so the frontend can filter batches by course reliably. Before
+        // this, "course" above was the only signal - it holds the course
+        // NAME when the join succeeds, but falls back to the raw course_id
+        // number if a batch's course was ever deleted/orphaned, and there
+        // was no clean, always-numeric field to filter or match on.
+        courseId: b.course_id != null ? String(b.course_id) : '',
         subject: b.subject,
         teacher: b.teacher_name || "",
         room: b.classroom,
