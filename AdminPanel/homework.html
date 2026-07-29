@@ -40,10 +40,19 @@ if(App.guard()){
   c.innerHTML=`<div id="tbl"></div>`;
 
   function renderTable(){
+    const uniqueBatches = [...new Set(homeworkList.map(h => h.batch).filter(Boolean))];
+
     App.table('tbl',{
-      rows:homeworkList, searchKeys:['id','batch','subject','teacher','title'], searchPlaceholder:'Search homework…', pageSize:9, dateFilter:true,
-      filters:[{label:'Batch',key:'batch',options:[...new Set(homeworkList.map(h=>h.batch))]},{label:'Status',key:'status',options:['Active','Closed','Overdue']}],
-      columns:[
+      rows: homeworkList, 
+      searchKeys: ['id','batch','subject','teacher','title'], 
+      searchPlaceholder: 'Search homework…', 
+      pageSize: 9, 
+      dateFilter: true,
+      filters: [
+        { label: 'Batch', key: 'batch', options: uniqueBatches },
+        { label: 'Status', key: 'status', options: ['Active','Closed','Overdue'] }
+      ],
+      columns: [
         {key:'title',label:'Homework',render:r=>`<div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.subject}</div>`},
         {key:'batch',label:'Batch',render:r=>App.whoCell(r.teacher,r.batch)},
         {key:'due',label:'Due Date'},
@@ -52,7 +61,7 @@ if(App.guard()){
         {key:'prog',label:'Progress',render:r=>{const t=r.submitted+r.pending; const pct=t?Math.round(r.submitted/t*100):0; return `<div class="pct-cell"><div class="progress"><span style="width:${pct}%"></span></div><span class="num">${pct}%</span></div>`;}},
         {key:'status',label:'Status',render:r=>App.badge(r.status)}
       ],
-      actions:r=>`${App.actBtn('eye','View',`onclick="viewHw('${r.id}')"`)}${App.actBtn('edit','Edit',`onclick="editHw('${r.id}')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="delHw('${r.id}')"`)}`
+      actions: r=>`${App.actBtn('eye','View',`onclick="viewHw('${r.id}')"`)}${App.actBtn('edit','Edit',`onclick="editHw('${r.id}')"`)}${App.actBtn('trash','Delete',`class="danger" onclick="delHw('${r.id}')"`)}`
     });
   }
 
@@ -86,8 +95,6 @@ if(App.guard()){
 
   const find=id=>homeworkList.find(h=>h.id===id);
 
-  // Fetches the attachment as a blob and saves it — same approach as
-  // study-material's downloadSm, since attachments aren't statically served.
   window.downloadHwAttachment=async (id, filename)=>{
     try{
       const res = await fetch(`${API_BASE}/homework/${id}/file`, { headers: authHeaders() });
@@ -143,7 +150,6 @@ if(App.guard()){
       ${h && h.attachment ? `<div class="t-sub" style="margin-top:6px">Current file uploaded — <button type="button" class="btn btn-light" style="padding:2px 10px" onclick="downloadHwAttachment('${h.id}','${h.attachment}')">Download</button> (upload a new file above to replace it)</div>` : ''}
     </div></div>`; }
 
-  // Builds FormData (not JSON) so the file travels with the rest of the fields
   function readHwForm(b){
     const fd = new FormData();
     fd.append('batch', b.querySelector('#h_batch').value);
@@ -171,12 +177,12 @@ if(App.guard()){
       try{
         const res = await fetch(`${API_BASE}/homework`, {
           method:'POST',
-          headers: authHeaders(), // do NOT set Content-Type — browser sets the multipart boundary
+          headers: authHeaders(),
           body: fd
         });
         const raw = await res.text();
         let json = {};
-        try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* not JSON, fall through */ }
+        try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* fall through */ }
         if(!res.ok || json.success===false){
           throw new Error(json.message || raw || `Upload failed (status ${res.status})`);
         }
@@ -205,7 +211,7 @@ if(App.guard()){
         });
         const raw = await res.text();
         let json = {};
-        try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* not JSON, fall through */ }
+        try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* fall through */ }
         if(!res.ok || json.success===false){
           throw new Error(json.message || raw || `Update failed (status ${res.status})`);
         }

@@ -1,3 +1,4 @@
+const fs = require("fs/promises");
 const StudyMaterial = require("../../../models/studyMaterialModel");
 
 function formatFileSize(bytes) {
@@ -40,8 +41,22 @@ exports.addMaterial = async (req, res) => {
 
 exports.deleteMaterial = async (req, res) => {
   try {
-    const data = await StudyMaterial.deleteMaterial(req.params.id);
-    if (!data) return res.status(404).json({ success: false, message: "Material not found" });
+    // 1. Fetch record first to get physical file path
+    const material = await StudyMaterial.getMaterialFilePath(req.params.id);
+    if (!material) {
+      return res.status(404).json({ success: false, message: "Material not found" });
+    }
+
+    // 2. Delete database entry
+    await StudyMaterial.deleteMaterial(req.params.id);
+
+    // 3. Remove actual file from storage if present
+    if (material.file_path) {
+      await fs.unlink(material.file_path).catch(() => {
+        // Silently handle if file was already missing from disk
+      });
+    }
+
     res.json({ success: true, message: "Material deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -58,13 +73,17 @@ exports.downloadMaterial = async (req, res) => {
   }
 };
 
-// Actually streams the uploaded file back to the browser.
+// Streams file & increments download counter in one operation
 exports.getMaterialFile = async (req, res) => {
   try {
     const material = await StudyMaterial.getMaterialFilePath(req.params.id);
     if (!material || !material.file_path) {
       return res.status(404).json({ success: false, message: "No file available for this material" });
     }
+
+    // Increment download counter automatically on file stream
+    await StudyMaterial.incrementDownload(req.params.id);
+
     res.download(material.file_path, material.original_filename || undefined);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

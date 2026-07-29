@@ -16,7 +16,7 @@ const StudyMaterial = {
         download_count    AS downloads,
         original_filename AS "originalFilename"
       FROM study_materials
-      ORDER BY upload_date DESC, id DESC
+      ORDER BY upload_date DESC, material_code DESC
     `);
     return result.rows;
   },

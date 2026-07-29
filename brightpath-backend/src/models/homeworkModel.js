@@ -17,7 +17,7 @@ const Homework = {
         status,
         attachment_name AS attachment
       FROM homework_assignments
-      ORDER BY due_date DESC, id DESC
+      ORDER BY due_date DESC, homework_code DESC
     `);
     return result.rows;
   },
@@ -49,8 +49,6 @@ const Homework = {
   },
 
   async editHomework(code, hw) {
-    // COALESCE keeps the existing attachment when no new file was uploaded
-    // (hw.originalFilename / hw.filePath are undefined/null in that case)
     const result = await pool.query(
       `UPDATE homework_assignments SET
         batch_name = $1, subject = $2, teacher_name = $3, title = $4,

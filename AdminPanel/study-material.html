@@ -20,7 +20,6 @@ if(App.guard()){
   function courseName(cs){ return cs.name || cs.course_name || cs.courseName || ''; }
   function teacherName(t){ return t.name || t.teacher_name || t.teacherName || ''; }
 
-
   const API_BASE = (typeof API !== 'undefined' && API.BASE_URL) ? API.BASE_URL : 'http://localhost:5001/api';
   function authHeaders(){
     const token = localStorage.getItem('JWT_TOKEN');
@@ -30,7 +29,6 @@ if(App.guard()){
   let currentRows = [];
   let liveCourses = [];
   let liveTeachers = [];
-
 
   document.getElementById('tbl').addEventListener('click', e=>{
     const btn = e.target.closest('[data-action]');
@@ -42,9 +40,19 @@ if(App.guard()){
 
   function renderTable(rows){
     currentRows = rows;
+    
+    // Dynamically derive unique courses for filter dropdown
+    const dynamicCourses = [...new Set(rows.map(r => r.course).filter(Boolean))];
+
     App.table('tbl',{
-      rows, searchKeys:['id','title','course','subject'], searchPlaceholder:'Search material…', pageSize:9,
-      filters:[{label:'Course',key:'course',options:[...new Set(DB.courses.map(c=>c.name))]},{label:'Type',key:'type',options:['PDF','DOC','Video','Link']}],
+      rows, 
+      searchKeys:['id','title','course','subject'], 
+      searchPlaceholder:'Search material…', 
+      pageSize:9,
+      filters:[
+        { label:'Course', key:'course', options: dynamicCourses },
+        { label:'Type', key:'type', options:['PDF','DOC','Video','Link'] }
+      ],
       columns:[
         {key:'title',label:'Title',render:r=>`<div class="who-cell">${App.svg(r.type==='Video'?'demo':'material').replace('<svg','<svg style="width:18px;height:18px;color:var(--brand)"')}<div><div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.size}</div></div></div>`},
         {key:'course',label:'Course',render:r=>`<div>${r.course||'—'}</div><div class="t-sub">${r.subject||''}</div>`},
@@ -84,13 +92,10 @@ if(App.guard()){
   window.downloadSm=async id=>{
     const sm=find(id); if(!sm) return;
     try{
-      // count the download server-side (unchanged behavior)
-      await API.post(`/study-material/${id}/download`, {});
-
-      // actually fetch and save the file
+      // Single network call handles stream + count increment
       const res = await fetch(`${API_BASE}/study-material/${id}/file`, { headers: authHeaders() });
       if(!res.ok){
-        if(res.status===404) throw new Error('No file was uploaded for this material');
+        if(res.status===404) throw new Error('No file available for download');
         throw new Error('Failed to download file');
       }
       const blob = await res.blob();
@@ -155,7 +160,7 @@ if(App.guard()){
             });
             const raw = await res.text();
             let json = {};
-            try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* not JSON, fall through */ }
+            try{ json = raw ? JSON.parse(raw) : {}; }catch(_){ /* fall through */ }
             if(!res.ok || json.success===false){
               throw new Error(json.message || raw || `Upload failed (status ${res.status})`);
             }
