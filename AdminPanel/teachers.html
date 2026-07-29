@@ -27,6 +27,23 @@
 .multiselect-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 14px; color: #1f2328; cursor: pointer; }
 .multiselect-item:hover { background: var(--bg-hover, #f6f8fa); }
 .multiselect-item input { cursor: pointer; }
+
+@media (max-width: 1100px) {
+  #tbl table.tbl th:nth-child(5), #tbl table.tbl td:nth-child(5) { display: none; } /* Subjects */
+}
+@media (max-width: 900px) {
+  #tbl table.tbl th:nth-child(3), #tbl table.tbl td:nth-child(3) { display: none; } /* Courses */
+  #tbl table.tbl th:nth-child(7), #tbl table.tbl td:nth-child(7) { display: none; } /* Exp */
+}
+@media (max-width: 700px) {
+  #tbl table.tbl th:nth-child(4), #tbl table.tbl td:nth-child(4) { display: none; } /* Batches */
+}
+@media (max-width: 560px) {
+  #tbl table.tbl th:nth-child(8), #tbl table.tbl td:nth-child(8) { display: none; } /* Payment */
+}
+@media (max-width: 420px) {
+  #tbl table.tbl th:nth-child(1), #tbl table.tbl td:nth-child(1) { display: none; } /* # */
+}
 </style>
 </head>
 <body>
@@ -251,12 +268,13 @@ if(App.guard()){
       pageSize:8,
       filters:[{label:'Payment Type',key:'payType',options:payTypes},{label:'Status',key:'status',options:statuses}],
       columns:[
-        {key:'name',label:'Teacher',render:r=>App.whoCell(esc(r.name),`${esc(r.teacher_code)} - ${esc(r.qual)}`)},
+        {key:'_index',label:'#',sort:false,render:(r,i)=>`<span class="t-sub">${i+1}</span>`},
+        {key:'name',label:'Teacher',render:r=>App.whoCell(esc(r.name))},
         {key:'courses',label:'Courses',render:r=>esc(r.courses || '-')},
         {key:'batches',label:'Batches',render:r=>formatBatchesColumn(r.batchesList)},
         {key:'subjects',label:'Subjects',render:r=>`<div class="chips">${r.subjects.map(s=>`<span class="chip">${esc(s)}</span>`).join('')}</div>`},
-        {key:'mobile',label:'Contact',render:r=>`<div>${esc(r.mobile)}</div><div class="t-sub">${esc(r.email)}</div>`},
-        {key:'exp',label:'Exp',num:true,render:r=>esc(r.exp)},
+        {key:'mobile',label:'Contact',render:r=>esc([r.mobile, r.email].filter(Boolean).join(' · ') || '-')},
+        {key:'exp',label:'Exp',num:true,render:r=>esc(r.exp || '-')},
         {key:'payType',label:'Payment',render:r=>`<span class="chip">${esc(r.payType)}</span>`},
         {key:'status',label:'Status',render:r=>App.badge(esc(r.status))}
       ],
@@ -334,10 +352,10 @@ if(App.guard()){
     return `<div class="form-grid">
       <input type="hidden" id="tf_code_hidden" value="${esc(t?.teacher_code || '')}">
       <div><label>Name</label><input id="tf_name" value="${esc(t?.name || '')}" placeholder="e.g. John Doe"></div>
-      <div><label>Mobile</label><input id="tf_mobile" value="${esc(t?.mobile || '')}" placeholder="e.g. 9876543210"></div>
-      <div><label>Email</label><input id="tf_email" value="${esc(t?.email || '')}" placeholder="e.g. john@example.com"></div>
+      <div><label>Mobile</label><input id="tf_mobile" type="tel" inputmode="numeric" value="${esc(t?.mobile || '')}" placeholder="e.g. 9876543210"></div>
+      <div><label>Email</label><input id="tf_email" type="email" value="${esc(t?.email || '')}" placeholder="e.g. john@example.com"></div>
       <div><label>Qualification</label><input id="tf_qual" value="${esc(t?.qual || '')}" placeholder="e.g. M.Sc. Physics"></div>
-      <div><label>Experience (yrs)</label><input id="tf_exp" value="${esc(t?.experience || '')}" placeholder="e.g. 5"></div>
+      <div><label>Experience (yrs)</label><input id="tf_exp" type="number" min="0" step="1" value="${esc(t?.experience || '')}" placeholder="e.g. 5"></div>
 
       <!-- Batches Checkbox Dropdown -->
       <div class="full">
@@ -388,7 +406,7 @@ if(App.guard()){
       </div>
 
       <div><label>Payment Type</label><select id="tf_pay">${payTypes.map(p=>`<option ${t?.payType===p?'selected':''}>${p}</option>`).join('')}</select></div>
-      <div><label>Joining Date</label><input type="date" id="tf_join" value="${esc(t?.joined || '2026-06-20')}"></div>
+      <div><label>Joining Date</label><input type="date" id="tf_join" placeholder="Select joining date" value="${esc(t?.joined || '2026-06-20')}"></div>
       <div><label>Status</label><select id="tf_status">${statuses.map(s=>`<option ${t?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
     </div>`;
   }

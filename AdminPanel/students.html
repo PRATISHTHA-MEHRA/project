@@ -347,73 +347,127 @@ return '';
     return `<tr><td colspan="${colspan}" class="t-sub" style="text-align:center;padding:16px">${esc(text)}</td></tr>`;
   }
 
-  function showStudentModal(s, extras){
-    if (!s || !s.id) return App.toast('Student not found', 'err');
-    extras = extras || { fees: [], attendance: [], exams: [] };
+  // Replace the existing `showStudentModal` function in students.html with this version.
+// It uses the new .stu-quickstats / .info-card / .stu-stat-row classes
+// from student-modal-additions.css — add that CSS first.
 
-    const ledgerRows = extras.fees.length
-      ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date) || '-')}</td></tr>`).join('')
-      : emptyRow(5, 'No payment records available yet.');
+function showStudentModal(s, extras){
+  if (!s || !s.id) return App.toast('Student not found', 'err');
+  extras = extras || { fees: [], attendance: [], exams: [] };
 
-    const attendanceRows = extras.attendance.length
-      ? extras.attendance.map(a => `<tr><td>${esc(toDateStr(a.date) || '-')}</td><td>${App.badge(esc(a.status ?? '-'))}</td><td>${esc(a.remarks ?? '-')}</td></tr>`).join('')
-      : emptyRow(3, 'No attendance records available yet.');
+  const ledgerRows = extras.fees.length
+    ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date) || '-')}</td></tr>`).join('')
+    : emptyRow(5, 'No payment records available yet.');
 
-    const examRows = extras.exams.length
-      ? extras.exams.map(e => `<tr><td>${esc(e.name ?? e.exam ?? '-')}</td><td class="num">${esc(e.obtained ?? e.score ?? '-')}/${esc(e.total ?? '-')}</td><td>${esc(e.grade ?? '-')}</td><td>${esc(e.remarks ?? '-')}</td></tr>`).join('')
-      : emptyRow(4, 'No performance records available yet.');
+  const attendanceRows = extras.attendance.length
+    ? extras.attendance.map(a => `<tr><td>${esc(toDateStr(a.date) || '-')}</td><td>${App.badge(esc(a.status ?? '-'))}</td><td>${esc(a.remarks ?? '-')}</td></tr>`).join('')
+    : emptyRow(3, 'No attendance records available yet.');
 
-    App.modal({ size:'xl', title:esc(s.name), sub:`${esc(s.code || s.id)} - ${esc(s.cls || '-')} - ${esc(s.course || '-')}`,
-      foot:`<button class="btn btn-light" onclick="location.href='student-details.html?id=${encodeURIComponent(s.id)}'">Open full profile</button><button class="btn btn-primary" data-close>Close</button>`,
-      body:`
-      <div class="detail-hero"><div class="av" style="background:var(--brand)">${esc((s.name||'?').split(' ').map(w=>w[0]).join(''))}</div>
-        <div style="flex:1"><h3>${esc(s.name)}</h3><div class="meta">${esc(s.code || s.id)} - Admitted ${esc(s.admission || '-')}</div>
-        <div class="chips" style="margin-top:8px">${App.badge(esc(s.status || '-'))} ${App.badge(esc(s.feeStatus || '-'))} <span class="chip">${esc(s.batch || '-')}</span></div></div></div>
-      <div class="tabs" id="stTabs">
-        <div class="tab active" data-t="p1">Profile</div><div class="tab" data-t="p2">Fees & Ledger</div>
-        <div class="tab" data-t="p3">Attendance</div><div class="tab" data-t="p4">Performance</div></div>
-      <div class="tab-pane active" data-p="p1">
-        <div class="sec-title">Personal Details</div>
-        <div class="dl cols-3"><div class="it"><div class="k">Gender</div><div class="v">${esc(s.gender==='M'?'Male':s.gender==='F'?'Female':'-')}</div></div>
+  const examRows = extras.exams.length
+    ? extras.exams.map(e => `<tr><td>${esc(e.name ?? e.exam ?? '-')}</td><td class="num">${esc(e.obtained ?? e.score ?? '-')}/${esc(e.total ?? '-')}</td><td>${esc(e.grade ?? '-')}</td><td>${esc(e.remarks ?? '-')}</td></tr>`).join('')
+    : emptyRow(4, 'No performance records available yet.');
+
+  const paymentsMade = extras.fees.length;
+  const lastPayment = extras.fees.length
+    ? (toDateStr(extras.fees[extras.fees.length - 1].date) || '-')
+    : '-';
+  const presentCount = extras.attendance.filter(a => a.status === 'Present').length;
+  const avgScore = extras.exams.length
+    ? Math.round(extras.exams.reduce((sum, e) => {
+        const obtained = asNum(e.obtained ?? e.score);
+        const total = asNum(e.total) || 1;
+        return sum + (obtained / total) * 100;
+      }, 0) / extras.exams.length) + '%'
+    : '-';
+
+  App.modal({ size:'xl', title:esc(s.name), sub:`${esc(s.code || s.id)} · ${esc(s.cls || '-')} · ${esc(s.course || '-')}`,
+    foot:`<button class="btn btn-light" onclick="location.href='student-details.html?id=${encodeURIComponent(s.id)}'">Open full profile</button><button class="btn btn-primary" data-close>Close</button>`,
+    body:`
+    <div class="detail-hero"><div class="av" style="background:var(--brand)">${esc((s.name||'?').split(' ').map(w=>w[0]).join(''))}</div>
+      <div style="flex:1"><h3>${esc(s.name)}</h3><div class="meta">${esc(s.code || s.id)} · ${esc(s.batch || '-')}</div></div></div>
+
+    <div class="stu-quickstats">
+      <div class="qs-item"><span class="qs-label">Status</span><span class="qs-val">${App.badge(esc(s.status || '-'))}</span></div>
+      <div class="qs-item"><span class="qs-label">Fee Status</span><span class="qs-val">${App.badge(esc(s.feeStatus || '-'))}</span></div>
+      <div class="qs-item"><span class="qs-label">Attendance</span><span class="qs-val">${s.att}%</span></div>
+      <div class="qs-item"><span class="qs-label">Admitted</span><span class="qs-val">${esc(s.admission || '-')}</span></div>
+    </div>
+
+    <div class="tabs" id="stTabs">
+      <div class="tab active" data-t="p1">Profile</div><div class="tab" data-t="p2">Fees & Ledger</div>
+      <div class="tab" data-t="p3">Attendance</div><div class="tab" data-t="p4">Performance</div></div>
+
+    <div class="tab-pane active" data-p="p1">
+      <div class="info-card">
+        <div class="info-card-head">Personal Details</div>
+        <div class="dl cols-3">
+          <div class="it"><div class="k">Gender</div><div class="v">${esc(s.gender==='M'?'Male':s.gender==='F'?'Female':'-')}</div></div>
           <div class="it"><div class="k">Date of Birth</div><div class="v">${esc(s.dob || '-')}</div></div>
           <div class="it"><div class="k">Mobile</div><div class="v">${esc(s.mobile || '-')}</div></div>
           <div class="it"><div class="k">School</div><div class="v">${esc(s.school || '-')}</div></div>
           <div class="it"><div class="k">Class</div><div class="v">${esc(s.cls || '-')}</div></div>
-          <div class="it"><div class="k">Address</div><div class="v">${esc(s.address || '-')}</div></div></div>
-        <div class="sec-title">Parent / Guardian</div>
-        <div class="dl"><div class="it"><div class="k">Parent Name</div><div class="v">${esc(s.parent || '-')}</div></div>
-          <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(s.parentMobile || '-')}</div></div></div>
-        <div class="sec-title">Course & Batch</div>
-        <div class="dl cols-3"><div class="it"><div class="k">Course</div><div class="v">${esc(s.course || '-')}</div></div>
+          <div class="it"><div class="k">Address</div><div class="v">${esc(s.address || '-')}</div></div>
+        </div>
+      </div>
+      <div class="info-card">
+        <div class="info-card-head">Parent / Guardian</div>
+        <div class="dl">
+          <div class="it"><div class="k">Parent Name</div><div class="v">${esc(s.parent || '-')}</div></div>
+          <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(s.parentMobile || '-')}</div></div>
+        </div>
+      </div>
+      <div class="info-card">
+        <div class="info-card-head">Course & Batch</div>
+        <div class="dl cols-3">
+          <div class="it"><div class="k">Course</div><div class="v">${esc(s.course || '-')}</div></div>
           <div class="it"><div class="k">Batch</div><div class="v">${esc(s.batch || '-')}</div></div>
-          <div class="it"><div class="k">Admission Date</div><div class="v">${esc(s.admission || '-')}</div></div></div>
+          <div class="it"><div class="k">Admission Date</div><div class="v">${esc(s.admission || '-')}</div></div>
+        </div>
       </div>
-      <div class="tab-pane" data-p="p2">
-        <div class="dl cols-3"><div class="it"><div class="k">Fee Type</div><div class="v">${esc(s.feeType || '-')}</div></div>
-          <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(s.feeAmt)}</div></div>
-          <div class="it"><div class="k">Status</div><div class="v">${App.badge(esc(s.feeStatus || '-'))}</div></div></div>
-        <div class="sec-title">Payment Ledger</div>
-        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Receipt</th><th>Period</th><th class="num">Amount</th><th>Mode</th><th>Date</th></tr></thead>
-        <tbody>${ledgerRows}</tbody></table></div>
-        ${s.feeStatus && s.feeStatus!=='Paid'?`<div class="sec-title">Pending Dues</div><div class="pl-line minus"><span>${esc(s.feeType || 'Fee')} - current period</span><span class="v">${App.money(s.feeAmt)}</span></div>`:''}
+    </div>
+
+    <div class="tab-pane" data-p="p2">
+      <div class="stu-stat-row">
+        <div class="stat"><div class="k">Fee Type</div><div class="v">${esc(s.feeType || '-')}</div></div>
+        <div class="stat"><div class="k">Fee Amount</div><div class="v">${App.money(s.feeAmt)}</div></div>
+        <div class="stat"><div class="k">Payments Made</div><div class="v">${paymentsMade}${paymentsMade ? ` <span class="t-sub" style="font-size:11px">(last: ${esc(lastPayment)})</span>` : ''}</div></div>
       </div>
-      <div class="tab-pane" data-p="p3">
-        <div class="dl cols-3"><div class="it"><div class="k">Overall %</div><div class="v num">${s.att}%</div></div></div>
-        <div class="sec-title">Attendance Records</div>
-        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
-        <tbody>${attendanceRows}</tbody></table></div>
+      ${s.feeStatus && s.feeStatus!=='Paid'?`
+      <div class="info-card" style="background:var(--red-soft);border-color:#f3cfc7">
+        <div class="info-card-head" style="color:var(--red);border-color:#f3cfc7">Pending Dues</div>
+        <div class="pl-line minus" style="background:transparent;padding:0"><span>${esc(s.feeType || 'Fee')} · current period</span><span class="v">${App.money(s.feeAmt)}</span></div>
+      </div>`:''}
+      <div class="stu-section-label">Payment Ledger</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Receipt</th><th>Period</th><th class="num">Amount</th><th>Mode</th><th>Date</th></tr></thead>
+      <tbody>${ledgerRows}</tbody></table></div>
+    </div>
+
+    <div class="tab-pane" data-p="p3">
+      <div class="stu-stat-row">
+        <div class="stat"><div class="k">Overall Attendance</div><div class="v">${s.att}%</div></div>
+        <div class="stat"><div class="k">Days Present</div><div class="v">${presentCount} / ${extras.attendance.length || 0}</div></div>
+        <div class="stat"><div class="k">Records</div><div class="v">${extras.attendance.length}</div></div>
       </div>
-      <div class="tab-pane" data-p="p4">
-        <div class="sec-title">Test Performance</div>
-        <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Test</th><th class="num">Score</th><th>Grade</th><th>Remark</th></tr></thead>
-        <tbody>${examRows}</tbody></table></div>
-      </div>`,
-      onOpen:b=>{ b.querySelectorAll('#stTabs .tab').forEach(t=>t.onclick=()=>{
-        b.querySelectorAll('#stTabs .tab').forEach(x=>x.classList.remove('active'));
-        b.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active'));
-        t.classList.add('active'); b.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active'); }); }
-    });
-  }
+      <div class="stu-section-label">Attendance Records</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
+      <tbody>${attendanceRows}</tbody></table></div>
+    </div>
+
+    <div class="tab-pane" data-p="p4">
+      <div class="stu-stat-row">
+        <div class="stat"><div class="k">Tests Taken</div><div class="v">${extras.exams.length}</div></div>
+        <div class="stat"><div class="k">Average Score</div><div class="v">${avgScore}</div></div>
+      </div>
+      <div class="stu-section-label">Test Performance</div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Test</th><th class="num">Score</th><th>Grade</th><th>Remark</th></tr></thead>
+      <tbody>${examRows}</tbody></table></div>
+    </div>`,
+    onOpen:b=>{ b.querySelectorAll('#stTabs .tab').forEach(t=>t.onclick=()=>{
+      b.querySelectorAll('#stTabs .tab').forEach(x=>x.classList.remove('active'));
+      b.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active'); b.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active'); }); }
+  });
+}
 
   window.viewStudent = async id => {
     try {
