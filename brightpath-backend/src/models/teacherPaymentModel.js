@@ -117,10 +117,61 @@ const createPaymentVoucher = async (data) => {
     return result.rows[0];
 };
 
-module.exports = { 
-    getPaymentKPIs, 
-    getAllPayments, 
-    getPaymentById, 
-    recordTransaction, 
-    createPaymentVoucher 
+// Append these functions to models/paymentModel.js
+
+/**
+ * Get current active payment summary for a logged-in teacher
+ */
+const getTeacherPaymentSummary = async (teacherName) => {
+    const query = `
+        SELECT 
+            pay_type AS "payType",
+            COALESCE(gross_amount, 0)::NUMERIC AS "monthly",
+            COALESCE(paid_amount, 0)::NUMERIC AS "paid",
+            COALESCE(balance_due, 0)::NUMERIC AS "pending",
+            COALESCE(deductions, 0)::NUMERIC AS "deductions",
+            COALESCE(advance_paid, 0)::NUMERIC AS "advance",
+            payment_month AS "currentMonth",
+            status
+        FROM teacher_payments
+        WHERE teacher_name = $1
+        ORDER BY created_at DESC
+        LIMIT 1;
+    `;
+    const result = await db.query(query, [teacherName]);
+    return result.rows[0] || null;
+};
+
+/**
+ * Get full payment history for a specific logged-in teacher
+ */
+const getTeacherPaymentHistory = async (teacherName) => {
+    const query = `
+        SELECT 
+            id,
+            payment_month AS "month",
+            pay_type AS "type",
+            COALESCE(gross_amount, 0)::NUMERIC AS "gross",
+            COALESCE(deductions, 0)::NUMERIC AS "ded",
+            COALESCE(paid_amount, 0)::NUMERIC AS "paid",
+            COALESCE(balance_due, 0)::NUMERIC AS "balance",
+            TO_CHAR(payment_date, 'YYYY-MM-DD') AS "date",
+            status
+        FROM teacher_payments
+        WHERE teacher_name = $1
+        ORDER BY created_at DESC;
+    `;
+    const result = await db.query(query, [teacherName]);
+    return result.rows;
+};
+
+module.exports = {
+    getPaymentKPIs,
+    getAllPayments,
+    getPaymentById,
+    recordTransaction,
+    createPaymentVoucher,
+    // Export new methods
+    getTeacherPaymentSummary,
+    getTeacherPaymentHistory
 };
