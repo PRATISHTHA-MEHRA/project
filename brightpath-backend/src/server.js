@@ -22,8 +22,8 @@ app.use((req, res, next) => {
 // Admin Portal
 app.use("/api/admin", require("./routes/admin.routes"));
 
-// //Teacher Portal
-// app.use("/api/teacher", require("./routes/teacher.routes"));
+//Teacher Portal
+app.use("/api/teacher", require("./routes/teacher.routes"));
 
 // // Student Portal
 // app.use("/api/student", require("./routes/student.routes"));

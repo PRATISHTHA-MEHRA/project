@@ -114,3 +114,47 @@ exports.getDropdownList = async () => {
     const { rows } = await db.query(query);
     return rows;
 };
+
+// Find teacher by email / mobile / teacher code
+exports.findByIdentifier = async (identifier) => {
+    const query = `
+        SELECT *
+        FROM teachers
+        WHERE
+            email = $1
+            OR mobile = $1
+            OR teacher_code = $1
+        LIMIT 1;
+    `;
+
+    const { rows } = await db.query(query, [identifier]);
+    return rows[0] || null;
+};
+
+// Update teacher password
+exports.updatePassword = async (id, password) => {
+    const query = `
+        UPDATE teachers
+        SET password = $1
+        WHERE id = $2
+        RETURNING id;
+    `;
+
+    const { rows } = await db.query(query, [password, id]);
+    return rows[0];
+};
+
+// 9. Get Batches for Teacher Profile
+exports.getTeacherBatches = async (teacherId) => {
+    const query = `
+        SELECT 
+            b.id, 
+            b.batch_name AS name, 
+            CONCAT(b.start_time, ' - ', b.end_time) AS timing, 
+            COALESCE(b.current_students, 0) AS students 
+        FROM batches b
+        WHERE b.teacher_id = $1
+    `;
+    const { rows } = await db.query(query, [teacherId]);
+    return rows;
+};
