@@ -164,12 +164,20 @@ const mapToDatabase = async (frontendData, existingStudent = null) => {
 };
 
 // Get All Students
-// Get All Students with Dashboard Summary Widgets
+// Get All Students with Dashboard Summary Widgets, Course & Batch Options
 exports.getStudents = async (req, res) => {
     try {
-        const [students, stats] = await Promise.all([
+        const [students, stats, coursesResult, batchesResult] = await Promise.all([
             Student.getAll(),
-            Student.getStats()
+            Student.getStats(),
+            db.query(
+                `SELECT id, course_name, course_code, monthly_fee, quarterly_fee, semi_annual_fee, annual_fee
+                 FROM courses ORDER BY course_name ASC`
+            ),
+            db.query(
+                `SELECT id, batch_name, course_id
+                 FROM batches ORDER BY batch_name ASC`
+            )
         ]);
 
         res.status(200).json({
@@ -180,13 +188,16 @@ exports.getStudents = async (req, res) => {
                 feeDueStudents: stats.fee_due_students,
                 avgAttendance: `${stats.avg_attendance}%` // or send number like stats.avg_attendance
             },
-            data: students
+            data: students,
+            courses: coursesResult.rows,
+            batches: batchesResult.rows
         });
     } catch (err) {
         sendError(res, err);
     }
 };
 
+// Get Single Student Profile with Fees, Attendance, and Exam Marks
 // Get Single Student Profile with Fees, Attendance, and Exam Marks
 exports.getStudent = async (req, res) => {
     try {
@@ -217,7 +228,6 @@ exports.getStudent = async (req, res) => {
         res.status(200).json({
             success: true,
             data: {
-    
                 student: { ...student, pendingDues },
                 fees,
                 attendance,
@@ -228,7 +238,6 @@ exports.getStudent = async (req, res) => {
         sendError(res, err);
     }
 };
-
 exports.getStudentFees = async (req, res) => {
     try {
         const student = await Student.getById(req.params.id);

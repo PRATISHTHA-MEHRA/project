@@ -25,8 +25,6 @@
 <script>
 if(App.guard()){
   const API_BASE = "/students"; 
-  const COURSES_ENDPOINT = "/courses"; 
-  const BATCHES_ENDPOINT = "/batches"; 
   const statuses = ["Active", "Inactive"];
   const feeStatuses = ["Paid", "Pending", "Overdue"];
   let usingFallback = false;
@@ -73,44 +71,41 @@ if(App.guard()){
     return [];
   }
 
-  async function loadDropdownData(){
-    try {
-      const payload = await API.get(COURSES_ENDPOINT);
-      courseList = unwrapList(payload)
-        .map(x => ({
-          id: String(x.id ?? ''),
-          name: x.course_name ?? x.name ?? '',
-          code: x.course_code ?? x.code ?? '',
-          // Fee lives entirely on the course, split by billing frequency -
-          // batches have no fee column of their own. courseFeeFor() below
-          // picks the right one based on the selected Fee Type.
-          monthlyFee: asNum(x.monthly_fee),
-          quarterlyFee: asNum(x.quarterly_fee),
-          semiAnnualFee: asNum(x.semi_annual_fee),
-          annualFee: asNum(x.annual_fee)
-        }))
-        .filter(x => x.name);
-    } catch (err) {
-      console.warn('Courses API unavailable, using local course list:', err);
-      courseList = (DB.courses || []).map(x => ({
-        id: String(x.id ?? ''), name: x.name || '', code: x.id || '',
-        monthlyFee: asNum(x.monthly),
-        // Local demo data only defines a single monthly figure - approximate
-        // the other tiers from it since there's no dedicated fallback value.
-        quarterlyFee: asNum(x.monthly) * 3,
-        semiAnnualFee: asNum(x.monthly) * 6,
-        annualFee: asNum(x.monthly) * 12
-      }));
-    }
-    try {
-      const payload = await API.get(BATCHES_ENDPOINT);
-      batchList = unwrapList(payload)
-        .map(x => ({ id: String(x.id ?? x.batch_id ?? ''), name: x.name ?? x.batch_name ?? '', courseId: String(x.courseId ?? x.course_id ?? '') }))
-        .filter(x => x.name);
-    } catch (err) {
-      console.warn('Batches API unavailable, using local batch list:', err);
-      batchList = (DB.batches || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '', courseId: String(x.courseId ?? x.course_id ?? '') }));
-    }
+  // Courses/batches now ride along on the /students response (see
+  // studentController.getStudents), so there's no separate /courses or
+  // /batches call here anymore - just map whatever the API gave us.
+  function mapCourseItem(x){
+    return {
+      id: String(x.id ?? ''),
+      name: x.course_name ?? x.name ?? '',
+      code: x.course_code ?? x.code ?? '',
+      // Fee lives entirely on the course, split by billing frequency -
+      // batches have no fee column of their own. courseFeeFor() below
+      // picks the right one based on the selected Fee Type.
+      monthlyFee: asNum(x.monthly_fee),
+      quarterlyFee: asNum(x.quarterly_fee),
+      semiAnnualFee: asNum(x.semi_annual_fee),
+      annualFee: asNum(x.annual_fee)
+    };
+  }
+
+  function mapBatchItem(x){
+    return { id: String(x.id ?? x.batch_id ?? ''), name: x.name ?? x.batch_name ?? '', courseId: String(x.courseId ?? x.course_id ?? '') };
+  }
+
+  // Only used when the /students call itself fails outright (see catch
+  // block in loadStudents) - mirrors the old API-unavailable fallback.
+  function loadLocalDropdownData(){
+    courseList = (DB.courses || []).map(x => ({
+      id: String(x.id ?? ''), name: x.name || '', code: x.id || '',
+      monthlyFee: asNum(x.monthly),
+      // Local demo data only defines a single monthly figure - approximate
+      // the other tiers from it since there's no dedicated fallback value.
+      quarterlyFee: asNum(x.monthly) * 3,
+      semiAnnualFee: asNum(x.monthly) * 6,
+      annualFee: asNum(x.monthly) * 12
+    }));
+    batchList = (DB.batches || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '', courseId: String(x.courseId ?? x.course_id ?? '') }));
   }
 
   // Batches belonging to a given course. Batches with no courseId info
@@ -294,18 +289,35 @@ return '';
     });
   }
 
+  // Single call to /students now returns the student list, dashboard
+  // widgets, AND course/batch dropdown data together (see
+  // studentController.getStudents) - no more separate /courses or
+  // /batches requests.
   async function loadStudents(){
-  try {
-    const payload = await API.get(API_BASE); 
-    usingFallback = false;
-    renderPage(unwrapList(payload).map(mapStudent), payload?.widgets);
-  } catch (err) {
-    console.warn('Students API unavailable, showing local data:', err);
-    usingFallback = true;
-    renderPage(localStudents()); // no widgets → falls back to frontend calculation
-    App.toast('Students API unavailable. Showing local data.', 'info');
+    try {
+      const payload = await API.get(API_BASE);
+      usingFallback = false;
+      courseList = Array.isArray(payload?.courses)
+        ? payload.courses.map(mapCourseItem).filter(x => x.name)
+        : (DB.courses || []).map(x => ({
+            id: String(x.id ?? ''), name: x.name || '', code: x.id || '',
+            monthlyFee: asNum(x.monthly),
+            quarterlyFee: asNum(x.monthly) * 3,
+            semiAnnualFee: asNum(x.monthly) * 6,
+            annualFee: asNum(x.monthly) * 12
+          }));
+      batchList = Array.isArray(payload?.batches)
+        ? payload.batches.map(mapBatchItem).filter(x => x.name)
+        : (DB.batches || []).map(x => ({ id: String(x.id ?? ''), name: x.name || '', courseId: String(x.courseId ?? x.course_id ?? '') }));
+      renderPage(unwrapList(payload).map(mapStudent), payload?.widgets);
+    } catch (err) {
+      console.warn('Students API unavailable, showing local data:', err);
+      usingFallback = true;
+      loadLocalDropdownData();
+      renderPage(localStudents()); // no widgets → falls back to frontend calculation
+      App.toast('Students API unavailable. Showing local data.', 'info');
+    }
   }
-}
 
 
   async function fetchStudentFull(id){
@@ -727,7 +739,6 @@ return '';
   };
 
   (async () => {
-    await loadDropdownData();
     await loadStudents();
   })();
 }

@@ -71,7 +71,7 @@ const App = (function () {
   ]},
   { group: "Finance", items: [
       { k: "fees", t: "Fee Collection", ic: "fees" },
-      { k: "pending-fees", t: "Pending Fees", ic: "pending", badge: "24" },
+      { k: "pending-fees", t: "Pending Fees", ic: "pending" },
       { k: "teacher-payments", t: "Teacher Payments", ic: "payment" },
       { k: "income-expense", t: "Income & Expense", ic: "money" }
   ]},
@@ -85,7 +85,7 @@ const App = (function () {
       { k: "admin-users", t: "Admin Users", ic: "user", roles: ["Super Admin"] }
   ]},
    { group: "Leads", items: [
-      { k: "enquiries", t: "Enquiries", ic: "enquiry", badge: "8" },
+      { k: "enquiries", t: "Enquiries", ic: "enquiry" },
       { k: "demo", t: "Demo Classes", ic: "demo" }
   ]},
   { group: "Insights", items: [
