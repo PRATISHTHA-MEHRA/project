@@ -77,12 +77,7 @@ if(App.guard()){
     }catch(err){ /* logging is best-effort, don't block the toast/report */ }
   }
 
-  // ── real export — CSV bundle of every underlying dataset, same pattern
-  // as window.exportStudents() in students.html (Blob + <a download>,
-  // no backend round-trip, no PDF lib). "Export All" bundles every
-  // section into one CSV; per-report Export/Download buttons downstream
-  // still just log the action (see reportAction) and don't produce a
-  // file yet — flagged separately, not touched here.
+
   const csvEsc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
   const csvSection = (title, columns, rows) => {
     const lines = [csvEsc(title), columns.map(csvEsc).join(',')];

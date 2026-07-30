@@ -66,10 +66,7 @@ exports.logGeneration = async (req, res) => {
 };
 
 async function getMonthlyTrend() {
-  // Collection trend is grouped by the PERIOD the fee was billed for
-  // (fee_receipts.period, e.g. "Jan 2026"), not by payment_date.
-  // The regex guard skips any malformed/legacy period values instead of
-  // letting a bad TO_DATE() parse blow up the whole dashboard query.
+
   const feeTrend = await pool.query(`
     SELECT TO_CHAR(TO_DATE(period, 'Mon YYYY'), 'Mon') AS m,
            TO_DATE(period, 'Mon YYYY') AS mkey,
