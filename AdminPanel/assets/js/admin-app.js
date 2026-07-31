@@ -86,7 +86,7 @@ const App = (function () {
   ]},
    { group: "Leads", items: [
       { k: "enquiries", t: "Enquiries", ic: "enquiry" },
-      { k: "demo", t: "Demo Classes", ic: "demo" }
+      { k: "demo-classes", t: "Demo Classes", ic: "demo" }
   ]},
   { group: "Insights", items: [
       { k: "reports", t: "Reports", ic: "reports" },

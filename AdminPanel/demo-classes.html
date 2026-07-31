@@ -155,7 +155,7 @@ if(App.guard()){
       return false;
     });
     if (!filtered.length && !hasAnyCourseLink) {
-      console.warn('demo.html: batches API returned no course_id/course name field on any batch - listing all batches unfiltered', batchesList);
+      console.warn('demo-classes.html: batches API returned no course_id/course name field on any batch - listing all batches unfiltered', batchesList);
       filtered = batchesList;
     } else if (!filtered.length) {
       console.warn('demo.html: no batch matched course', course, batchesList);
