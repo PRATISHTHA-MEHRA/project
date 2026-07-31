@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="assets/css/admin-style.css">
 </head>
 <body>
+
+
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/api.js"></script>
 <script src="assets/js/admin-app.js"></script>
@@ -21,74 +23,42 @@ if(App.guard()){
     return [];
   }
 
-  const normName = s => String(s || '').trim().toLowerCase();
-
-  // ── live data — populated by loadAllData() before the page ever renders ──
+  // ── live data — populated by loadDashboard() before the page ever renders ──
   let feesList = [], pendingList = [], tpayList = [],
       incomeList = [], expenseList = [],
       studentsList = [], batchesList = [], coursesList = [],
       enquiriesList = [];
-  let reportLogs = {}; // report_key -> "DD Mon YYYY, HH:MM AM"
-  let collectionTrendLive = null, incomeExpenseLive = null; // live monthly aggregates (null until confirmed present)
+  let reportLogs = {};
+  let kpis = null;      
+  let charts = null;   
+  let reportsMeta = []; 
 
-  
-  let selectedMonth = '2026-06'; // 'YYYY-MM', matches the <input type="month"> default
-  let feesAllData = [], incomeAllData = [], expenseAllData = [];
+  let selectedMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
 
-  function monthKey(dateStr){
-    if(!dateStr) return null;
-    const d = new Date(dateStr);
-    if(isNaN(d.getTime())) return null;
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-  }
-
-  function monthLabel(ym){
-    const [y,m] = (ym||'').split('-');
-    if(!y||!m) return '';
-    return new Date(Number(y), Number(m)-1, 1).toLocaleString('en-US',{month:'short'});
-  }
-
-  // Filters a list to the selected month using getDate(item) to pull the date field.
-  // If NONE of the records have a parseable date (e.g. the API doesn't send that
-  // field yet), filtering everything out would be worse than not filtering at all —
-  // so in that case we fall back to showing the unfiltered list rather than a blank page.
-  function filterByMonth(list, getDate){
-    const withDates = list.filter(item => monthKey(getDate(item)));
-    if(withDates.length === 0) return list;
-    return withDates.filter(item => monthKey(getDate(item)) === selectedMonth);
-  }
-
-  function applyMonthFilter(){
-    feesList    = filterByMonth(feesAllData,   f => f.date);
-    incomeList  = filterByMonth(incomeAllData, x => x.date);
-    expenseList = filterByMonth(expenseAllData,x => x.date);
-  }
-
-  window.onMonthChange = function(val){
+  window.onMonthChange = async function(val){
     selectedMonth = val;
-    applyMonthFilter();
+    await loadDashboard();
     renderPage();
   };
 
-  async function loadAllData(){
+  async function loadDashboard(){
     try{
-      const res = await API.get('/reports/dashboard');
-      const d = res?.data ?? res; // handle either {success,data} or raw envelope
+      const res = await API.get(`/reports/dashboard?month=${encodeURIComponent(selectedMonth)}`);
+      const d = res?.data ?? res;
 
-      feesAllData   = unwrapList(d.fees);
+      feesList      = unwrapList(d.fees);
       pendingList   = unwrapList(d.pendingFees);
       tpayList      = unwrapList(d.teacherPayments);
       studentsList  = unwrapList(d.students);
       batchesList   = unwrapList(d.batches);
       coursesList   = unwrapList(d.courses);
       enquiriesList = unwrapList(d.enquiries);
-      incomeAllData = unwrapList(d.income);
-      expenseAllData= unwrapList(d.expense);
+      incomeList    = unwrapList(d.income);
+      expenseList   = unwrapList(d.expense);
       reportLogs    = d.reportLogs || {};
-      applyMonthFilter(); // populates feesList/incomeList/expenseList for the current selectedMonth
-
-      collectionTrendLive = Array.isArray(d.collectionTrend) ? d.collectionTrend : null;
-      incomeExpenseLive   = Array.isArray(d.incomeExpense) ? d.incomeExpense : null;
+      kpis          = d.kpis || null;
+      charts        = d.charts || null;
+      reportsMeta   = Array.isArray(d.reports) ? d.reports : [];
     }catch(err){
       App.toast('Could not load report data', 'error');
     }
@@ -97,137 +67,116 @@ if(App.guard()){
   async function logReport(key, name, action){
     try{
       const res = await API.post(`/reports/${key}/log`, { name, action });
-      if(res?.data?.generated_at) reportLogs[key] = res.data.generated_at;
+      if(res?.data?.generated_at){
+        reportLogs[key] = res.data.generated_at;
+        const meta = reportsMeta.find(r => r.key === key);
+        if (meta) meta.lastGenerated = res.data.generated_at;
+      }
       const cell = document.querySelector(`#rptTbl tr[data-cat] [data-lastgen="${key}"]`);
       if(cell) cell.textContent = reportLogs[key];
     }catch(err){ /* logging is best-effort, don't block the toast/report */ }
   }
 
+
+  const csvEsc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const csvSection = (title, columns, rows) => {
+    const lines = [csvEsc(title), columns.map(csvEsc).join(',')];
+    rows.forEach(r => lines.push(r.map(csvEsc).join(',')));
+    lines.push('');
+    return lines.join('\r\n');
+  };
+
+  window.exportAllReports = function(){
+    const parts = [];
+
+    if (kpis){
+      parts.push(csvSection('Summary KPIs', ['Metric','Value'], [
+        [`Total Collection (${selectedMonth})`, kpis.totalCollection.value],
+        ['Outstanding Dues', kpis.outstandingDues.value],
+        [kpis.netProfit.isLoss ? 'Net Loss' : 'Net Profit', kpis.netProfit.value],
+        ['New Admissions', kpis.newAdmissions.value]
+      ]));
+    }
+
+    parts.push(csvSection('Fee Collection',
+      ['Receipt #','Student','Batch','Fee Type','Due','Paid','Discount','Mode','Collected By','Date'],
+      feesList.map(f=>[f.id,f.student,f.batch,f.feeType,f.due,f.paid,f.discount||0,f.mode,f.collectedBy,f.date])));
+
+    parts.push(csvSection('Pending Fees',
+      ['Student','Parent Mobile','Batch','Fee Type','Period','Due','Due Date','Days Overdue','Follow-up','Promise Date'],
+      pendingList.map(p=>[p.student,p.parentMobile,p.batch,p.feeType,p.period,p.due,p.dueDate,p.overdue,p.follow,p.promise])));
+
+    parts.push(csvSection('Teacher Payments',
+      ['Teacher','Pay Type','Gross','Deductions','Advance','Net Payable','Paid','Balance','Status'],
+      tpayList.map(t=>[t.teacher,t.payType,t.gross,t.ded||0,t.adv||0,t.net,t.paid||0,t.balance,t.status])));
+
+    parts.push(csvSection('Income',
+      ['ID','Date','Category','Description','Mode','Amount'],
+      incomeList.map(x=>[x.id,x.date,x.category,x.desc,x.mode,x.amount])));
+
+    parts.push(csvSection('Expense',
+      ['ID','Date','Category','Description','Vendor','Mode','Amount'],
+      expenseList.map(x=>[x.id,x.date,x.category,x.desc,x.vendor,x.mode,x.amount])));
+
+    if (!kpis && !feesList.length && !pendingList.length && !tpayList.length && !incomeList.length && !expenseList.length){
+      return App.toast('No report data loaded yet', 'error');
+    }
+
+    const csv = parts.join('\r\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    link.download = `report-pack-${selectedMonth}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    App.toast('Report pack exported', 'ok');
+    reportsMeta.forEach(r => logReport(r.key, r.name, 'export'));
+  };
+
   const head=`
-    <input type="month" class="filter-sel" id="monthFilter" value="2026-06" style="min-width:140px" onchange="onMonthChange(this.value)">
-    <button class="btn btn-light" onclick="App.toast('Report pack exported (PDF)','ok')">${App.svg('download')}Export All</button>
+    <input type="month" class="filter-sel" id="monthFilter" value="${selectedMonth}" style="min-width:140px" onchange="onMonthChange(this.value)">
+    <button class="btn btn-light" onclick="exportAllReports()">${App.svg('download')}Export All</button>
     <button class="btn btn-primary" onclick="App.toast('Scheduled report email sent','ok')">${App.svg('bell')}Schedule</button>`;
   const c=App.layout('reports','Reports',[`<span>Insights</span>`,'Reports'],head);
 
-  /* ───────── Category colour ───────── */
   const catClass={Finance:'b-brand',Academic:'b-blue',Marketing:'b-violet'};
 
-  /* ───────── Report definitions (metadata only — content is fetched live) ───────── */
-  const REPORTS=[
-    {key:'daily-fee',   name:'Daily Fee Collection',    cat:'Finance',   period:'07 Jun 2026'},
-    {key:'monthly-fee', name:'Monthly Fee Collection',  cat:'Finance',   period:'Jun 2026'},
-    {key:'pending-fees',name:'Pending Fees Report',     cat:'Finance',   period:'Jun 2026'},
-    {key:'teacher-due', name:'Teacher Payment Due',     cat:'Finance',   period:'May 2026'},
-    {key:'income',      name:'Income Report',           cat:'Finance',   period:'Jun 2026'},
-    {key:'expense',     name:'Expense Report',          cat:'Finance',   period:'Jun 2026'},
-    {key:'pnl',         name:'Profit & Loss',           cat:'Finance',   period:'Jun 2026'},
-    {key:'stu-att',     name:'Student Attendance',      cat:'Academic',  period:'Jun 2026'},
-    {key:'batch-att',   name:'Batch Attendance',        cat:'Academic',  period:'Jun 2026'},
-    {key:'admissions',  name:'Admission Report',        cat:'Academic',  period:'Q1 2026'},
-    {key:'enquiry-conv',name:'Enquiry Conversion',      cat:'Marketing', period:'Jun 2026'},
-    {key:'course-rev',  name:'Course-wise Revenue',     cat:'Finance',   period:'Jun 2026'},
-    {key:'batch-rev',   name:'Batch-wise Revenue',      cat:'Finance',   period:'Jun 2026'},
-    {key:'pay-mode',    name:'Payment Mode Report',     cat:'Finance',   period:'Jun 2026'},
-    {key:'discount',    name:'Discount Report',         cat:'Finance',   period:'Jun 2026'},
-  ];
-
-  function recordCount(key){
-    switch(key){
-      case 'daily-fee': return Math.min(feesList.length,12);
-      case 'monthly-fee': return Math.min(feesList.length,20);
-      case 'pending-fees': return pendingList.length;
-      case 'teacher-due': return tpayList.filter(t=>t.status!=='Paid').length;
-      case 'income': return incomeList.length;
-      case 'expense': return expenseList.length;
-      case 'pnl': return 1;
-      case 'stu-att': return studentsList.length;
-      case 'batch-att': return batchesList.filter(b=>b.status!=='Upcoming').length;
-      case 'admissions': return Math.min(studentsList.length,31);
-      case 'enquiry-conv': return enquiriesList.length;
-      case 'course-rev': return coursesList.length;
-      case 'batch-rev': return batchesList.length;
-      case 'pay-mode': return 5;
-      case 'discount': return feesList.filter(f=>f.discount>0).length;
-      default: return 0;
-    }
-  }
-
-  function computeCourseRevenue(){
-    return coursesList.map(cr=>{
-      const studs = studentsList.filter(s=>s.course===cr.name && s.status==='Active').length;
-      return { label: cr.name, value: studs * (cr.monthly||0) };
-    }).filter(r=>r.label && r.value>0).sort((a,b)=>b.value-a.value);
-  }
-
-  function computeTeacherPayout(){
-    const byTeacher = {};
-    tpayList.forEach(t=>{
-      const key = normName(t.teacher);
-      if(!key) return;
-      if(!byTeacher[key]) byTeacher[key] = { label: t.teacher, value: 0 };
-      byTeacher[key].value += (t.paid||0);
-    });
-    return Object.values(byTeacher).sort((a,b)=>b.value-a.value);
-  }
- 
-  function computeAdmissionSource(){
-    const PALETTE = ['var(--brand)','var(--blue)','var(--violet)','var(--green)','var(--amber)','var(--red)','var(--yellow)','var(--slate)'];
-    const bySource = {};
-    enquiriesList.forEach(e=>{
-      const key = normName(e.source);
-      if(!key) return;
-      if(!bySource[key]) bySource[key] = { label: e.source, count: 0 };
-      bySource[key].count += 1;
-    });
-    const rows = Object.values(bySource).sort((a,b)=>b.count-a.count);
-    const total = rows.reduce((a,r)=>a+r.count,0) || 1;
-    return rows.map((r,i)=>({
-      label: r.label,
-      value: Math.round(r.count/total*100),
-      color: PALETTE[i % PALETTE.length]
-    }));
-  }
-
   function renderPage(){
-    
-    const ch = {
-      collectionTrend: collectionTrendLive || DB.charts.collectionTrend,
-      incomeExpense: incomeExpenseLive || DB.charts.incomeExpense,
-      admissionSource: computeAdmissionSource(),
-      courseRevenue: computeCourseRevenue(),
-      teacherPayout: computeTeacherPayout()
+    if (!kpis || !charts) {
+      c.innerHTML = `<div class="empty"><div class="ic">${App.svg('reports')}</div><h4>No report data available</h4></div>`;
+      return;
+    }
+
+    /* ───────── KPI strip — values and deltas both come straight from the backend ───────── */
+    const deltaChip = (deltaPct, positiveIsGood = true) => {
+      if (deltaPct === null || deltaPct === undefined) return `<span class="delta flat">—</span>`;
+      const isUp = deltaPct >= 0;
+      const cls = isUp === positiveIsGood ? 'up' : 'down';
+      return `<span class="delta ${cls}">${App.svg(isUp ? 'up' : 'down')}${Math.abs(deltaPct)}% MoM</span>`;
     };
-    const chartsAreLive = !!(collectionTrendLive && incomeExpenseLive);
+    const mLabel = new Date(selectedMonth + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
 
-    /* ───────── KPI strip (computed live from fetched data) ───────── */
-    const totalCollection = feesList.reduce((a,f)=>a+(f.paid||0),0);
-    const outstanding = pendingList.reduce((a,p)=>a+(p.due||0),0);
-    const netProfit = incomeList.reduce((a,x)=>a+(x.amount||0),0) - expenseList.reduce((a,x)=>a+(x.amount||0),0);
-    const isLoss = netProfit < 0;
-    const newAdmissions = studentsList.filter(s=>(s.admission||'').startsWith(selectedMonth)).length;
-    const mLabel = monthLabel(selectedMonth);
-
-    const kpis=`
+    const kpisHtml=`
       <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi"><div class="top"><span class="label">Total Collection (${mLabel})</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(totalCollection)}</div><span class="delta up">${App.svg('up')}10.6% MoM</span></div>
-        <div class="kpi"><div class="top"><span class="label">Outstanding Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(outstanding)}</div><span class="delta down">${App.svg('down')}6% vs last month</span></div>
-        <div class="kpi"><div class="top"><span class="label">${isLoss?'Net Loss':'Net Profit'}</span><span class="ic ${isLoss?'b-red':'b-brand'}">${App.svg('trending')}</span></div><div class="val">${App.money(Math.abs(netProfit))}</div><span class="delta ${isLoss?'down':'up'}">${App.svg(isLoss?'down':'up')}12% MoM</span></div>
-        <div class="kpi"><div class="top"><span class="label">New Admissions</span><span class="ic b-blue">${App.svg('admit')}</span></div><div class="val">${newAdmissions}</div><span class="delta up">${App.svg('up')}+2 vs last month</span></div>
+        <div class="kpi"><div class="top"><span class="label">Total Collection (${mLabel})</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${App.money(kpis.totalCollection.value)}</div>${deltaChip(kpis.totalCollection.deltaPct)}</div>
+        <div class="kpi"><div class="top"><span class="label">Outstanding Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(kpis.outstandingDues.value)}</div>${deltaChip(kpis.outstandingDues.deltaPct, false)}</div>
+        <div class="kpi"><div class="top"><span class="label">${kpis.netProfit.isLoss?'Net Loss':'Net Profit'}</span><span class="ic ${kpis.netProfit.isLoss?'b-red':'b-brand'}">${App.svg('trending')}</span></div><div class="val">${App.money(kpis.netProfit.value)}</div>${deltaChip(kpis.netProfit.deltaPct)}</div>
+        <div class="kpi"><div class="top"><span class="label">New Admissions</span><span class="ic b-blue">${App.svg('admit')}</span></div><div class="val">${kpis.newAdmissions.value}</div><span class="delta ${kpis.newAdmissions.delta>=0?'up':'down'}">${App.svg(kpis.newAdmissions.delta>=0?'up':'down')}${kpis.newAdmissions.delta>=0?'+':''}${kpis.newAdmissions.delta} vs last month</span></div>
       </div>`;
 
-    /* ───────── Charts (Course-wise Revenue & Teacher-wise Payout are live) ───────── */
-    const charts=`
+    /* ───────── Charts — all five datasets arrive pre-computed ───────── */
+    const chartsHtml=`
       <div class="grid-2 mb16">
-        <div class="card"><div class="card-head"><div><h3>Monthly Fee Collection${chartsAreLive?'':' <span class="badge b-amber" style="font-size:10px;vertical-align:middle">mock data</span>'}</h3><div class="sub">₹ in '000</div></div><button class="btn btn-light btn-sm" onclick="App.toast('Exported','ok')">${App.svg('download')}Export</button></div><div class="card-body">${App.barChart(ch.collectionTrend,{color:'bar-brand'})}</div></div>
-        <div class="card"><div class="card-head"><div><h3>Income vs Expense${chartsAreLive?'':' <span class="badge b-amber" style="font-size:10px;vertical-align:middle">mock data</span>'}</h3><div class="sub">6-month comparison, ₹ in '000</div></div></div><div class="card-body">${App.barChart(ch.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Monthly Fee Collection</h3><div class="sub">₹ in '000</div></div><button class="btn btn-light btn-sm" onclick="App.toast('Exported','ok')">${App.svg('download')}Export</button></div><div class="card-body">${App.barChart(charts.collectionTrend,{color:'bar-brand'})}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Income vs Expense</h3><div class="sub">6-month comparison, ₹ in '000</div></div></div><div class="card-body">${App.barChart(charts.incomeExpense.map(x=>({m:x.m,a:x.inc,b:x.exp})),{stacked:true})}</div></div>
       </div>
       <div class="grid-3 mb16">
-        <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(ch.courseRevenue.slice(0,6),App.money)}</div></div>
-        <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(ch.teacherPayout.slice(0,6),App.money)}</div></div>
-        <div class="card"><div class="card-head"><h3>Admission Sources</h3></div><div class="card-body">${App.donut(ch.admissionSource)}</div></div>
+        <div class="card"><div class="card-head"><h3>Course-wise Revenue</h3></div><div class="card-body">${App.hbars(charts.courseRevenue.slice(0,6),App.money)}</div></div>
+        <div class="card"><div class="card-head"><h3>Teacher-wise Payout</h3></div><div class="card-body">${App.hbars(charts.teacherPayout.slice(0,6),App.money)}</div></div>
+        <div class="card"><div class="card-head"><h3>Admission Sources</h3></div><div class="card-body">${App.donut(charts.admissionSource)}</div></div>
       </div>`;
 
-    /* ───────── All Reports table ───────── */
+    /* ───────── All Reports table — period, recordCount, lastGenerated all from backend ───────── */
     const allReports=`
       <div class="card">
         <div class="card-head">
@@ -245,12 +194,12 @@ if(App.guard()){
               <th>Report</th><th>Category</th><th>Period</th><th class="num">Records</th>
               <th>Last Generated</th><th style="text-align:right">Action</th>
             </tr></thead>
-            <tbody>${REPORTS.map(r=>`<tr data-cat="${r.cat}">
+            <tbody>${reportsMeta.map(r=>`<tr data-cat="${r.cat}">
               <td class="t-main">${r.name}</td>
               <td><span class="badge ${catClass[r.cat]||'b-slate'}"><span class="pip"></span>${r.cat}</span></td>
               <td>${r.period}</td>
-              <td class="num">${recordCount(r.key)}</td>
-              <td class="t-sub" data-lastgen="${r.key}">${reportLogs[r.key] || 'Not yet generated'}</td>
+              <td class="num">${r.recordCount}</td>
+              <td class="t-sub" data-lastgen="${r.key}">${r.lastGenerated || 'Not yet generated'}</td>
               <td style="text-align:right">
                 <div class="act" style="justify-content:flex-end">
                   ${App.actBtn('eye','View Report',`onclick="viewReport('${r.key}','${r.name}','${r.period}')"`)}
@@ -264,10 +213,9 @@ if(App.guard()){
         </div>
       </div>`;
 
-    c.innerHTML = kpis + charts + allReports;
+    c.innerHTML = kpisHtml + chartsHtml + allReports;
   }
 
-  /* ───────── Category filter ───────── */
   window.filterCat=function(btn, cat){
     document.querySelectorAll('#catSeg button').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
@@ -281,20 +229,17 @@ if(App.guard()){
     logReport(key, name, action);
   };
 
-  /* ───────── Helpers ───────── */
   const th=(...cols)=>`<thead><tr>${cols.map(c=>typeof c==='object'?`<th class="${c.cls||''}">${c.label}</th>`:`<th>${c}</th>`).join('')}</tr></thead>`;
   const tblWrap=html=>`<div class="tbl-wrap"><table class="tbl">${html}</table></div>`;
   const sumBar=(label,val,cls='')=>`<div class="pl-line ${cls}"><span>${label}</span><span class="v">${App.money(val)}</span></div>`;
 
-  /* ───────── Report modal bodies (sourced from live *List arrays) ───────── */
+
   function buildBody(key, period){
     switch(key){
-
-      /* ── 1. Daily Fee Collection ── */
       case 'daily-fee':
         return tblWrap(
           th('Receipt #','Student','Batch','Fee Type',{label:'Due',cls:'num'},{label:'Paid',cls:'num'},
-             {label:'Disc',cls:'num'},'Mode','Collected By','Time')+
+             {label:'Disc',cls:'num'},'Mode','Collected By','Date')+
           `<tbody>${feesList.slice(0,12).map(f=>`<tr>
             <td class="t-id">${f.id}</td>
             <td class="t-main">${f.student}</td>
@@ -305,11 +250,10 @@ if(App.guard()){
             <td class="num">${f.discount?App.money(f.discount):'—'}</td>
             <td>${App.badge(f.mode==='Cash'?'Cash':f.mode)}</td>
             <td>${f.collectedBy}</td>
-            <td class="t-sub">09:${String(10+feesList.indexOf(f)).padStart(2,'0')} AM</td>
+            <td class="t-sub">${f.date || '-'}</td>
           </tr>`).join('')}</tbody>`
         );
 
-      /* ── 2. Monthly Fee Collection ── */
       case 'monthly-fee':
         return tblWrap(
           th('Student','Batch','Fee Type','Period',{label:'Due',cls:'num'},{label:'Paid',cls:'num'},
@@ -328,7 +272,6 @@ if(App.guard()){
           </tr>`).join('')}</tbody>`
         );
 
-      /* ── 3. Pending Fees ── */
       case 'pending-fees':
         return tblWrap(
           th('Student','Parent Mobile','Batch','Fee Type','Period',{label:'Due',cls:'num'},
@@ -347,7 +290,6 @@ if(App.guard()){
           </tr>`).join('')}</tbody>`
         );
 
-      /* ── 4. Teacher Payment Due ── */
       case 'teacher-due':
         return tblWrap(
           th('Teacher','Pay Type',{label:'Gross',cls:'num'},{label:'Deductions',cls:'num'},
@@ -366,7 +308,6 @@ if(App.guard()){
           </tr>`).join('')}</tbody>`
         );
 
-      /* ── 5. Income Report ── */
       case 'income': {
         const total=incomeList.reduce((a,x)=>a+x.amount,0);
         return tblWrap(
@@ -386,7 +327,6 @@ if(App.guard()){
         );
       }
 
-      /* ── 6. Expense Report ── */
       case 'expense': {
         const total=expenseList.reduce((a,x)=>a+x.amount,0);
         return tblWrap(
@@ -407,7 +347,6 @@ if(App.guard()){
         );
       }
 
-      /* ── 7. Profit & Loss ── */
       case 'pnl': {
         const inc=incomeList.reduce((a,x)=>a+x.amount,0);
         const exp=expenseList.reduce((a,x)=>a+x.amount,0);
@@ -439,197 +378,13 @@ if(App.guard()){
           </div>`;
       }
 
-      /* ── 8. Student Attendance ── */
-      case 'stu-att':
-        return tblWrap(
-          th('Student ID','Student','Batch','Course',
-             {label:'Present',cls:'num'},{label:'Absent',cls:'num'},{label:'Late',cls:'num'},
-             {label:'Att %',cls:'num'},'Status')+
-          `<tbody>${studentsList.map(s=>{
-            const tot=24, pct=s.att;
-            const pres=Math.round(tot*pct/100), abs=tot-pres-Math.floor(Math.random()*2);
-            const late=tot-pres-abs;
-            return `<tr>
-              <td class="t-id">${s.id}</td>
-              <td>${App.whoCell(s.name,s.cls)}</td>
-              <td>${s.batch}</td>
-              <td class="t-sub">${s.course}</td>
-              <td class="num">${pres}</td>
-              <td class="num" style="${abs>5?'color:var(--red)':''}">${abs}</td>
-              <td class="num">${late>0?late:'—'}</td>
-              <td class="num"><div class="pct-cell" style="justify-content:flex-end">
-                <span style="font-weight:600;color:${pct>=80?'var(--green)':pct>=60?'var(--amber)':'var(--red)'}">${pct}%</span>
-              </div></td>
-              <td>${App.badge(pct>=80?'Active':pct>=60?'Rescheduled':'Overdue')}</td>
-            </tr>`;
-          }).join('')}</tbody>`
-        );
 
-      /* ── 9. Batch Attendance ── */
-      case 'batch-att':
-        return tblWrap(
-          th('Batch','Course','Subject','Teacher','Total Students',
-             {label:'Classes (Jun)',cls:'num'},{label:'Avg Present',cls:'num'},
-             {label:'Att %',cls:'num'},'Type')+
-          `<tbody>${batchesList.filter(b=>b.status!=='Upcoming').map(b=>{
-            const classes=20, pct=70+Math.floor(Math.random()*25);
-            return `<tr>
-              <td class="t-main">${b.name}</td>
-              <td class="t-sub">${b.course}</td>
-              <td>${b.subject}</td>
-              <td>${b.teacher}</td>
-              <td class="num">${b.cur}</td>
-              <td class="num">${classes}</td>
-              <td class="num">${Math.round(b.cur*pct/100)}</td>
-              <td class="num"><span style="font-weight:600;color:${pct>=80?'var(--green)':pct>=60?'var(--amber)':'var(--red)'}">${pct}%</span></td>
-              <td>${App.badge(b.status)}</td>
-            </tr>`;
-          }).join('')}</tbody>`
-        );
-
-      /* ── 10. Admission Report ── */
-      case 'admissions':
-        return tblWrap(
-          th('Student ID','Student','Class','Course','Batch',
-             'Fee Type',{label:'Fee Amt',cls:'num'},'Source','Admission Date','Status')+
-          `<tbody>${studentsList.slice(0,31).map(s=>`<tr>
-            <td class="t-id">${s.id}</td>
-            <td>${App.whoCell(s.name,s.cls)}</td>
-            <td>${s.cls}</td>
-            <td class="t-sub">${s.course}</td>
-            <td>${s.batch}</td>
-            <td>${s.feeType}</td>
-            <td class="num">${App.money(s.feeAmt)}</td>
-            <td><span class="chip">${DB.sources[studentsList.indexOf(s)%DB.sources.length]}</span></td>
-            <td>${s.admission}</td>
-            <td>${App.badge(s.status)}</td>
-          </tr>`).join('')}</tbody>`
-        );
-
-      /* ── 11. Enquiry Conversion ── */
-      case 'enquiry-conv':
-        return tblWrap(
-          th('Enq ID','Student Name','Class','Course Interested','Source','Date','Counselor','Status')+
-          `<tbody>${enquiriesList.map(e=>`<tr>
-            <td class="t-id">${e.id}</td>
-            <td class="t-main">${e.name}</td>
-            <td>${e.cls}</td>
-            <td class="t-sub">${e.course}</td>
-            <td><span class="chip">${e.source}</span></td>
-            <td>${e.date}</td>
-            <td>${e.counselor}</td>
-            <td>${App.badge(e.status)}</td>
-          </tr>`).join('')}</tbody>`
-        );
-
-      /* ── 12. Course-wise Revenue ── */
-      case 'course-rev':
-        return tblWrap(
-          th('Course','Category','Level',{label:'Monthly Fee',cls:'num'},
-             {label:'Active Students',cls:'num'},{label:'Monthly Revenue',cls:'num'},
-             {label:'Annual Rev (Est.)',cls:'num'},'Status')+
-          `<tbody>${coursesList.map(cr=>{
-            const studs=studentsList.filter(s=>s.course===cr.name&&s.status==='Active').length;
-            const mrev=studs*cr.monthly;
-            return `<tr>
-              <td class="t-main">${cr.name}</td>
-              <td>${cr.category}</td>
-              <td>${cr.level}</td>
-              <td class="num">${App.money(cr.monthly)}</td>
-              <td class="num">${studs}</td>
-              <td class="num" style="font-weight:600;color:var(--brand)">${App.money(mrev)}</td>
-              <td class="num">${App.money(mrev*12)}</td>
-              <td>${App.badge(cr.status)}</td>
-            </tr>`;
-          }).join('')}</tbody>`
-        );
-
-      /* ── 13. Batch-wise Revenue ── */
-      case 'batch-rev':
-        return tblWrap(
-          th('Batch','Course','Teacher',{label:'Students',cls:'num'},
-             'Dominant Fee Type',{label:'Avg Fee',cls:'num'},
-             {label:'Monthly Revenue',cls:'num'},'Status')+
-          `<tbody>${batchesList.map(b=>{
-            const cr=coursesList.find(c=>c.name===b.course)||{monthly:1800};
-            const rev=b.cur*cr.monthly;
-            return `<tr>
-              <td class="t-main">${b.name}</td>
-              <td class="t-sub">${b.course}</td>
-              <td>${b.teacher}</td>
-              <td class="num">${b.cur}</td>
-              <td>Monthly Fee</td>
-              <td class="num">${App.money(cr.monthly)}</td>
-              <td class="num" style="font-weight:600;color:var(--brand)">${App.money(rev)}</td>
-              <td>${App.badge(b.status)}</td>
-            </tr>`;
-          }).join('')}</tbody>`
-        );
-
-      /* ── 14. Payment Mode Report ── */
-      case 'pay-mode': {
-        const modes=['Cash','UPI','Bank Transfer','Card','Cheque'];
-        const totFees=feesList.reduce((a,f)=>a+f.paid,0) || 1;
-        const modeData=modes.map(m=>{
-          const txns=feesList.filter(f=>f.mode===m);
-          const amt=txns.reduce((a,f)=>a+f.paid,0);
-          return {mode:m, count:txns.length, amt, avg:txns.length?Math.round(amt/txns.length):0, pct:Math.round(amt/totFees*100)};
-        });
-        return tblWrap(
-          th('Payment Mode',{label:'Transactions',cls:'num'},{label:'Total Amount',cls:'num'},
-             {label:'Avg per Txn',cls:'num'},{label:'% of Total',cls:'num'},'Trend')+
-          `<tbody>${modeData.map(m=>`<tr>
-            <td class="t-main">${m.mode}</td>
-            <td class="num">${m.count||'—'}</td>
-            <td class="num" style="font-weight:600">${App.money(m.amt)}</td>
-            <td class="num">${m.avg?App.money(m.avg):'—'}</td>
-            <td class="num"><span style="font-weight:600;color:var(--brand)">${m.pct}%</span></td>
-            <td><div class="track" style="width:120px;height:8px;border-radius:5px;background:var(--surface-3);overflow:hidden"><span style="display:block;height:100%;border-radius:5px;background:var(--brand);width:${m.pct}%"></span></div></td>
-          </tr>`).join('')}
-          <tr style="background:var(--brand-tint)">
-            <td style="font-weight:700">Total</td>
-            <td class="num" style="font-weight:700">${feesList.length}</td>
-            <td class="num" style="font-weight:700;color:var(--brand-700)">${App.money(totFees)}</td>
-            <td colspan="3"></td>
-          </tr></tbody>`
-        );
-      }
-
-      /* ── 15. Discount Report ── */
-      case 'discount': {
-        const discFees=feesList.filter(f=>f.discount>0);
-        const totalDisc=discFees.reduce((a,f)=>a+f.discount,0);
-        return tblWrap(
-          th('Receipt #','Student','Batch','Fee Type',
-             {label:'Original Fee',cls:'num'},{label:'Discount',cls:'num'},
-             {label:'Disc %',cls:'num'},'Mode','Date','Reason')+
-          `<tbody>${discFees.map(f=>`<tr>
-            <td class="t-id">${f.id}</td>
-            <td class="t-main">${f.student}</td>
-            <td>${f.batch}</td>
-            <td>${f.feeType}</td>
-            <td class="num">${App.money(f.due)}</td>
-            <td class="num" style="color:var(--amber);font-weight:600">${App.money(f.discount)}</td>
-            <td class="num">${Math.round(f.discount/f.due*100)}%</td>
-            <td>${f.mode}</td>
-            <td>${f.date}</td>
-            <td class="t-sub">${['Sibling discount','Merit scholarship','Staff concession','Early payment','Need-based'][feesList.indexOf(f)%5]}</td>
-          </tr>`).join('')}
-          <tr style="background:var(--amber-soft)">
-            <td colspan="4" style="font-weight:700;text-align:right;color:var(--ink)">Total Discount Given</td>
-            <td class="num" style="font-weight:700">${App.money(discFees.reduce((a,f)=>a+f.due,0))}</td>
-            <td class="num" style="font-weight:700;color:var(--amber)">${App.money(totalDisc)}</td>
-            <td colspan="4"></td>
-          </tr></tbody>`
-        );
-      }
 
       default:
         return `<div class="empty"><div class="ic">${App.svg('reports')}</div><h4>Report not available</h4></div>`;
     }
   }
 
-  /* ───────── viewReport ───────── */
   window.viewReport=function(key, name, period){
     const body=buildBody(key, period);
     const isFullWidth=['stu-att','monthly-fee','admissions','enquiry-conv','course-rev','batch-rev','pay-mode','discount','batch-att'].includes(key);
@@ -651,7 +406,7 @@ if(App.guard()){
 
   (async function init(){
     c.innerHTML = `<div class="empty"><div class="ic">${App.svg('reports')}</div><h4>Loading reports…</h4></div>`;
-    await loadAllData();
+    await loadDashboard();
     renderPage();
   })();
 }
