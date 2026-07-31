@@ -146,6 +146,11 @@ const deleteBatch = async(id)=>{
 };
 
 
+
+
+// models/batchModel.js
+
+// 1. Get Batches by Teacher ID
 const getBatchesByTeacherId = async (teacherId) => {
   const query = `
     SELECT 
@@ -161,14 +166,14 @@ const getBatchesByTeacherId = async (teacherId) => {
       COUNT(DISTINCT s.id)::INT AS students_count,
       COALESCE(
         ROUND(
-          (SUM(CASE WHEN al.status IN ('Present', 'Late') THEN 1 ELSE 0 END)::NUMERIC 
+          (COUNT(CASE WHEN al.status IN ('Present', 'Late') THEN 1 END)::NUMERIC 
            / NULLIF(COUNT(al.id), 0)::NUMERIC) * 100
         ), 0
       )::INT AS att
     FROM batches b
     LEFT JOIN courses c ON b.course_id = c.id
     LEFT JOIN students s ON s.batch_id = b.id
-    LEFT JOIN attendance_logs al ON al.batch_name = b.batch_name
+    LEFT JOIN attendance_logs al ON al.student_id = s.id::TEXT
     WHERE b.teacher_id = $1 OR $1 IS NULL
     GROUP BY b.id, c.course_name
     ORDER BY b.id ASC;
@@ -177,37 +182,35 @@ const getBatchesByTeacherId = async (teacherId) => {
   return result.rows;
 };
 
-// Get Single Batch Details for Teacher
-const getTeacherBatchDetails = async (batchIdentifier, teacherId) => {
-    const isNumeric = !isNaN(batchIdentifier) && !isNaN(parseInt(batchIdentifier));
+// models/batchModel.js
 
-    const query = `
-        SELECT
-            b.id,
-            b.batch_code,
-            b.batch_name AS name,
-            c.course_name AS course,
-            b.subject,
-            b.classroom AS room,
-            b.days,
-            b.batch_type,
-            b.start_time AS st,
-            b.end_time AS et,
-            CONCAT(b.start_time, ' - ', b.end_time) AS timing,
-            b.max_students AS max,
-            COALESCE(b.current_students, 0) AS cur,
-            b.status
-        FROM batches b
-        LEFT JOIN courses c ON b.course_id = c.id
-        WHERE (${isNumeric ? 'b.id = $1' : 'b.batch_code = $1'}) 
-          AND b.teacher_id = $2
-    `;
-    const result = await db.query(query, [batchIdentifier, teacherId]);
-    return result.rows[0] || null;
+const getTeacherBatchDetails = async (batchId, teacherId) => {
+  const query = `
+    SELECT
+      b.id,
+      b.batch_code,
+      b.batch_name AS name,
+      c.course_name AS course,
+      b.subject,
+      b.classroom AS room,
+      b.days,
+      b.batch_type,
+      b.start_time AS st,
+      b.end_time AS et,
+      CONCAT(b.start_time, ' - ', b.end_time) AS timing,
+      b.max_students AS max,
+      COALESCE(b.current_students, 0) AS cur,
+      b.status
+    FROM batches b
+    LEFT JOIN courses c ON b.course_id = c.id
+    WHERE b.id = $1::INT 
+      AND (b.teacher_id = $2::INT OR $2 IS NULL)
+  `;
+  const result = await db.query(query, [batchId, teacherId]);
+  return result.rows[0] || null;
 };
 
-// Get Student List inside a Batch (calculating attendance % and last test scores)
-const getBatchStudents = async (batchIdentifier) => {
+const getBatchStudents = async (batchId) => {
   const query = `
     SELECT 
       s.id,
@@ -218,22 +221,21 @@ const getBatchStudents = async (batchIdentifier) => {
       COALESCE(s.teacher_remark, '') AS remark,
       COALESCE(
         ROUND(
-          (SUM(CASE WHEN al.status IN ('Present', 'Late') THEN 1 ELSE 0 END)::NUMERIC 
+          (COUNT(CASE WHEN al.status IN ('Present', 'Late') THEN 1 END)::NUMERIC 
            / NULLIF(COUNT(al.id), 0)::NUMERIC) * 100
         ), 100
-      )::INT AS att,
-      85 AS "lastTest"
+      )::INT AS att
     FROM students s
-    JOIN batches b ON s.batch_id = b.id OR b.batch_code = $1
+    JOIN batches b ON s.batch_id = b.id
     LEFT JOIN attendance_logs al ON al.student_id = s.id::TEXT
-    WHERE b.id::TEXT = $1 OR b.batch_code = $1
+    WHERE b.id = $1::INT
     GROUP BY s.id, b.id
     ORDER BY s.student_name ASC;
   `;
-  const result = await db.query(query, [batchIdentifier]);
+  const result = await db.query(query, [batchId]);
   return result.rows;
 };
-
+// 4. Update Remark
 const updateStudentRemark = async (studentId, batchId, performance, remark) => {
   const query = `
     UPDATE students
@@ -245,6 +247,8 @@ const updateStudentRemark = async (studentId, batchId, performance, remark) => {
   const result = await db.query(query, [performance, remark, studentId]);
   return result.rows[0];
 };
+
+
 
 module.exports = {
     getAllBatches,

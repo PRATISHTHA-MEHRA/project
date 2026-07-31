@@ -1,43 +1,60 @@
+// src/controllers/classNotes/classNotesController.js
 const StudyMaterial = require("../../../models/studyMaterialModel");
 
-// Deserializes PostgreSQL title JSON string back into usable UI fields
+// Deserializes PostgreSQL title JSON string or raw row back into usable UI fields
 const formatRowAsClassNote = (row) => {
   let extra = {};
-  try {
-    extra = JSON.parse(row.title);
-  } catch (e) {
-    extra = { topic: row.title };
+  
+  if (row.title && typeof row.title === "string" && row.title.trim().startsWith("{")) {
+    try {
+      extra = JSON.parse(row.title);
+    } catch (e) {
+      extra = {};
+    }
   }
+
+  const batchName = row.batch || row.course || extra.batch || "General";
 
   return {
     id: row.id,
-    batch: row.course || extra.batch || "General",
+    batch: batchName,
     subject: row.subject || "Mathematics",
     date: row.date,
-    topic: extra.topic || row.title,
-    chapter: extra.chapter || "—",
-    hw: extra.hw || "—",
-    doubts: extra.doubts || "—",
-    next: extra.next || "—",
-    remarks: extra.remarks || "—",
+    topic: extra.topic || row.topic || row.title || "—",
+    chapter: extra.chapter || row.chapter || "—",
+    hw: extra.hw || row.hw || "—",
+    doubts: extra.doubts || row.doubts || "—",
+    next: extra.next || row.next || "—",
+    remarks: extra.remarks || row.remarks || "—",
     uploadedBy: row.uploadedBy
   };
 };
 
-// 1. Get Class Notes
+// 1. Get Class Notes (Supports filtering by batch ID/Name from URL params)
 exports.getClassNotes = async (req, res) => {
   try {
-    // Extract teacher name matching DB column 'teacher_name' from JWT token payload
     const teacherName = 
       req.user?.teacher_name || 
       req.user?.name || 
       req.query.teacherName || 
       null;
 
-    // Fetch notes matching type = 'Class Note' and assigned to/created by this teacher
+    // Extract batch identifier if requested via /api/teacher/batches/:id/notes
+    const batchId = req.params.id || req.params.batchId || req.query.batch;
+
+    // Fetch notes matching type = 'Class Note'
     const rawData = await StudyMaterial.getAllMaterial("Class Note", teacherName);
 
-    const formattedData = rawData.map(formatRowAsClassNote);
+    let formattedData = rawData.map(formatRowAsClassNote);
+
+    // Filter by batch if a specific batch ID/Name was passed in URL params
+    if (batchId) {
+      formattedData = formattedData.filter(
+        (note) =>
+          String(note.batch).toLowerCase() === String(batchId).toLowerCase() ||
+          String(note.id) === String(batchId)
+      );
+    }
 
     res.json({ success: true, data: formattedData });
   } catch (err) {
@@ -50,7 +67,9 @@ exports.addClassNote = async (req, res) => {
   try {
     const { batch, subject, topic, chapter, hw, doubts, next, remarks } = req.body;
 
-    // Get exact teacher name using DB column key 'teacher_name' from JWT
+    // If batch isn't explicitly in body, fallback to URL parameter
+    const selectedBatch = batch || req.params.id || "General";
+
     const teacherName = 
       req.user?.teacher_name || 
       req.user?.name || 
@@ -68,10 +87,10 @@ exports.addClassNote = async (req, res) => {
 
     const materialData = {
       title: titlePayload,
-      course: batch || "General",
+      course: selectedBatch,
       subject: subject || "Mathematics",
       type: "Class Note",
-      uploadedBy: teacherName, // Stores actual teacher name in PostgreSQL 'uploaded_by' column
+      uploadedBy: teacherName,
       size: "—"
     };
 
@@ -91,7 +110,9 @@ exports.addClassNote = async (req, res) => {
 // 3. Delete Class Note
 exports.deleteClassNote = async (req, res) => {
   try {
-    const data = await StudyMaterial.deleteMaterial(req.params.id);
+    const targetId = req.params.noteId || req.params.id;
+
+    const data = await StudyMaterial.deleteMaterial(targetId);
     if (!data) return res.status(404).json({ success: false, message: "Note not found" });
 
     res.json({ success: true, message: "Class note deleted successfully" });
