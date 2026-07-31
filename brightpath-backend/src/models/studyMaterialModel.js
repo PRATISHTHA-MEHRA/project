@@ -2,8 +2,10 @@ const pool = require("../config/db");
 
 const StudyMaterial = {
 
-  async getAllMaterial() {
-    const result = await pool.query(`
+  // Fetch materials (Optionally filter by type, e.g., 'Class Note')
+ // Flexible fetch: Can filter by type, teacher/uploadedBy, or fetch all
+  async getAllMaterial(type = null, uploadedBy = null) {
+    let query = `
       SELECT
         material_code     AS id,
         title,
@@ -16,16 +18,36 @@ const StudyMaterial = {
         download_count    AS downloads,
         original_filename AS "originalFilename"
       FROM study_materials
-      ORDER BY upload_date DESC, material_code DESC
-    `);
+    `;
+
+    const conditions = [];
+    const params = [];
+
+    if (type) {
+      params.push(type);
+      conditions.push(`type = $${params.length}`);
+    }
+
+    if (uploadedBy) {
+      params.push(uploadedBy);
+      conditions.push(`uploaded_by = $${params.length}`);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    query += ` ORDER BY upload_date DESC, material_code DESC`;
+
+    const result = await pool.query(query, params);
     return result.rows;
   },
-
+  // Insert any material (Works for Class Notes as well)
   async addMaterial(sm) {
     const result = await pool.query(
       `INSERT INTO study_materials
         (title, course_name, subject, type, uploaded_by, file_size, download_count, file_path, original_filename)
-       VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8)
        RETURNING
         material_code     AS id,
         title,
@@ -39,9 +61,9 @@ const StudyMaterial = {
         original_filename AS "originalFilename"`,
       [
         sm.title,
-        sm.course,
-        sm.subject,
-        sm.type || "PDF",
+        sm.course || sm.batch, // Map batch to course_name
+        sm.subject || "Mathematics",
+        sm.type || "Class Note", // Default to 'Class Note' if coming from teacher notes
         sm.uploadedBy,
         sm.fileSize || sm.size || "—",
         sm.filePath || null,

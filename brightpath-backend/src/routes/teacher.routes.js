@@ -27,5 +27,11 @@ router.use("/payments", require("../modules/teacher/teacherPayment/teacherPaymen
 // Teacher Leaves
 router.use("/leaves", require("../modules/teacher/teacherLeave/teacherLeaveRoutes"));
 
+// Teacher Homework
+router.use("/homework", require("../modules/teacher/teacherHomework/teacherHomeworkRoutes"));
+
+// Teacher Class Notes
+router.use("/class-notes", require("../modules/teacher/classNotes/classNotesRoutes"));
+
 
 module.exports = router;

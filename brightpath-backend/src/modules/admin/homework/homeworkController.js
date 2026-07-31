@@ -16,38 +16,55 @@ exports.addHomework = async (req, res) => {
       ? { originalFilename: req.file.originalname, filePath: req.file.path }
       : { originalFilename: null, filePath: null };
 
-    const data = await Homework.addHomework({ ...req.body, ...fileMeta });
+    // Fallback teacher name if not explicitly passed in req.body
+    const teacher = req.body.teacher || req.user?.name || req.user?.teacher_name;
+
+    const data = await Homework.addHomework({
+      ...req.body,
+      teacher,
+      ...fileMeta
+    });
+
     res.json({ success: true, data, message: "Homework assigned & students notified" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+// homeworkController.js
 
 exports.editHomework = async (req, res) => {
   try {
     const code = req.params.id;
     let oldFilePath = null;
 
-    // Check if new file is uploaded; if so, fetch old path to clean it up
-    if (req.file) {
-      const existing = await Homework.getHomeworkFilePath(code);
-      if (existing) oldFilePath = existing.attachment_path;
+    const existing = await Homework.getHomeworkFilePath(code);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Homework not found" });
     }
+    oldFilePath = existing.attachment_path;
 
     const fileMeta = req.file
       ? { originalFilename: req.file.originalname, filePath: req.file.path }
       : { originalFilename: null, filePath: null };
 
-    const data = await Homework.editHomework(code, { ...req.body, ...fileMeta });
-    if (!data) return res.status(404).json({ success: false, message: "Homework not found" });
+    const data = await Homework.editHomework(code, {
+      batch: req.body.batch,
+      subject: req.body.subject,
+      teacher: req.body.teacher,
+      title: req.body.title,
+      desc: req.body.desc,
+      due: req.body.due,
+      status: req.body.status,
+      ...fileMeta
+    });
 
-    // Clean up old file asynchronously after successful update
     if (oldFilePath && req.file) {
       await fs.unlink(oldFilePath).catch(() => {});
     }
 
-    res.json({ success: true, data, message: "Homework updated" });
+    res.json({ success: true, data, message: "Homework updated successfully" });
   } catch (err) {
+    console.error("Edit Homework Error:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -56,16 +73,14 @@ exports.deleteHomework = async (req, res) => {
   try {
     const code = req.params.id;
 
-    // 1. Fetch file path before deleting record
     const hw = await Homework.getHomeworkFilePath(code);
     if (!hw) {
       return res.status(404).json({ success: false, message: "Homework not found" });
     }
 
-    // 2. Remove record from database
     await Homework.deleteHomework(code);
 
-    // 3. Remove physical file if it exists
+    // Gracefully attempt file deletion
     if (hw.attachment_path) {
       await fs.unlink(hw.attachment_path).catch(() => {});
     }

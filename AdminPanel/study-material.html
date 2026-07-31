@@ -16,11 +16,14 @@ if(App.guard()){
   const c=App.layout('study-material','Study Material',[`<span>Assessment</span>`,'Study Material'],head);
   c.innerHTML=`<div id="tbl"></div>`;
 
-  function unwrapList(res){ return (res && res.data) || []; }
+  function unwrapList(res){ 
+    const list = (res && res.data) || []; 
+    return list.map(item => ({ ...item, id: item.id || item._id }));
+  }
   function courseName(cs){ return cs.name || cs.course_name || cs.courseName || ''; }
   function teacherName(t){ return t.name || t.teacher_name || t.teacherName || ''; }
 
-  const API_BASE = (typeof API !== 'undefined' && API.BASE_URL) ? API.BASE_URL : 'http://localhost:5001/api';
+  const API_BASE = (typeof API !== 'undefined' && API.BASE_URL) ? API.BASE_URL : 'http://localhost:5001/api/admin';
   function authHeaders(){
     const token = localStorage.getItem('JWT_TOKEN');
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -30,18 +33,9 @@ if(App.guard()){
   let liveCourses = [];
   let liveTeachers = [];
 
-  document.getElementById('tbl').addEventListener('click', e=>{
-    const btn = e.target.closest('[data-action]');
-    if(!btn) return;
-    const { action, id } = btn.dataset;
-    if(action==='download') downloadSm(id);
-    else if(action==='delete') delSm(id);
-  });
-
   function renderTable(rows){
     currentRows = rows;
     
-    // Dynamically derive unique courses for filter dropdown
     const dynamicCourses = [...new Set(rows.map(r => r.course).filter(Boolean))];
 
     App.table('tbl',{
@@ -54,14 +48,18 @@ if(App.guard()){
         { label:'Type', key:'type', options:['PDF','DOC','Video','Link'] }
       ],
       columns:[
-        {key:'title',label:'Title',render:r=>`<div class="who-cell">${App.svg(r.type==='Video'?'demo':'material').replace('<svg','<svg style="width:18px;height:18px;color:var(--brand)"')}<div><div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.size}</div></div></div>`},
+        {key:'title',label:'Title',render:r=>`<div class="who-cell">${App.svg(r.type==='Video'?'demo':'material').replace('<svg','<svg style="width:18px;height:18px;color:var(--brand)"')}<div><div class="t-main">${r.title}</div><div class="t-sub">${r.id} · ${r.size || ''}</div></div></div>`},
         {key:'course',label:'Course',render:r=>`<div>${r.course||'—'}</div><div class="t-sub">${r.subject||''}</div>`},
         {key:'type',label:'Type',render:r=>`<span class="chip">${r.type}</span>`},
         {key:'uploadedBy',label:'Uploaded By'},
         {key:'date',label:'Date'},
         {key:'downloads',label:'Downloads',num:true}
       ],
-      actions:r=>`${App.actBtn('download','Download',`data-action="download" data-id="${r.id}"`)}${App.actBtn('trash','Delete',`class="danger" data-action="delete" data-id="${r.id}"`)}`,
+      // Using native App.actBtn helper restores proper styling & spacing
+      actions: r => `
+        ${App.actBtn('download', 'Download', `onclick="downloadSm('${r.id}')"`)}
+        ${App.actBtn('trash', 'Delete', `class="danger" onclick="delSm('${r.id}')"`)}
+      `,
       emptyTitle:'No study material found', emptyText:'Upload material for a course to see it here.'
     });
   }
@@ -87,12 +85,11 @@ if(App.guard()){
     }catch(err){ console.warn('Falling back to static teacher list:', err.message); liveTeachers = []; }
   }
 
-  const find=id=>currentRows.find(s=>s.id===id);
+  const find=id=>currentRows.find(s=> String(s.id) === String(id));
 
   window.downloadSm=async id=>{
-    const sm=find(id); if(!sm) return;
+    const sm=find(id); if(!sm) return App.toast('Material not found','err');
     try{
-      // Single network call handles stream + count increment
       const res = await fetch(`${API_BASE}/study-material/${id}/file`, { headers: authHeaders() });
       if(!res.ok){
         if(res.status===404) throw new Error('No file available for download');
@@ -113,7 +110,8 @@ if(App.guard()){
     }catch(err){ App.toast(err.message || 'Failed to download material','err'); }
   };
 
-  window.delSm=id=>{ const sm=find(id); if(!sm) return;
+  window.delSm=id=>{ 
+    const sm=find(id); if(!sm) return App.toast('Material not found','err');
     App.confirmModal(`Delete material <b>${sm.title}</b>?`,async ()=>{
       try{
         await API.delete(`/study-material/${id}`);
@@ -149,8 +147,9 @@ if(App.guard()){
           const file = fileInput.files[0];
 
           const fd = new FormData();
-          Object.entries(payload).forEach(([k,v])=>fd.append(k,v));
-          if(file) fd.append('file', file);
+          Object.entries(payload).forEach(([k,v]) => fd.append(k,v));
+
+          if(file) fd.append('attachment', file);
 
           try{
             const res = await fetch(`${API_BASE}/study-material`, {
