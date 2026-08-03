@@ -5,9 +5,10 @@ class Auth {
     static async login(username) {
 
         const query = `
-            SELECT *
+            SELECT admins.*, roles.name AS role
             FROM admins
-            WHERE username=$1
+            LEFT JOIN roles ON roles.id = admins.role_id
+            WHERE admins.username = $1
         `;
 
         const result = await db.query(query, [username]);
