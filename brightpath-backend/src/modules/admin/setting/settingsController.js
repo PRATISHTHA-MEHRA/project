@@ -1,6 +1,4 @@
-
 const M = require('../../../models/settingsModel');
-
 
 const h = (fn) => async (req, res) => {
   try {
@@ -13,6 +11,39 @@ const h = (fn) => async (req, res) => {
 };
 
 module.exports = {
+
+  getAllSettings: h(async () => {
+    const [
+      profileRes,
+      branchesRes,
+      classroomsRes,
+      feeRulesRes,
+      rolesRes,
+      templatesRes,
+      acadRes,
+      holidaysRes,
+    ] = await Promise.all([
+      M.getProfile(),
+      M.getBranches(),
+      M.getClassrooms(),
+      M.getFeeRules(),
+      M.getRoles(),
+      M.getTemplates(),
+      M.getAcademicYear(),
+      M.getHolidays(),
+    ]);
+
+    return {
+      profile: profileRes.rows[0] || {},
+      branches: branchesRes.rows,
+      classrooms: classroomsRes.rows,
+      feeRules: feeRulesRes.rows[0] || {},
+      roles: rolesRes.rows,
+      templates: templatesRes.rows,
+      academicYear: { ...(acadRes.rows[0] || {}), holidays: holidaysRes.rows },
+    };
+  }),
+
   // Profile
   getProfile: h(async () => (await M.getProfile()).rows[0]),
   updateProfile: h(async (req) => (await M.updateProfile(req.body)).rows[0]),

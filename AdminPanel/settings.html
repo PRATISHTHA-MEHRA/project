@@ -13,10 +13,9 @@
 <script>
 if(App.guard()){
 
-
   function unwrapOne(res){ return res?.data ?? res ?? {}; }
   function unwrapList(res){ const d = res?.data ?? res; return Array.isArray(d) ? d : (d?.rows || []); }
-  function normName(s){ return String(s||'').trim().toLowerCase(); }
+  function val(id){ const el=document.getElementById(id); return el?el.value:''; }
 
   const head=`<button class="btn btn-primary" id="saveTop">${App.svg('check')}Save Changes</button>`;
   const c=App.layout('settings','Settings',['Settings'],head);
@@ -51,21 +50,31 @@ if(App.guard()){
     document.querySelectorAll('#setTabs .tab').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active'));
     t.classList.add('active'); document.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active');
-    loadTab(t.dataset.t);
   });
-
-  const loaded = {};
   const activeTab = () => document.querySelector('#setTabs .tab.active').dataset.t;
 
-  function loadTab(t){
-    if (loaded[t]) return;
-    loaded[t] = true;
-    if (t==='t1') loadProfile();
-    if (t==='t2') { loadBranches(); loadClassrooms(); }
-    if (t==='t3') loadFeeRules();
-    if (t==='t4') loadRoles();
-    if (t==='t5') loadTemplates();
-    if (t==='t6') loadAcademicYear();
+  // ---- single in-memory cache, populated by ONE bootstrap call ----
+  const state = { profile:{}, branches:[], classrooms:[], feeRules:{}, roles:[], templates:[], academicYear:{} };
+
+  async function bootstrap(){
+    try{
+      const res = unwrapOne(await API.get('/settings/all'));
+      state.profile      = res.profile      || {};
+      state.branches     = res.branches     || [];
+      state.classrooms   = res.classrooms   || [];
+      state.feeRules     = res.feeRules     || {};
+      state.roles        = res.roles        || [];
+      state.templates    = res.templates    || [];
+      state.academicYear = res.academicYear || {};
+
+      renderProfile();
+      renderBranches();
+      renderClassrooms();
+      renderFeeRules();
+      renderRoles();
+      renderTemplates();
+      renderAcademicYear();
+    }catch(e){ App.toast('Failed to load settings: '+e.message,'err'); }
   }
 
   /* ---------------- Centre Profile ---------------- */
@@ -79,35 +88,27 @@ if(App.guard()){
       <div><label>Receipt Prefix</label><input id="pf_receipt_prefix" value="${p.receipt_prefix||'RCP-'}"></div>
       <div><label>Currency</label><select id="pf_currency"><option ${p.currency==='INR (₹)'?'selected':''}>INR (₹)</option></select></div></div>`;
   }
-  async function loadProfile(){
-    try{ const p = unwrapOne(await API.get('/settings/profile'));
-      document.getElementById('profileBody').innerHTML = profileForm(p);
-    }catch(e){ App.toast('Failed to load centre profile: '+e.message,'err'); }
-  }
+  function renderProfile(){ document.getElementById('profileBody').innerHTML = profileForm(state.profile); }
   async function saveProfile(){
     const body = {
       centre_name: val('pf_centre_name'), contact_number: val('pf_contact_number'), email: val('pf_email'),
       gst_no: val('pf_gst_no'), address: val('pf_address'), receipt_prefix: val('pf_receipt_prefix'), currency: val('pf_currency')
     };
-    try{ await API.put('/settings/profile', body); App.toast('Centre profile saved','ok'); }
+    try{ state.profile = unwrapOne(await API.put('/settings/profile', body)); App.toast('Centre profile saved','ok'); }
     catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
-  function val(id){ const el=document.getElementById(id); return el?el.value:''; }
 
   /* ---------------- Branches ---------------- */
-  async function loadBranches(){
-    try{
-      const rows = unwrapList(await API.get('/settings/branches'));
-      App.table('branchTbl', {
-        columns: [ {key:'name',label:'Branch'}, {key:'location',label:'Location'},
-          {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
-        rows, searchKeys:['name','location'],
-        actions: r=>`${App.actBtn('edit','Edit',`onclick="editBranch(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeBranch(${r.id})"`)}`,
-        pageSize: 5
-      });
-      window._branches = rows;
-    }catch(e){ App.toast('Failed to load branches: '+e.message,'err'); }
+  function renderBranches(){
+    App.table('branchTbl', {
+      columns: [ {key:'name',label:'Branch'}, {key:'location',label:'Location'},
+        {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
+      rows: state.branches, searchKeys:['name','location'],
+      actions: r=>`${App.actBtn('edit','Edit',`onclick="editBranch(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeBranch(${r.id})"`)}`,
+      pageSize: 5
+    });
   }
+  async function refreshBranches(){ state.branches = unwrapList(await API.get('/settings/branches')); renderBranches(); }
   function branchModal(existing){
     App.modal({ title: existing?'Edit Branch':'Add Branch',
       body:`<div class="form-grid">
@@ -120,32 +121,29 @@ if(App.guard()){
         try{
           if (existing) await API.put(`/settings/branches/${existing.id}`, body);
           else await API.post('/settings/branches', body);
-          App.closeModal(); App.toast('Branch saved','ok'); loaded.t2=false; loadBranches();
+          App.closeModal(); App.toast('Branch saved','ok'); await refreshBranches();
         }catch(e){ App.toast('Save failed: '+e.message,'err'); }
       };}
     });
   }
   document.addEventListener('click', e=>{ if(e.target.closest('#addBranchBtn')) branchModal(null); });
-  window.editBranch = (id)=> branchModal((window._branches||[]).find(b=>b.id===id));
+  window.editBranch = (id)=> branchModal(state.branches.find(b=>b.id===id));
   window.removeBranch = (id)=> App.confirmModal('Delete this branch?', async ()=>{
-    try{ await API.delete(`/settings/branches/${id}`); App.toast('Branch deleted','ok'); loaded.t2=false; loadBranches(); }
+    try{ await API.delete(`/settings/branches/${id}`); App.toast('Branch deleted','ok'); await refreshBranches(); }
     catch(e){ App.toast('Delete failed: '+e.message,'err'); }
   }, {danger:true, yes:'Delete'});
 
   /* ---------------- Classrooms ---------------- */
-  async function loadClassrooms(){
-    try{
-      const rows = unwrapList(await API.get('/settings/classrooms'));
-      App.table('roomTbl', {
-        columns: [ {key:'room_name',label:'Room'}, {key:'capacity',label:'Capacity',num:true},
-          {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
-        rows, searchKeys:['room_name'],
-        actions: r=>`${App.actBtn('edit','Edit',`onclick="editRoom(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRoom(${r.id})"`)}`,
-        pageSize: 6
-      });
-      window._rooms = rows;
-    }catch(e){ App.toast('Failed to load classrooms: '+e.message,'err'); }
+  function renderClassrooms(){
+    App.table('roomTbl', {
+      columns: [ {key:'room_name',label:'Room'}, {key:'capacity',label:'Capacity',num:true},
+        {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
+      rows: state.classrooms, searchKeys:['room_name'],
+      actions: r=>`${App.actBtn('edit','Edit',`onclick="editRoom(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRoom(${r.id})"`)}`,
+      pageSize: 6
+    });
   }
+  async function refreshClassrooms(){ state.classrooms = unwrapList(await API.get('/settings/classrooms')); renderClassrooms(); }
   function roomModal(existing){
     App.modal({ title: existing?'Edit Classroom':'Add Classroom',
       body:`<div class="form-grid">
@@ -158,15 +156,15 @@ if(App.guard()){
         try{
           if (existing) await API.put(`/settings/classrooms/${existing.id}`, body);
           else await API.post('/settings/classrooms', body);
-          App.closeModal(); App.toast('Classroom saved','ok'); loaded.t2=false; loadClassrooms();
+          App.closeModal(); App.toast('Classroom saved','ok'); await refreshClassrooms();
         }catch(e){ App.toast('Save failed: '+e.message,'err'); }
       };}
     });
   }
   document.addEventListener('click', e=>{ if(e.target.closest('#addRoomBtn')) roomModal(null); });
-  window.editRoom = (id)=> roomModal((window._rooms||[]).find(r=>r.id===id));
+  window.editRoom = (id)=> roomModal(state.classrooms.find(r=>r.id===id));
   window.removeRoom = (id)=> App.confirmModal('Delete this classroom?', async ()=>{
-    try{ await API.delete(`/settings/classrooms/${id}`); App.toast('Classroom deleted','ok'); loaded.t2=false; loadClassrooms(); }
+    try{ await API.delete(`/settings/classrooms/${id}`); App.toast('Classroom deleted','ok'); await refreshClassrooms(); }
     catch(e){ App.toast('Delete failed: '+e.message,'err'); }
   }, {danger:true, yes:'Delete'});
 
@@ -182,34 +180,27 @@ if(App.guard()){
       <div><label>Auto-send reminders</label><select id="fr_auto">
         <option value="true" ${r.auto_send?'selected':''}>Enabled</option><option value="false" ${!r.auto_send?'selected':''}>Disabled</option></select></div></div>`;
   }
-  async function loadFeeRules(){
-    try{ const r = unwrapOne(await API.get('/settings/fee-rules'));
-      document.getElementById('feeRulesBody').innerHTML = feeRulesForm(r);
-    }catch(e){ App.toast('Failed to load fee rules: '+e.message,'err'); }
-  }
+  function renderFeeRules(){ document.getElementById('feeRulesBody').innerHTML = feeRulesForm(state.feeRules); }
   async function saveFeeRules(){
     const body = { first_reminder_days:+val('fr_first'), second_reminder_days:+val('fr_second'),
       final_reminder_days:+val('fr_final'), late_fine_per_day:+val('fr_fine'),
       reminder_channel: val('fr_channel'), auto_send: val('fr_auto')==='true' };
-    try{ await API.put('/settings/fee-rules', body); App.toast('Fee reminder rules saved','ok'); }
+    try{ state.feeRules = unwrapOne(await API.put('/settings/fee-rules', body)); App.toast('Fee reminder rules saved','ok'); }
     catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
 
   /* ---------------- Roles & Permissions ---------------- */
-  async function loadRoles(){
-    try{
-      const rows = unwrapList(await API.get('/settings/roles'));
-      App.table('roleTbl', {
-        columns: [ {key:'role_name',label:'Role'}, {key:'user_count',label:'Users',num:true},
-          {key:'permissions',label:'Permissions', render:r=>`<span class="chip">${r.permissions||''}</span>`},
-          {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
-        rows, searchKeys:['role_name'],
-        actions: r=>`${App.actBtn('edit','Edit',`onclick="editRole(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRole(${r.id})"`)}`,
-        pageSize: 8
-      });
-      window._roles = rows;
-    }catch(e){ App.toast('Failed to load roles: '+e.message,'err'); }
+  function renderRoles(){
+    App.table('roleTbl', {
+      columns: [ {key:'role_name',label:'Role'}, {key:'user_count',label:'Users',num:true},
+        {key:'permissions',label:'Permissions', render:r=>`<span class="chip">${r.permissions||''}</span>`},
+        {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
+      rows: state.roles, searchKeys:['role_name'],
+      actions: r=>`${App.actBtn('edit','Edit',`onclick="editRole(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRole(${r.id})"`)}`,
+      pageSize: 8
+    });
   }
+  async function refreshRoles(){ state.roles = unwrapList(await API.get('/settings/roles')); renderRoles(); }
   function roleModal(existing){
     App.modal({ title: existing?'Edit Role':'Add Role',
       body:`<div class="form-grid">
@@ -222,31 +213,32 @@ if(App.guard()){
         try{
           if (existing) await API.put(`/settings/roles/${existing.id}`, body);
           else await API.post('/settings/roles', body);
-          App.closeModal(); App.toast('Role saved','ok'); loaded.t4=false; loadRoles();
+          App.closeModal(); App.toast('Role saved','ok'); await refreshRoles();
         }catch(e){ App.toast('Save failed: '+e.message,'err'); }
       };}
     });
   }
   document.addEventListener('click', e=>{ if(e.target.closest('#addRoleBtn')) roleModal(null); });
-  window.editRole = (id)=> roleModal((window._roles||[]).find(r=>r.id===id));
+  window.editRole = (id)=> roleModal(state.roles.find(r=>r.id===id));
   window.removeRole = (id)=> App.confirmModal('Delete this role?', async ()=>{
-    try{ await API.delete(`/settings/roles/${id}`); App.toast('Role deleted','ok'); loaded.t4=false; loadRoles(); }
+    try{ await API.delete(`/settings/roles/${id}`); App.toast('Role deleted','ok'); await refreshRoles(); }
     catch(e){ App.toast('Delete failed: '+e.message,'err'); }
   }, {danger:true, yes:'Delete'});
 
   /* ---------------- Notification Templates ---------------- */
-  async function loadTemplates(){
-    try{
-      const rows = unwrapList(await API.get('/settings/templates'));
-      document.getElementById('templatesBody').innerHTML = rows.map(t=>
-        `<div class="form-row"><label>${t.label}</label><textarea rows="2" data-key="${t.template_key}">${t.content}</textarea></div>`
-      ).join('');
-    }catch(e){ App.toast('Failed to load templates: '+e.message,'err'); }
+  function renderTemplates(){
+    document.getElementById('templatesBody').innerHTML = state.templates.map(t=>
+      `<div class="form-row"><label>${t.label}</label><textarea rows="2" data-key="${t.template_key}">${t.content}</textarea></div>`
+    ).join('');
   }
   async function saveTemplates(){
     const areas = document.querySelectorAll('#templatesBody textarea[data-key]');
     try{
       for (const a of areas) await API.put(`/settings/templates/${a.dataset.key}`, { content: a.value });
+      state.templates = state.templates.map(t=>{
+        const el = document.querySelector(`#templatesBody textarea[data-key="${t.template_key}"]`);
+        return el ? { ...t, content: el.value } : t;
+      });
       App.toast('Notification templates saved','ok');
     }catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
@@ -263,23 +255,22 @@ if(App.guard()){
       <div style="margin-top:10px;display:flex;gap:8px"><input id="ay_newholiday" placeholder="Add holiday label e.g. 15 Aug" style="max-width:240px">
       <button class="btn btn-light btn-sm" id="addHolidayBtn">${App.svg('plus')}Add Holiday</button></div>`;
   }
-  async function loadAcademicYear(){
-    try{ const a = unwrapOne(await API.get('/settings/academic-year'));
-      document.getElementById('acadBody').innerHTML = acadForm(a);
-      document.getElementById('addHolidayBtn').onclick = async ()=>{
-        const label = val('ay_newholiday'); if(!label) return;
-        try{ await API.post('/settings/academic-year/holidays', { label }); App.toast('Holiday added','ok'); loaded.t6=false; loadAcademicYear(); }
-        catch(e){ App.toast('Add failed: '+e.message,'err'); }
-      };
-    }catch(e){ App.toast('Failed to load academic year: '+e.message,'err'); }
+  function renderAcademicYear(){
+    document.getElementById('acadBody').innerHTML = acadForm(state.academicYear);
+    document.getElementById('addHolidayBtn').onclick = async ()=>{
+      const label = val('ay_newholiday'); if(!label) return;
+      try{ await API.post('/settings/academic-year/holidays', { label }); App.toast('Holiday added','ok'); await refreshAcademicYear(); }
+      catch(e){ App.toast('Add failed: '+e.message,'err'); }
+    };
   }
+  async function refreshAcademicYear(){ state.academicYear = unwrapOne(await API.get('/settings/academic-year')); renderAcademicYear(); }
   window.removeHoliday = (id)=> App.confirmModal('Remove this holiday?', async ()=>{
-    try{ await API.delete(`/settings/academic-year/holidays/${id}`); App.toast('Holiday removed','ok'); loaded.t6=false; loadAcademicYear(); }
+    try{ await API.delete(`/settings/academic-year/holidays/${id}`); App.toast('Holiday removed','ok'); await refreshAcademicYear(); }
     catch(e){ App.toast('Remove failed: '+e.message,'err'); }
   }, {danger:true, yes:'Remove'});
   async function saveAcademicYear(){
     const body = { current_year: val('ay_year'), session_start: val('ay_start'), session_end: val('ay_end'), working_days: val('ay_wdays') };
-    try{ await API.put('/settings/academic-year', body); App.toast('Academic year saved','ok'); }
+    try{ await API.put('/settings/academic-year', body); App.toast('Academic year saved','ok'); await refreshAcademicYear(); }
     catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
 
@@ -293,7 +284,7 @@ if(App.guard()){
     App.toast('Use Add / Edit / Delete on this tab — changes save immediately','info');
   };
 
-  loadTab('t1'); // initial tab
+  bootstrap(); // one call loads every tab's data
 }
 </script>
 </body></html>
