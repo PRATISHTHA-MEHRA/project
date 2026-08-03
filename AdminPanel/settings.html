@@ -80,12 +80,12 @@ if(App.guard()){
   /* ---------------- Centre Profile ---------------- */
   function profileForm(p){
     return `<div class="form-grid">
-      <div><label>Centre Name</label><input id="pf_centre_name" value="${p.centre_name||''}"></div>
-      <div><label>Contact Number</label><input id="pf_contact_number" value="${p.contact_number||''}"></div>
-      <div><label>Email</label><input id="pf_email" value="${p.email||''}"></div>
-      <div><label>GST / Registration No.</label><input id="pf_gst_no" value="${p.gst_no||''}"></div>
-      <div class="full"><label>Address</label><input id="pf_address" value="${p.address||''}"></div>
-      <div><label>Receipt Prefix</label><input id="pf_receipt_prefix" value="${p.receipt_prefix||'RCP-'}"></div>
+      <div><label>Centre Name</label><input id="pf_centre_name" placeholder="e.g. BrightPath Coaching Centre" value="${p.centre_name||''}"></div>
+      <div><label>Contact Number</label><input id="pf_contact_number" placeholder="e.g. 98765 43210" value="${p.contact_number||''}"></div>
+      <div><label>Email</label><input id="pf_email" placeholder="e.g. info@brightpath.com" value="${p.email||''}"></div>
+      <div><label>GST / Registration No.</label><input id="pf_gst_no" placeholder="e.g. 27ABCDE1234F1Z5" value="${p.gst_no||''}"></div>
+      <div class="full"><label>Address</label><input id="pf_address" placeholder="e.g. 2nd Floor, Andheri West, Mumbai" value="${p.address||''}"></div>
+      <div><label>Receipt Prefix</label><input id="pf_receipt_prefix" placeholder="e.g. RCP-" value="${p.receipt_prefix||'RCP-'}"></div>
       <div><label>Currency</label><select id="pf_currency"><option ${p.currency==='INR (₹)'?'selected':''}>INR (₹)</option></select></div></div>`;
   }
   function renderProfile(){ document.getElementById('profileBody').innerHTML = profileForm(state.profile); }
@@ -111,9 +111,10 @@ if(App.guard()){
   async function refreshBranches(){ state.branches = unwrapList(await API.get('/settings/branches')); renderBranches(); }
   function branchModal(existing){
     App.modal({ title: existing?'Edit Branch':'Add Branch',
+      sub: existing?'Update this branch\'s details.':'Add a new branch location for your centre.',
       body:`<div class="form-grid">
-        <div class="full"><label>Branch Name</label><input id="bm_name" value="${existing?.name||''}"></div>
-        <div><label>Location</label><input id="bm_location" value="${existing?.location||''}"></div>
+        <div class="full"><label>Branch Name</label><input id="bm_name" placeholder="e.g. Andheri West Branch" value="${existing?.name||''}"></div>
+        <div><label>Location</label><input id="bm_location" placeholder="e.g. Andheri West, Mumbai" value="${existing?.location||''}"></div>
         <div><label>Status</label><select id="bm_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="bmSave">Save</button>`,
       onOpen: b=>{ b.querySelector('#bmSave').onclick = async ()=>{
@@ -146,9 +147,10 @@ if(App.guard()){
   async function refreshClassrooms(){ state.classrooms = unwrapList(await API.get('/settings/classrooms')); renderClassrooms(); }
   function roomModal(existing){
     App.modal({ title: existing?'Edit Classroom':'Add Classroom',
+      sub: existing?'Update this classroom\'s details.':'Add a new classroom or teaching space.',
       body:`<div class="form-grid">
-        <div class="full"><label>Room Name</label><input id="rm_name" value="${existing?.room_name||''}"></div>
-        <div><label>Capacity</label><input class="num" id="rm_capacity" value="${existing?.capacity??''}"></div>
+        <div class="full"><label>Room Name</label><input id="rm_name" placeholder="e.g. Room 101" value="${existing?.room_name||''}"></div>
+        <div><label>Capacity</label><input class="num" id="rm_capacity" placeholder="e.g. 30" value="${existing?.capacity??''}"></div>
         <div><label>Status</label><select id="rm_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="rmSave">Save</button>`,
       onOpen: b=>{ b.querySelector('#rmSave').onclick = async ()=>{
@@ -203,9 +205,10 @@ if(App.guard()){
   async function refreshRoles(){ state.roles = unwrapList(await API.get('/settings/roles')); renderRoles(); }
   function roleModal(existing){
     App.modal({ title: existing?'Edit Role':'Add Role',
+      sub: existing?'Update this role\'s permissions.':'Define a new staff role and what it can access.',
       body:`<div class="form-grid">
-        <div class="full"><label>Role Name</label><input id="rl_name" value="${existing?.role_name||''}"></div>
-        <div class="full"><label>Permissions (comma-separated)</label><input id="rl_perms" value="${existing?.permissions||''}"></div>
+        <div class="full"><label>Role Name</label><input id="rl_name" placeholder="e.g. Front Desk Executive" value="${existing?.role_name||''}"></div>
+        <div class="full"><label>Permissions (comma-separated)</label><input id="rl_perms" placeholder="e.g. students, fees, attendance" value="${existing?.permissions||''}"></div>
         <div><label>Status</label><select id="rl_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="rlSave">Save</button>`,
       onOpen: b=>{ b.querySelector('#rlSave').onclick = async ()=>{
@@ -246,10 +249,10 @@ if(App.guard()){
   /* ---------------- Academic Year ---------------- */
   function acadForm(a){
     return `<div class="form-grid">
-      <div><label>Current Academic Year</label><input id="ay_year" value="${a.current_year||''}"></div>
+      <div><label>Current Academic Year</label><input id="ay_year" placeholder="e.g. 2026-27" value="${a.current_year||''}"></div>
       <div><label>Session Start</label><input type="date" id="ay_start" value="${(a.session_start||'').slice(0,10)}"></div>
       <div><label>Session End</label><input type="date" id="ay_end" value="${(a.session_end||'').slice(0,10)}"></div>
-      <div><label>Working Days</label><input id="ay_wdays" value="${a.working_days||'Mon – Sat'}"></div></div>
+      <div><label>Working Days</label><input id="ay_wdays" placeholder="e.g. Mon – Sat" value="${a.working_days||'Mon – Sat'}"></div></div>
       <div class="sec-title">Holidays</div>
       <div class="chips" id="holidayChips">${(a.holidays||[]).map(h=>`<span class="chip">${h.label}<span data-hid="${h.id}" class="chip-x" style="cursor:pointer;margin-left:6px;font-weight:700" onclick="removeHoliday(${h.id})" title="Remove holiday">✕</span></span>`).join('')}</div>
       <div style="margin-top:10px;display:flex;gap:8px"><input id="ay_newholiday" placeholder="Add holiday label e.g. 15 Aug" style="max-width:240px">
