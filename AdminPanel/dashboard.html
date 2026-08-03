@@ -27,10 +27,11 @@ if(App.guard()){
       batchesList=DB.batches, coursesList=DB.courses, enquiriesList=DB.enquiries,
       totalTeachers=DB.dash.totalTeachers, todayClasses=DB.today,
       attendancePct=DB.dash.attendancePct, newAdmissionsThisMonth=null,
-      chartsData=null, 
-      feeCollectionRatePct=null, 
-      demoConversionPct=null, 
-      lastKpis=[]; 
+      chartsData=null, // server-computed charts, replaces all client compute* fns
+      feeCollectionRatePct=null, // real, from backend
+      demoConversionPct=null, // real, from backend
+      monthlyCollectionOverride=null, // real, by billing period — from backend
+      lastKpis=[]; // populated each renderPage() call, used by exportDashboardCSV
 
 async function loadDashboard(){
   try{
@@ -56,6 +57,7 @@ async function loadDashboard(){
     chartsData = d.charts || null;
     feeCollectionRatePct = (d.feeCollectionRatePct !== null && d.feeCollectionRatePct !== undefined) ? d.feeCollectionRatePct : null;
     demoConversionPct = (d.demoConversionPct !== null && d.demoConversionPct !== undefined) ? d.demoConversionPct : null;
+    monthlyCollectionOverride = (d.monthlyCollection !== null && d.monthlyCollection !== undefined) ? d.monthlyCollection : null;
   }catch(err){
     console.warn('Falling back to sample data — /dashboard/summary failed:', err.message);
   }
@@ -84,7 +86,7 @@ async function loadDashboard(){
 
   function renderPage(){
 
-   
+    
     const cd = chartsData || {};
     const ch = {
       ...DB.charts,
@@ -99,19 +101,16 @@ async function loadDashboard(){
 
     const totalStudents = studentsList.length;
     const activeStudents = studentsList.filter(s=>s.status==='Active').length;
-
-    const now = new Date();
-    const currentMonthPrefix = now.toISOString().slice(0,7); // e.g. "2026-07"
-    const currentMonthShort = now.toLocaleString('en-US',{month:'short'}); // e.g. "Jul"
+    const currentMonthPrefix = new Date().toISOString().slice(0,7); // e.g. "2026-08"
+    const currentMonthLabel = new Date().toLocaleDateString('en-US',{month:'short'}); // e.g. "Aug"
     const inCurrentMonth = dateStr => String(dateStr || '').startsWith(currentMonthPrefix);
-
     const newAdmissions = newAdmissionsThisMonth !== null ? newAdmissionsThisMonth
-      : (studentsList.filter(s=>inCurrentMonth(s.admission)).length || DB.dash.newAdmissions);
+      : (studentsList.filter(s=>(s.admission||'').startsWith(currentMonthPrefix)).length || 0);
     const activeBatches = batchesList.filter(b=>b.status==='Active' || b.status!=='Upcoming').length;
 
-    const monthlyCollection = feesList
-      .filter(f => inCurrentMonth(f.date))
-      .reduce((a,f)=>a+(Number(f.paid)||0),0);
+
+    const monthlyCollection = monthlyCollectionOverride !== null ? monthlyCollectionOverride
+      : feesList.filter(f => inCurrentMonth(f.date)).reduce((a,f)=>a+(Number(f.paid)||0),0);
 
     const pendingFeesTotal = pendingList.reduce((a,p)=>a+(Number(p.due)||0),0);
 
@@ -133,7 +132,7 @@ async function loadDashboard(){
     const kpis = [
       {l:"Total Students",v:totalStudents,ic:"students",col:"b-brand"},
       {l:"Active Students",v:activeStudents,ic:"check",col:"b-green"},
-      {l:`New Admissions (${currentMonthShort})`,v:newAdmissions,ic:"admit",col:"b-blue"},
+      {l:`New Admissions (${currentMonthLabel})`,v:newAdmissions,ic:"admit",col:"b-blue"},
       {l:"Total Teachers",v:totalTeachers,ic:"teacher",col:"b-violet"},
       {l:"Active Batches",v:activeBatches,ic:"batch",col:"b-brand"},
       {l:"Today's Classes",v:todayClasses.length,ic:"timetable",col:"b-amber"},
@@ -144,7 +143,7 @@ async function loadDashboard(){
       {l:"Monthly Expenses",v:App.money(monthlyExpenses),ic:"money",col:"b-slate"},
       {l:"Net Profit",v:App.money(netProfit),ic:"trending",col:"b-brand"},
     ];
-    lastKpis = kpis; 
+    lastKpis = kpis; // captured here so exportDashboardCSV always has the latest values
 
     c.innerHTML = `
       <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">

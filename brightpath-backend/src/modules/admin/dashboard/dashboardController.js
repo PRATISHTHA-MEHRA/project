@@ -96,13 +96,17 @@ const computePendingTrend = (pendingFees) => {
   return months.map(m => ({ m: m.shortLabel, v: Math.round(byMonth[m.key] / 1000) }));
 };
 
-const computeCourseRevenue = (students, courses) => {
-  return courses
-    .map(c => {
-      const count = students.filter(s => s.course === c.name && s.status === 'Active').length;
-      return { label: c.name, value: count * (c.monthly || 0) };
-    })
-    .filter(r => r.label && r.value > 0)
+
+const computeCourseRevenue = (fees) => {
+  const byCourse = {};
+  fees.forEach(f => {
+    const key = String(f.course || '').trim();
+    if (!key) return;
+    if (!byCourse[key]) byCourse[key] = { label: f.course, value: 0 };
+    byCourse[key].value += toNum(f.paid);
+  });
+  return Object.values(byCourse)
+    .filter(r => r.value > 0)
     .sort((a, b) => b.value - a.value);
 };
 
@@ -117,16 +121,20 @@ const computeTeacherPayout = (teacherPayments) => {
   return Object.values(byTeacher).sort((a, b) => b.value - a.value);
 };
 
-const computeBatchCount = (batches) => {
+
+const computeBatchCount = (students, batches) => {
   return batches
-    .filter(b => b.name && toNum(b.cur) > 0)
-    .map(b => ({ label: b.name, value: toNum(b.cur) }))
+    .filter(b => b.batch_name)
+    .map(b => {
+      const count = students.filter(s => s.batch === b.batch_name && s.status === 'Active').length;
+      return { label: b.batch_name, value: count };
+    })
+    .filter(r => r.value > 0)
     .sort((a, b) => b.value - a.value);
 };
 
-// "Total due" for the current billing period, per fee_receipts.due_amount
-// (the amount owed on each receipt, before that receipt's payment).
-const computeFeeCollectionRate = (fees) => {
+
+const computeCurrentPeriodFeeStats = (fees) => {
   const currentPeriod = new Date()
     .toLocaleString('en-US', { month: 'short', year: 'numeric' })
     .trim().toLowerCase();
@@ -135,8 +143,22 @@ const computeFeeCollectionRate = (fees) => {
   const totalDue = rows.reduce((a, f) => a + toNum(f.due), 0);
   const totalPaid = rows.reduce((a, f) => a + toNum(f.paid), 0);
 
-  if (totalDue <= 0) return null; // no data for this period yet — frontend falls back
-  return Math.round((totalPaid / totalDue) * 100);
+  return {
+    monthlyCollection: totalPaid, // real ₹ collected against this period's billing
+    feeCollectionRatePct: totalDue > 0 ? Math.round((totalPaid / totalDue) * 100) : null
+  };
+};
+
+// Of enquiries that reached the demo stage (Demo Scheduled / Demo Completed /
+// Converted — i.e. excludes New/Contacted/Interested which never got a demo),
+// what percentage converted.
+const computeDemoConversion = (enquiries) => {
+  const demoStageStatuses = ['demo scheduled', 'demo completed', 'converted'];
+  const demoRows = enquiries.filter(e => demoStageStatuses.includes(String(e.status || '').trim().toLowerCase()));
+  const converted = demoRows.filter(e => String(e.status || '').trim().toLowerCase() === 'converted').length;
+
+  if (!demoRows.length) return null;
+  return Math.round((converted / demoRows.length) * 100);
 };
 
 const computeAdmissionSource = (enquiries) => {
@@ -155,17 +177,6 @@ const computeAdmissionSource = (enquiries) => {
     value: Math.round((r.count / total) * 100),
     color: PALETTE[i % PALETTE.length]
   }));
-};
-
-// Demo Completed / Converted are the only statuses that reflect a demo
-// outcome — everything earlier in the funnel (New, Contacted, Interested,
-// Demo Scheduled) hasn't resolved yet and is excluded from the denominator
-// so it doesn't drag the rate down artificially.
-const computeDemoConversionRate = (demoStats) => {
-  const demoCount = toNum(demoStats?.demo_count);
-  const convertedCount = toNum(demoStats?.converted_count);
-  if (demoCount <= 0) return null;
-  return Math.round((convertedCount / demoCount) * 100);
 };
 
 // ---------------------------------------------------------------------------
@@ -187,14 +198,13 @@ exports.getSummary = async (req, res) => {
       Teacher.getAll(),
       Timetable.getMasterSchedules(),
       Attendance.getDailyKPIs(today),
-      Admission.getAdmissionStats(),
-      Enquiry.getDemoConversionStats()
+      Admission.getAdmissionStats()
     ]);
 
     const [
       rawFees, rawPendingFees, rawTeacherPayments, rawStudents,
       rawBatches, rawCourses, rawEnquiries, rawIncome, rawExpense,
-      teachers, rawSchedule, attendanceKpis, admissionStats, demoStats
+      teachers, rawSchedule, attendanceKpis, admissionStats
     ] = results.map(r => r.status === 'fulfilled' ? r.value : []);
 
     results.forEach((r, i) => {
@@ -262,11 +272,13 @@ exports.getSummary = async (req, res) => {
       collectionTrend: computeCollectionTrend(fees),
       incomeExpense: computeIncomeExpense(income, expense),
       pendingTrend: computePendingTrend(pendingFees),
-      courseRevenue: computeCourseRevenue(students, courses),
+      courseRevenue: computeCourseRevenue(fees),
       teacherPayout: computeTeacherPayout(teacherPayments),
-      batchCount: computeBatchCount(batches),
+      batchCount: computeBatchCount(students, batches),
       admissionSource: computeAdmissionSource(enquiries)
     };
+
+    const periodFeeStats = computeCurrentPeriodFeeStats(fees);
 
     res.json({
       success: true,
@@ -276,14 +288,11 @@ exports.getSummary = async (req, res) => {
         totalTeachers: (teachers || []).length,
         todayClasses,
         attendancePct: attendanceKpis?.overall_pct !== undefined ? toNum(attendanceKpis.overall_pct) : null,
-        // admissionStats is expected to be scoped to the current calendar
-        // month by Admission.getAdmissionStats() — this is "this month's"
-        // count, not a fixed "June" figure. The frontend label is derived
-        // from today's date so the two stay in sync automatically.
         newAdmissionsThisMonth: admissionStats?.month_count !== undefined ? toNum(admissionStats.month_count) : null,
         avgAdmissionFee: admissionStats?.avg_fee !== undefined ? toNum(admissionStats.avg_fee) : null,
-        feeCollectionRatePct: computeFeeCollectionRate(fees),
-        demoConversionPct: computeDemoConversionRate(demoStats),
+        monthlyCollection: periodFeeStats.monthlyCollection, // by billing period, not payment date
+        feeCollectionRatePct: periodFeeStats.feeCollectionRatePct,
+        demoConversionPct: computeDemoConversion(enquiries),
         charts
       }
     });
