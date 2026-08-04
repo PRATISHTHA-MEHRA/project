@@ -83,4 +83,18 @@ const getStats = async () => {
     return result.rows[0];
 };
 
-module.exports = { getAll, getById, getOpenByName, create, update, deleteEnq, getStats };
+
+// Enquiries still sitting at New/Contacted/
+// Interested/Demo Scheduled haven't had a demo outcome yet, so they're
+// excluded from the denominator rather than counted as "not converted".
+const getDemoConversionStats = async () => {
+    const result = await db.query(`
+        SELECT
+            COUNT(CASE WHEN status IN ('Demo Completed','Converted') THEN 1 END) AS demo_count,
+            COUNT(CASE WHEN status = 'Converted' THEN 1 END) AS converted_count
+        FROM enquiries;
+    `);
+    return result.rows[0];
+};
+
+module.exports = { getAll, getById, getOpenByName, create, update, deleteEnq, getStats, getDemoConversionStats };

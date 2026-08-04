@@ -86,7 +86,7 @@ const App = (function () {
   ]},
    { group: "Leads", items: [
       { k: "enquiries", t: "Enquiries", ic: "enquiry" },
-      { k: "demo", t: "Demo Classes", ic: "demo" }
+      { k: "demo-classes", t: "Demo Classes", ic: "demo" }
   ]},
   { group: "Insights", items: [
       { k: "reports", t: "Reports", ic: "reports" },
@@ -127,6 +127,22 @@ const App = (function () {
   }
   function me(){ try { return JSON.parse(getAdminRaw()) || {}; } catch(e){ return {}; } }
 
+  /* ---------- Display helpers for the logged-in user ----------
+
+ */
+  function adminDisplayName(u){
+    return u.name || 'Admin';
+  }
+  function adminDesignation(u){
+    return u.role || 'Administrator';
+  }
+  function initialsFrom(name){
+    if (!name) return 'AK';
+    const parts = String(name).trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return 'AK';
+    return parts.map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  }
+
   /* ---------- DOB / AGE VALIDATION ---------- */
 // BrightPath enrolls from Class 8 upward — youngest ~12, oldest ~19 (school-only, incl. repeaters)
 const AGE_RULES = { minYears: 12, maxYears: 20 };
@@ -161,6 +177,10 @@ function validateDob(dobStr){
   /* ---------- LAYOUT ---------- */
   function layout(active, title, crumbs, headActions){
   const u = me();
+  const displayName = adminDisplayName(u);
+  const displayDesignation = adminDesignation(u);
+  const displayInitials = u.initials || initialsFrom(displayName);
+
   const sb = NAV.map(g=>{
     const visibleItems = g.items.filter(it => !it.roles || it.roles.includes(u.role));
     if (!visibleItems.length) return '';
@@ -208,12 +228,12 @@ function validateDob(dobStr){
             </div>
             <div class="dd">
               <div class="tb-profile" id="profileBtn">
-                <div class="av">${u.initials||'AK'}</div>
-                <div class="who"><b>${u.name||'Admin'}</b><span>${u.role||'Administrator'}</span></div>
+                <div class="av">${displayInitials}</div>
+                <div class="who"><b>${displayName}</b><span>${displayDesignation}</span></div>
                 ${svg('chevD','tb-chev')}
               </div>
               <div class="dd-menu" id="profileMenu">
-                <div class="dd-item">${svg('user')}My Profile</div>
+                <a class="dd-item" href="settings.html">${svg('user')}My Profile</a>
                 <a class="dd-item" href="settings.html">${svg('settings')}Settings</a>
                 <div class="dd-divide"></div>
                 <a class="dd-item" href="logout.html" style="color:var(--red)">${svg('logout')}Logout</a>
@@ -427,5 +447,5 @@ function validateDob(dobStr){
   }
 
   return { svg, I, guard, requireRole, logout, me, layout, toast, modal, closeModal, confirmModal,
-    badge, money, avatar, whoCell, table, actBtn, barChart, sparkline, donut, hbars, validateDob,calcAge };
+    badge, money, avatar, whoCell, table, actBtn, barChart, sparkline, donut, hbars, validateDob, calcAge };
 })();

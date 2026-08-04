@@ -3,12 +3,15 @@ const router = express.Router();
 const C = require('./settingsController');
 const auth = require("../../../middleware/authMiddleware");
 
+
+router.get('/all', auth, C.getAllSettings);
+
 // Centre Profile
 router.get('/profile', auth, C.getProfile);
 router.put('/profile', auth, C.updateProfile);
 
 // Branches
-router.get('/branches',auth, C.getBranches);
+router.get('/branches', auth, C.getBranches);
 router.post('/branches', auth, C.addBranch);
 router.put('/branches/:id', auth, C.updateBranch);
 router.delete('/branches/:id', auth, C.deleteBranch);
@@ -40,4 +43,3 @@ router.post('/academic-year/holidays', auth, C.addHoliday);
 router.delete('/academic-year/holidays/:id', auth, C.deleteHoliday);
 
 module.exports = router;
-

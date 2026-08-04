@@ -41,7 +41,7 @@ const getFinanceKPIs = async (targetDate) => {
     const query = `
         SELECT 
             COALESCE(SUM(CASE WHEN payment_date = $1 THEN paid_amount ELSE 0 END), 0)::NUMERIC as today_total,
-            COALESCE(SUM(CASE WHEN DATE_TRUNC('month', payment_date) = DATE_TRUNC('month', $1::DATE) THEN paid_amount ELSE 0 END), 0)::NUMERIC as month_total,
+            COALESCE(SUM(CASE WHEN TRIM(period) = TO_CHAR($1::DATE, 'Mon YYYY') THEN paid_amount ELSE 0 END), 0)::NUMERIC as month_total,
             COUNT(id)::INT as receipt_count,
             COALESCE(SUM(discount), 0)::NUMERIC as discount_total
         FROM fee_receipts;
@@ -53,19 +53,35 @@ const getFinanceKPIs = async (targetDate) => {
 // 2. Ensure this function is present
 const getAllReceipts = async () => {
     const query = `
-        SELECT 
-            id, student_name as student, id as "studentId", batch_name as batch, 
-            fee_type as "feeType", period, due_amount::FLOAT as due, 
-            discount::FLOAT as discount, fine::FLOAT as fine, paid_amount::FLOAT as paid, 
-            payment_mode as mode, payment_date::TEXT as date, transaction_id as txn,
-            collected_by as "collectedBy", balance::FLOAT as balance, remarks
-        FROM fee_receipts 
-        ORDER BY created_at DESC;
+        SELECT
+            fr.id,
+            fr.student_id AS "studentId",
+            fr.student_name AS student,
+            fr.batch_name AS batch,
+            c.course_name AS course,
+            fr.fee_type AS "feeType",
+            fr.period,
+            fr.due_amount::FLOAT AS due,
+            fr.discount::FLOAT AS discount,
+            fr.fine::FLOAT AS fine,
+            fr.paid_amount::FLOAT AS paid,
+            fr.payment_mode AS mode,
+            fr.payment_date::TEXT AS date,
+            fr.transaction_id AS txn,
+            fr.collected_by AS "collectedBy",
+            fr.balance::FLOAT AS balance,
+            fr.remarks
+        FROM fee_receipts fr
+        LEFT JOIN students s
+            ON fr.student_id = s.student_code
+        LEFT JOIN courses c
+            ON s.course_id = c.id
+        ORDER BY fr.created_at DESC;
     `;
+
     const result = await db.query(query);
     return result.rows;
 };
-
 // models/feeModel.js
 const getReceiptsByStudentId = async (studentId, studentCode) => {
     const query = `
@@ -86,4 +102,4 @@ const getReceiptsByStudentId = async (studentId, studentCode) => {
 
 module.exports = { getFinanceKPIs, getAllReceipts, saveCollectionReceipt, getReceiptsByStudentId };
 
-module.exports = { getFinanceKPIs, getAllReceipts, saveCollectionReceipt, getReceiptsByStudentId };
+

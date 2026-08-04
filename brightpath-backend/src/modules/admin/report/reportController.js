@@ -114,11 +114,19 @@ async function getMonthlyTrend() {
 }
 
 /* ---------------- chart aggregations (previously done in the browser) ---------------- */
-function computeCourseRevenue(students, courses){
-  return courses.map(cr => {
-    const activeCount = students.filter(s => s.course === cr.name && s.status === 'Active').length;
-    return { label: cr.name, value: activeCount * toNum(cr.monthly) };
-  }).filter(r => r.label && r.value > 0).sort((a, b) => b.value - a.value);
+function computeCourseRevenue(fees) {
+    const revenue = {};
+
+    fees.forEach(fee => {
+        const course = (fee.course || "").trim();
+        if (!course) return;
+
+        revenue[course] = (revenue[course] || 0) + toNum(fee.paid);
+    });
+
+    return Object.entries(revenue)
+        .map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value);
 }
 function computeTeacherPayout(teacherPayments){
   const byTeacher = {};
@@ -301,7 +309,7 @@ exports.getDashboard = async (req, res) => {
     const charts = {
       collectionTrend: monthlyTrend?.collectionTrend || [],
       incomeExpense: monthlyTrend?.incomeExpense || [],
-      courseRevenue: computeCourseRevenue(students, courses),
+      courseRevenue: computeCourseRevenue(feesMonth),
       teacherPayout: computeTeacherPayout(teacherPayments),
       admissionSource: computeAdmissionSource(enquiries)
     };

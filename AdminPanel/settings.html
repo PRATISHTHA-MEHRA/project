@@ -13,10 +13,32 @@
 <script>
 if(App.guard()){
 
-
   function unwrapOne(res){ return res?.data ?? res ?? {}; }
   function unwrapList(res){ const d = res?.data ?? res; return Array.isArray(d) ? d : (d?.rows || []); }
+  function val(id){ const el=document.getElementById(id); return el?el.value:''; }
   function normName(s){ return String(s||'').trim().toLowerCase(); }
+  function showFieldError(id, msg){
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+  }
+  function isDuplicate(list, key, value, excludeId){
+    const v = String(value||'').trim().toLowerCase();
+    if(!v) return false;
+    return list.some(item => item.id!==excludeId && String(item[key]||'').trim().toLowerCase()===v);
+  }
+  function showModalError(id, msg){
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideModalError(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.style.display = 'none';
+  }
 
   const head=`<button class="btn btn-primary" id="saveTop">${App.svg('check')}Save Changes</button>`;
   const c=App.layout('settings','Settings',['Settings'],head);
@@ -51,122 +73,138 @@ if(App.guard()){
     document.querySelectorAll('#setTabs .tab').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active'));
     t.classList.add('active'); document.querySelector(`[data-p="${t.dataset.t}"]`).classList.add('active');
-    loadTab(t.dataset.t);
   });
-
-  const loaded = {};
   const activeTab = () => document.querySelector('#setTabs .tab.active').dataset.t;
 
-  function loadTab(t){
-    if (loaded[t]) return;
-    loaded[t] = true;
-    if (t==='t1') loadProfile();
-    if (t==='t2') { loadBranches(); loadClassrooms(); }
-    if (t==='t3') loadFeeRules();
-    if (t==='t4') loadRoles();
-    if (t==='t5') loadTemplates();
-    if (t==='t6') loadAcademicYear();
+  // ---- single in-memory cache, populated by ONE bootstrap call ----
+  const state = { profile:{}, branches:[], classrooms:[], feeRules:{}, roles:[], templates:[], academicYear:{} };
+
+  async function bootstrap(){
+    try{
+      const res = unwrapOne(await API.get('/settings/all'));
+      state.profile      = res.profile      || {};
+      state.branches     = res.branches     || [];
+      state.classrooms   = res.classrooms   || [];
+      state.feeRules     = res.feeRules     || {};
+      state.roles        = res.roles        || [];
+      state.templates    = res.templates    || [];
+      state.academicYear = res.academicYear || {};
+
+      renderProfile();
+      renderBranches();
+      renderClassrooms();
+      renderFeeRules();
+      renderRoles();
+      renderTemplates();
+      renderAcademicYear();
+    }catch(e){ App.toast('Failed to load settings: '+e.message,'err'); }
   }
 
   /* ---------------- Centre Profile ---------------- */
   function profileForm(p){
     return `<div class="form-grid">
-      <div><label>Centre Name</label><input id="pf_centre_name" value="${p.centre_name||''}"></div>
-      <div><label>Contact Number</label><input id="pf_contact_number" value="${p.contact_number||''}"></div>
-      <div><label>Email</label><input id="pf_email" value="${p.email||''}"></div>
-      <div><label>GST / Registration No.</label><input id="pf_gst_no" value="${p.gst_no||''}"></div>
-      <div class="full"><label>Address</label><input id="pf_address" value="${p.address||''}"></div>
-      <div><label>Receipt Prefix</label><input id="pf_receipt_prefix" value="${p.receipt_prefix||'RCP-'}"></div>
+      <div><label>Centre Name</label><input id="pf_centre_name" placeholder="e.g. BrightPath Coaching Centre" value="${p.centre_name||''}"></div>
+      <div><label>Contact Number</label><input id="pf_contact_number" placeholder="e.g. 98765 43210" value="${p.contact_number||''}"></div>
+      <div><label>Email</label><input id="pf_email" placeholder="e.g. info@brightpath.com" value="${p.email||''}"></div>
+      <div><label>GST / Registration No.</label><input id="pf_gst_no" placeholder="e.g. 27ABCDE1234F1Z5" value="${p.gst_no||''}"></div>
+      <div class="full"><label>Address</label><input id="pf_address" placeholder="e.g. 2nd Floor, Andheri West, Mumbai" value="${p.address||''}"></div>
+      <div><label>Receipt Prefix</label><input id="pf_receipt_prefix" placeholder="e.g. RCP-" value="${p.receipt_prefix||'RCP-'}"></div>
       <div><label>Currency</label><select id="pf_currency"><option ${p.currency==='INR (₹)'?'selected':''}>INR (₹)</option></select></div></div>`;
   }
-  async function loadProfile(){
-    try{ const p = unwrapOne(await API.get('/settings/profile'));
-      document.getElementById('profileBody').innerHTML = profileForm(p);
-    }catch(e){ App.toast('Failed to load centre profile: '+e.message,'err'); }
-  }
+  function renderProfile(){ document.getElementById('profileBody').innerHTML = profileForm(state.profile); }
   async function saveProfile(){
     const body = {
       centre_name: val('pf_centre_name'), contact_number: val('pf_contact_number'), email: val('pf_email'),
       gst_no: val('pf_gst_no'), address: val('pf_address'), receipt_prefix: val('pf_receipt_prefix'), currency: val('pf_currency')
     };
-    try{ await API.put('/settings/profile', body); App.toast('Centre profile saved','ok'); }
+    try{ state.profile = unwrapOne(await API.put('/settings/profile', body)); App.toast('Centre profile saved','ok'); }
     catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
-  function val(id){ const el=document.getElementById(id); return el?el.value:''; }
 
   /* ---------------- Branches ---------------- */
-  async function loadBranches(){
-    try{
-      const rows = unwrapList(await API.get('/settings/branches'));
-      App.table('branchTbl', {
-        columns: [ {key:'name',label:'Branch'}, {key:'location',label:'Location'},
-          {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
-        rows, searchKeys:['name','location'],
-        actions: r=>`${App.actBtn('edit','Edit',`onclick="editBranch(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeBranch(${r.id})"`)}`,
-        pageSize: 5
-      });
-      window._branches = rows;
-    }catch(e){ App.toast('Failed to load branches: '+e.message,'err'); }
+  function renderBranches(){
+    App.table('branchTbl', {
+      columns: [ {key:'name',label:'Branch'}, {key:'location',label:'Location'},
+        {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
+      rows: state.branches, searchKeys:['name','location'],
+      actions: r=>`${App.actBtn('edit','Edit',`onclick="editBranch(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeBranch(${r.id})"`)}`,
+      pageSize: 5
+    });
   }
+  async function refreshBranches(){ state.branches = unwrapList(await API.get('/settings/branches')); renderBranches(); }
   function branchModal(existing){
     App.modal({ title: existing?'Edit Branch':'Add Branch',
+      sub: existing?'Update this branch\'s details.':'Add a new branch location for your centre.',
       body:`<div class="form-grid">
-        <div class="full"><label>Branch Name</label><input id="bm_name" value="${existing?.name||''}"></div>
-        <div><label>Location</label><input id="bm_location" value="${existing?.location||''}"></div>
-        <div><label>Status</label><select id="bm_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>`,
+        <div class="full"><label>Branch Name</label><input id="bm_name" placeholder="e.g. Andheri West Branch" value="${existing?.name||''}"></div>
+        <div><label>Location</label><input id="bm_location" placeholder="e.g. Andheri West, Mumbai" value="${existing?.location||''}"></div>
+        <div><label>Status</label><select id="bm_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>
+        <p id="bmErr" style="color:var(--red);font-size:12.5px;margin:10px 0 0;display:none"></p>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="bmSave">Save</button>`,
       onOpen: b=>{ b.querySelector('#bmSave').onclick = async ()=>{
-        const body = { name: val('bm_name'), location: val('bm_location'), status: val('bm_status') };
+        hideModalError('bmErr');
+        const name = val('bm_name').trim();
+        const location = val('bm_location').trim();
+        if (!name) return showModalError('bmErr','Branch name is required.');
+        if (!location) return showModalError('bmErr','Location is required.');
+        if (isDuplicate(state.branches, 'name', name, existing?.id)) return showModalError('bmErr','A branch with this name already exists.');
+        const body = { name, location, status: val('bm_status') };
         try{
           if (existing) await API.put(`/settings/branches/${existing.id}`, body);
           else await API.post('/settings/branches', body);
-          App.closeModal(); App.toast('Branch saved','ok'); loaded.t2=false; loadBranches();
-        }catch(e){ App.toast('Save failed: '+e.message,'err'); }
+          App.closeModal(); App.toast('Branch saved','ok'); await refreshBranches();
+        }catch(e){ showModalError('bmErr', e.message || 'Save failed.'); }
       };}
     });
   }
   document.addEventListener('click', e=>{ if(e.target.closest('#addBranchBtn')) branchModal(null); });
-  window.editBranch = (id)=> branchModal((window._branches||[]).find(b=>b.id===id));
+  window.editBranch = (id)=> branchModal(state.branches.find(b=>b.id===id));
   window.removeBranch = (id)=> App.confirmModal('Delete this branch?', async ()=>{
-    try{ await API.delete(`/settings/branches/${id}`); App.toast('Branch deleted','ok'); loaded.t2=false; loadBranches(); }
+    try{ await API.delete(`/settings/branches/${id}`); App.toast('Branch deleted','ok'); await refreshBranches(); }
     catch(e){ App.toast('Delete failed: '+e.message,'err'); }
   }, {danger:true, yes:'Delete'});
 
   /* ---------------- Classrooms ---------------- */
-  async function loadClassrooms(){
-    try{
-      const rows = unwrapList(await API.get('/settings/classrooms'));
-      App.table('roomTbl', {
-        columns: [ {key:'room_name',label:'Room'}, {key:'capacity',label:'Capacity',num:true},
-          {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
-        rows, searchKeys:['room_name'],
-        actions: r=>`${App.actBtn('edit','Edit',`onclick="editRoom(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRoom(${r.id})"`)}`,
-        pageSize: 6
-      });
-      window._rooms = rows;
-    }catch(e){ App.toast('Failed to load classrooms: '+e.message,'err'); }
+  function renderClassrooms(){
+    App.table('roomTbl', {
+      columns: [ {key:'room_name',label:'Room'}, {key:'capacity',label:'Capacity',num:true},
+        {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
+      rows: state.classrooms, searchKeys:['room_name'],
+      actions: r=>`${App.actBtn('edit','Edit',`onclick="editRoom(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRoom(${r.id})"`)}`,
+      pageSize: 6
+    });
   }
+  async function refreshClassrooms(){ state.classrooms = unwrapList(await API.get('/settings/classrooms')); renderClassrooms(); }
   function roomModal(existing){
     App.modal({ title: existing?'Edit Classroom':'Add Classroom',
+      sub: existing?'Update this classroom\'s details.':'Add a new classroom or teaching space.',
       body:`<div class="form-grid">
-        <div class="full"><label>Room Name</label><input id="rm_name" value="${existing?.room_name||''}"></div>
-        <div><label>Capacity</label><input class="num" id="rm_capacity" value="${existing?.capacity??''}"></div>
-        <div><label>Status</label><select id="rm_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>`,
+        <div class="full"><label>Room Name</label><input id="rm_name" placeholder="e.g. Room 101" value="${existing?.room_name||''}"></div>
+        <div><label>Capacity</label><input class="num" id="rm_capacity" placeholder="e.g. 30" value="${existing?.capacity??''}"></div>
+        <div><label>Status</label><select id="rm_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>
+        <p id="rmErr" style="color:var(--red);font-size:12.5px;margin:10px 0 0;display:none"></p>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="rmSave">Save</button>`,
       onOpen: b=>{ b.querySelector('#rmSave').onclick = async ()=>{
-        const body = { room_name: val('rm_name'), capacity: Number(val('rm_capacity'))||0, status: val('rm_status') };
+        hideModalError('rmErr');
+        const name = val('rm_name').trim();
+        const capacityRaw = val('rm_capacity').trim();
+        const capacity = Number(capacityRaw);
+        if (!name) return showModalError('rmErr','Room name is required.');
+        if (isDuplicate(state.classrooms, 'room_name', name, existing?.id)) return showModalError('rmErr','A classroom with this name already exists.');
+        if (!capacityRaw || isNaN(capacity) || capacity <= 0) return showModalError('rmErr','Enter a valid capacity greater than 0.');
+        const body = { room_name: name, capacity, status: val('rm_status') };
         try{
           if (existing) await API.put(`/settings/classrooms/${existing.id}`, body);
           else await API.post('/settings/classrooms', body);
-          App.closeModal(); App.toast('Classroom saved','ok'); loaded.t2=false; loadClassrooms();
-        }catch(e){ App.toast('Save failed: '+e.message,'err'); }
+          App.closeModal(); App.toast('Classroom saved','ok'); await refreshClassrooms();
+        }catch(e){ showModalError('rmErr', e.message || 'Save failed.'); }
       };}
     });
   }
   document.addEventListener('click', e=>{ if(e.target.closest('#addRoomBtn')) roomModal(null); });
-  window.editRoom = (id)=> roomModal((window._rooms||[]).find(r=>r.id===id));
+  window.editRoom = (id)=> roomModal(state.classrooms.find(r=>r.id===id));
   window.removeRoom = (id)=> App.confirmModal('Delete this classroom?', async ()=>{
-    try{ await API.delete(`/settings/classrooms/${id}`); App.toast('Classroom deleted','ok'); loaded.t2=false; loadClassrooms(); }
+    try{ await API.delete(`/settings/classrooms/${id}`); App.toast('Classroom deleted','ok'); await refreshClassrooms(); }
     catch(e){ App.toast('Delete failed: '+e.message,'err'); }
   }, {danger:true, yes:'Delete'});
 
@@ -182,71 +220,73 @@ if(App.guard()){
       <div><label>Auto-send reminders</label><select id="fr_auto">
         <option value="true" ${r.auto_send?'selected':''}>Enabled</option><option value="false" ${!r.auto_send?'selected':''}>Disabled</option></select></div></div>`;
   }
-  async function loadFeeRules(){
-    try{ const r = unwrapOne(await API.get('/settings/fee-rules'));
-      document.getElementById('feeRulesBody').innerHTML = feeRulesForm(r);
-    }catch(e){ App.toast('Failed to load fee rules: '+e.message,'err'); }
-  }
+  function renderFeeRules(){ document.getElementById('feeRulesBody').innerHTML = feeRulesForm(state.feeRules); }
   async function saveFeeRules(){
     const body = { first_reminder_days:+val('fr_first'), second_reminder_days:+val('fr_second'),
       final_reminder_days:+val('fr_final'), late_fine_per_day:+val('fr_fine'),
       reminder_channel: val('fr_channel'), auto_send: val('fr_auto')==='true' };
-    try{ await API.put('/settings/fee-rules', body); App.toast('Fee reminder rules saved','ok'); }
+    try{ state.feeRules = unwrapOne(await API.put('/settings/fee-rules', body)); App.toast('Fee reminder rules saved','ok'); }
     catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
 
   /* ---------------- Roles & Permissions ---------------- */
-  async function loadRoles(){
-    try{
-      const rows = unwrapList(await API.get('/settings/roles'));
-      App.table('roleTbl', {
-        columns: [ {key:'role_name',label:'Role'}, {key:'user_count',label:'Users',num:true},
-          {key:'permissions',label:'Permissions', render:r=>`<span class="chip">${r.permissions||''}</span>`},
-          {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
-        rows, searchKeys:['role_name'],
-        actions: r=>`${App.actBtn('edit','Edit',`onclick="editRole(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRole(${r.id})"`)}`,
-        pageSize: 8
-      });
-      window._roles = rows;
-    }catch(e){ App.toast('Failed to load roles: '+e.message,'err'); }
+  function renderRoles(){
+    App.table('roleTbl', {
+      columns: [ {key:'role_name',label:'Role'}, {key:'user_count',label:'Users',num:true},
+        {key:'permissions',label:'Permissions', render:r=>`<span class="chip">${r.permissions||''}</span>`},
+        {key:'status',label:'Status', render:r=>App.badge(r.status)} ],
+      rows: state.roles, searchKeys:['role_name'],
+      actions: r=>`${App.actBtn('edit','Edit',`onclick="editRole(${r.id})"`)}${App.actBtn('trash','Delete',`onclick="removeRole(${r.id})"`)}`,
+      pageSize: 8
+    });
   }
+  async function refreshRoles(){ state.roles = unwrapList(await API.get('/settings/roles')); renderRoles(); }
   function roleModal(existing){
     App.modal({ title: existing?'Edit Role':'Add Role',
+      sub: existing?'Update this role\'s permissions.':'Define a new staff role and what it can access.',
       body:`<div class="form-grid">
-        <div class="full"><label>Role Name</label><input id="rl_name" value="${existing?.role_name||''}"></div>
-        <div class="full"><label>Permissions (comma-separated)</label><input id="rl_perms" value="${existing?.permissions||''}"></div>
-        <div><label>Status</label><select id="rl_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>`,
+        <div class="full"><label>Role Name</label><input id="rl_name" placeholder="e.g. Front Desk Executive" value="${existing?.role_name||''}"></div>
+        <div class="full"><label>Permissions (comma-separated)</label><input id="rl_perms" placeholder="e.g. students, fees, attendance" value="${existing?.permissions||''}"></div>
+        <div><label>Status</label><select id="rl_status"><option ${existing?.status==='Active'?'selected':''}>Active</option><option ${existing?.status==='Inactive'?'selected':''}>Inactive</option></select></div></div>
+        <p id="rlErr" style="color:var(--red);font-size:12.5px;margin:10px 0 0;display:none"></p>`,
       foot:`<button class="btn btn-light" data-close>Cancel</button><button class="btn btn-primary" id="rlSave">Save</button>`,
       onOpen: b=>{ b.querySelector('#rlSave').onclick = async ()=>{
-        const body = { role_name: val('rl_name'), permissions: val('rl_perms'), status: val('rl_status') };
+        hideModalError('rlErr');
+        const role_name = val('rl_name').trim();
+        const permissions = val('rl_perms').trim();
+        if (!role_name) return showModalError('rlErr','Role name is required.');
+        if (isDuplicate(state.roles, 'role_name', role_name, existing?.id)) return showModalError('rlErr','A role with this name already exists.');
+        if (!permissions) return showModalError('rlErr','Enter at least one permission.');
+        const body = { role_name, permissions, status: val('rl_status') };
         try{
           if (existing) await API.put(`/settings/roles/${existing.id}`, body);
           else await API.post('/settings/roles', body);
-          App.closeModal(); App.toast('Role saved','ok'); loaded.t4=false; loadRoles();
-        }catch(e){ App.toast('Save failed: '+e.message,'err'); }
+          App.closeModal(); App.toast('Role saved','ok'); await refreshRoles();
+        }catch(e){ showModalError('rlErr', e.message || 'Save failed.'); }
       };}
     });
   }
   document.addEventListener('click', e=>{ if(e.target.closest('#addRoleBtn')) roleModal(null); });
-  window.editRole = (id)=> roleModal((window._roles||[]).find(r=>r.id===id));
+  window.editRole = (id)=> roleModal(state.roles.find(r=>r.id===id));
   window.removeRole = (id)=> App.confirmModal('Delete this role?', async ()=>{
-    try{ await API.delete(`/settings/roles/${id}`); App.toast('Role deleted','ok'); loaded.t4=false; loadRoles(); }
+    try{ await API.delete(`/settings/roles/${id}`); App.toast('Role deleted','ok'); await refreshRoles(); }
     catch(e){ App.toast('Delete failed: '+e.message,'err'); }
   }, {danger:true, yes:'Delete'});
 
   /* ---------------- Notification Templates ---------------- */
-  async function loadTemplates(){
-    try{
-      const rows = unwrapList(await API.get('/settings/templates'));
-      document.getElementById('templatesBody').innerHTML = rows.map(t=>
-        `<div class="form-row"><label>${t.label}</label><textarea rows="2" data-key="${t.template_key}">${t.content}</textarea></div>`
-      ).join('');
-    }catch(e){ App.toast('Failed to load templates: '+e.message,'err'); }
+  function renderTemplates(){
+    document.getElementById('templatesBody').innerHTML = state.templates.map(t=>
+      `<div class="form-row"><label>${t.label}</label><textarea rows="2" data-key="${t.template_key}">${t.content}</textarea></div>`
+    ).join('');
   }
   async function saveTemplates(){
     const areas = document.querySelectorAll('#templatesBody textarea[data-key]');
     try{
       for (const a of areas) await API.put(`/settings/templates/${a.dataset.key}`, { content: a.value });
+      state.templates = state.templates.map(t=>{
+        const el = document.querySelector(`#templatesBody textarea[data-key="${t.template_key}"]`);
+        return el ? { ...t, content: el.value } : t;
+      });
       App.toast('Notification templates saved','ok');
     }catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
@@ -254,32 +294,40 @@ if(App.guard()){
   /* ---------------- Academic Year ---------------- */
   function acadForm(a){
     return `<div class="form-grid">
-      <div><label>Current Academic Year</label><input id="ay_year" value="${a.current_year||''}"></div>
+      <div><label>Current Academic Year</label><input id="ay_year" placeholder="e.g. 2026-27" value="${a.current_year||''}"></div>
       <div><label>Session Start</label><input type="date" id="ay_start" value="${(a.session_start||'').slice(0,10)}"></div>
       <div><label>Session End</label><input type="date" id="ay_end" value="${(a.session_end||'').slice(0,10)}"></div>
-      <div><label>Working Days</label><input id="ay_wdays" value="${a.working_days||'Mon – Sat'}"></div></div>
+      <div><label>Working Days</label><input id="ay_wdays" placeholder="e.g. Mon – Sat" value="${a.working_days||'Mon – Sat'}"></div></div>
       <div class="sec-title">Holidays</div>
       <div class="chips" id="holidayChips">${(a.holidays||[]).map(h=>`<span class="chip">${h.label}<span data-hid="${h.id}" class="chip-x" style="cursor:pointer;margin-left:6px;font-weight:700" onclick="removeHoliday(${h.id})" title="Remove holiday">✕</span></span>`).join('')}</div>
-      <div style="margin-top:10px;display:flex;gap:8px"><input id="ay_newholiday" placeholder="Add holiday label e.g. 15 Aug" style="max-width:240px">
-      <button class="btn btn-light btn-sm" id="addHolidayBtn">${App.svg('plus')}Add Holiday</button></div>`;
+      <div style="margin-top:10px;display:flex;gap:8px;flex-direction:column">
+        <div style="display:flex;gap:8px">
+          <input id="ay_newholiday" placeholder="Add holiday label e.g. 15 Aug" style="max-width:240px">
+          <button class="btn btn-light btn-sm" id="addHolidayBtn">${App.svg('plus')}Add Holiday</button>
+        </div>
+        <p id="ayHolidayErr" style="color:var(--red);font-size:12.5px;margin:0;display:none"></p>
+      </div>`;
   }
-  async function loadAcademicYear(){
-    try{ const a = unwrapOne(await API.get('/settings/academic-year'));
-      document.getElementById('acadBody').innerHTML = acadForm(a);
-      document.getElementById('addHolidayBtn').onclick = async ()=>{
-        const label = val('ay_newholiday'); if(!label) return;
-        try{ await API.post('/settings/academic-year/holidays', { label }); App.toast('Holiday added','ok'); loaded.t6=false; loadAcademicYear(); }
-        catch(e){ App.toast('Add failed: '+e.message,'err'); }
-      };
-    }catch(e){ App.toast('Failed to load academic year: '+e.message,'err'); }
+  function renderAcademicYear(){
+    document.getElementById('acadBody').innerHTML = acadForm(state.academicYear);
+    document.getElementById('addHolidayBtn').onclick = async ()=>{
+      hideModalError('ayHolidayErr');
+      const label = val('ay_newholiday').trim();
+      if (!label) return showModalError('ayHolidayErr','Enter a holiday label.');
+      const existingHolidays = state.academicYear.holidays || [];
+      if (isDuplicate(existingHolidays, 'label', label)) return showModalError('ayHolidayErr','This holiday is already added.');
+      try{ await API.post('/settings/academic-year/holidays', { label }); App.toast('Holiday added','ok'); await refreshAcademicYear(); }
+      catch(e){ showModalError('ayHolidayErr', e.message || 'Add failed.'); }
+    };
   }
+  async function refreshAcademicYear(){ state.academicYear = unwrapOne(await API.get('/settings/academic-year')); renderAcademicYear(); }
   window.removeHoliday = (id)=> App.confirmModal('Remove this holiday?', async ()=>{
-    try{ await API.delete(`/settings/academic-year/holidays/${id}`); App.toast('Holiday removed','ok'); loaded.t6=false; loadAcademicYear(); }
+    try{ await API.delete(`/settings/academic-year/holidays/${id}`); App.toast('Holiday removed','ok'); await refreshAcademicYear(); }
     catch(e){ App.toast('Remove failed: '+e.message,'err'); }
   }, {danger:true, yes:'Remove'});
   async function saveAcademicYear(){
     const body = { current_year: val('ay_year'), session_start: val('ay_start'), session_end: val('ay_end'), working_days: val('ay_wdays') };
-    try{ await API.put('/settings/academic-year', body); App.toast('Academic year saved','ok'); }
+    try{ await API.put('/settings/academic-year', body); App.toast('Academic year saved','ok'); await refreshAcademicYear(); }
     catch(e){ App.toast('Save failed: '+e.message,'err'); }
   }
 
@@ -293,7 +341,7 @@ if(App.guard()){
     App.toast('Use Add / Edit / Delete on this tab — changes save immediately','info');
   };
 
-  loadTab('t1'); // initial tab
+  bootstrap(); // one call loads every tab's data
 }
 </script>
 </body></html>
