@@ -62,20 +62,20 @@ exports.getById = async (id) => {
 
 // 3. Create Teacher
 exports.create = async (data) => {
-    const { teacher_name, teacher_code, mobile, email, qualification, experience, subjects, payment_type, joining_date, status } = data;
+    const { teacher_name, teacher_code, mobile, email, qualification, experience, subjects, payment_type, pay_rate, fixed_salary, joining_date, status } = data;
     const query = `
-        INSERT INTO teachers (teacher_name, teacher_code, mobile, email, qualification, experience, subjects, payment_type, joining_date, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO teachers (teacher_name, teacher_code, mobile, email, qualification, experience, subjects, payment_type, pay_rate, fixed_salary, joining_date, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *;
     `;
-    const values = [teacher_name, teacher_code, mobile, email, qualification, experience, subjects, payment_type, joining_date, status || 'Active'];
+    const values = [teacher_name, teacher_code, mobile, email, qualification, experience, subjects, payment_type, pay_rate || 0, fixed_salary || 0, joining_date, status || 'Active'];
     const { rows } = await db.query(query, values);
     return rows[0];
 };
 
 // 4. Update Teacher (Removed updated_at column to fix PG error)
 exports.update = async (id, data) => {
-    const { teacher_name, mobile, email, qualification, experience, subjects, payment_type, joining_date, status } = data;
+    const { teacher_name, mobile, email, qualification, experience, subjects, payment_type, pay_rate, fixed_salary, joining_date, status } = data;
     const query = `
         UPDATE teachers 
         SET 
@@ -86,12 +86,14 @@ exports.update = async (id, data) => {
             experience = COALESCE($5, experience),
             subjects = COALESCE($6, subjects),
             payment_type = COALESCE($7, payment_type),
-            joining_date = COALESCE($8, joining_date),
-            status = COALESCE($9, status)
-        WHERE id = $10
+            pay_rate = COALESCE($8, pay_rate),
+            fixed_salary = COALESCE($9, fixed_salary),
+            joining_date = COALESCE($10, joining_date),
+            status = COALESCE($11, status)
+        WHERE id = $12
         RETURNING *;
     `;
-    const values = [teacher_name, mobile, email, qualification, experience, subjects, payment_type, joining_date, status, id];
+    const values = [teacher_name, mobile, email, qualification, experience, subjects, payment_type, pay_rate, fixed_salary, joining_date, status, id];
     const { rows } = await db.query(query, values);
     return rows[0];
 };

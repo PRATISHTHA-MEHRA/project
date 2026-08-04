@@ -56,7 +56,7 @@ if(App.guard()){
   const BATCHES_ENDPOINT = "/batches";
   const PAYMENTS_ENDPOINT = "/teacher-payments";
   const MONTH = "May 2026";
-  const payTypes = ["Fixed Monthly Salary","Per Class Payment","Per Student Payment","Revenue Share Percentage","Hybrid Fixed + Per Class"];
+  const payTypes = ["Fixed Monthly Salary","Per Class Payment","Hourly Basis","Hybrid Fixed + Per Class"];
   const statuses = ["Active", "On Leave", "Inactive"];
 
   let currentTeachers = [];
@@ -153,6 +153,8 @@ if(App.guard()){
       subjects,
       courses: coursesList,
       payType: item.payment_type || item.payType || '',
+      payRate: asNum(item.pay_rate ?? item.payRate),
+      fixedSalary: asNum(item.fixed_salary ?? item.fixedSalary),
       joined: item.joining_date || item.joined || '',
       status: item.status || 'Active',
       batches: assignedBatches,
@@ -173,6 +175,8 @@ if(App.guard()){
       selectedBatchIds: getChecked('ms_batches').map(Number).filter(Boolean),
       subjects: getChecked('ms_subjects'),
       payType: b.querySelector('#tf_pay').value,
+      payRate: asNum(b.querySelector('#tf_rate').value),
+      fixedSalary: asNum(b.querySelector('#tf_fixed').value),
       joined: b.querySelector('#tf_join').value,
       status: b.querySelector('#tf_status').value
     };
@@ -188,6 +192,8 @@ if(App.guard()){
       subjects: t.subjects.join(','),
       batch_ids: t.selectedBatchIds,
       payment_type: t.payType,
+      pay_rate: t.payRate,
+      fixed_salary: t.fixedSalary,
       joining_date: t.joined,
       status: t.status
     };
@@ -406,6 +412,8 @@ if(App.guard()){
       </div>
 
       <div><label>Payment Type</label><select id="tf_pay">${payTypes.map(p=>`<option ${t?.payType===p?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div><label>Fixed Monthly Salary (₹)</label><input class="num" type="number" min="0" id="tf_fixed" value="${esc(t?.fixedSalary || '')}" placeholder="Use for fixed or hybrid pay"></div>
+      <div><label>Rate (₹ per class/hour)</label><input class="num" type="number" min="0" id="tf_rate" value="${esc(t?.payRate || '')}" placeholder="Use for class or hourly pay"></div>
       <div><label>Joining Date</label><input type="date" id="tf_join" placeholder="Select joining date" value="${esc(t?.joined || '2026-06-20')}"></div>
       <div><label>Status</label><select id="tf_status">${statuses.map(s=>`<option ${t?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
     </div>`;

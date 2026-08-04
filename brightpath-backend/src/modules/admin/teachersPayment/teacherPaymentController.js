@@ -12,7 +12,10 @@ exports.getPaymentDashboard = async (req, res) => {
             .filter(t => t.status === "Active")
             .map(t => ({ 
                 id: t.id, 
-                name: t.teacher_name || t.name 
+                name: t.teacher_name || t.name,
+                payType: t.payment_type || 'Fixed Monthly Salary',
+                rate: parseFloat(t.pay_rate || 0),
+                fixedSalary: parseFloat(t.fixed_salary || 0)
             }));
 
         res.status(200).json({
@@ -66,14 +69,24 @@ exports.updatePaymentDetails = async (req, res) => {
     }
 };
 
+exports.getPaymentPreview = async (req, res) => {
+    try {
+        const { teacherId, month } = req.query;
+        if (!teacherId) return res.status(400).json({ success: false, message: 'Select a teacher first.' });
+        const preview = await TeacherPayment.getPaymentPreview(teacherId, month || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
+        if (!preview) return res.status(404).json({ success: false, message: 'Teacher not found.' });
+        res.status(200).json({ success: true, data: preview });
+    } catch (err) {
+        res.status(400).json({ success: false, message: err.message });
+    }
+};
+
 exports.addNewVoucher = async (req, res) => {
     try {
-        const { teacher, month, gross, paid, mode, date, voucher, txn, remarks } = req.body;
+        const { teacherId, month, paid, mode, date, voucher, txn, remarks } = req.body;
 
         const allTeachers = await Teacher.getAll();
-        const validTeacher = (Array.isArray(allTeachers) ? allTeachers : []).find(
-            t => (t.teacher_name || t.name) === teacher
-        );
+        const validTeacher = (Array.isArray(allTeachers) ? allTeachers : []).find(t => String(t.id) === String(teacherId));
 
         if (!validTeacher) {
             return res.status(400).json({ 
@@ -82,7 +95,8 @@ exports.addNewVoucher = async (req, res) => {
             });
         }
 
-        const grossAmt = parseFloat(gross || 0);
+        const preview = await TeacherPayment.getPaymentPreview(validTeacher.id, month || "May 2026");
+        const grossAmt = preview.gross;
         const paidAmt = parseFloat(paid || 0);
         const balanceAmt = grossAmt - paidAmt;
 
@@ -91,8 +105,13 @@ exports.addNewVoucher = async (req, res) => {
         if (paidAmt === 0) targetStatus = 'Pending';
 
         const newVoucher = await TeacherPayment.createPaymentVoucher({
-            teacher, 
+            teacher: preview.teacher,
             month: month || "May 2026", 
+            payType: preview.payType,
+            classesAssigned: preview.classesAssigned,
+            classesTaken: preview.classesTaken,
+            hoursTaken: preview.hoursTaken,
+            rateUsed: preview.rate,
             gross: grossAmt, 
             net: grossAmt, 
             paid: paidAmt,

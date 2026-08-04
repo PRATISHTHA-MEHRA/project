@@ -367,7 +367,7 @@
         // ===============================
         window.addPay = function () {
           const teacherOptions = teachersList.length
-            ? teachersList.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('')
+            ? teachersList.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')
             : `<option value="" disabled>No active teachers found</option>`;
 
           const todayStr = new Date().toISOString().split('T')[0];
@@ -380,7 +380,7 @@
               <div class="form-grid">
                 <div>
                   <label>Teacher</label>
-                  <select id="teacherName">
+                  <select id="teacherId">
                     <option value="">Select teacher…</option>
                     ${teacherOptions}
                   </select>
@@ -393,8 +393,10 @@
 
                 <div>
                   <label>Gross Amount (₹)</label>
-                  <input class="num" id="gross" placeholder="0">
+                  <input class="num" id="gross" value="0" disabled>
                 </div>
+
+                <div class="full" id="calculationSummary" style="display:none"></div>
 
                 <div>
                   <label>Paid Amount (₹)</label>
@@ -438,15 +440,36 @@
             `,
 
             onOpen: (box) => {
+              let preview = null;
+              const loadPreview = async () => {
+                const teacherId = box.querySelector("#teacherId").value;
+                const month = box.querySelector("#month").value.trim();
+                if (!teacherId || !month) return;
+                try {
+                  const res = await API.get(`${ENDPOINT}/preview?teacherId=${encodeURIComponent(teacherId)}&month=${encodeURIComponent(month)}`);
+                  preview = res.data;
+                  box.querySelector("#gross").value = preview.gross || 0;
+                  const unit = preview.payType === 'Hourly Basis' ? 'taught hours' : 'classes taken';
+                  const quantity = preview.payType === 'Hourly Basis' ? preview.hoursTaken : preview.classesTaken;
+                  const summary = box.querySelector("#calculationSummary");
+                  summary.style.display = 'block';
+                  summary.innerHTML = `<div class="pl-line plus"><span><b>${esc(preview.payType)}</b> · ${esc(quantity || 0)} ${esc(unit)} · ${preview.classesAssigned || 0} classes scheduled · rate ${App.money(preview.rate || 0)}</span><span class="v"><b>${App.money(preview.gross || 0)}</b></span></div>`;
+                } catch (err) {
+                  preview = null;
+                  App.toast(err.message || 'Could not calculate payment', 'err');
+                }
+              };
+              box.querySelector("#teacherId").onchange = loadPreview;
+              box.querySelector("#month").onchange = loadPreview;
               box.querySelector("#addPayment").onclick = async () => {
-                const teacherName = box.querySelector("#teacherName").value.trim();
-                if (!teacherName) return App.toast("Select a teacher", "err");
+                const teacherId = box.querySelector("#teacherId").value.trim();
+                if (!teacherId) return App.toast("Select a teacher", "err");
+                if (!preview) return App.toast("Wait for the payment calculation", "err");
 
                 try {
                   await API.post(`${ENDPOINT}/add`, {
-                    teacher: teacherName,
+                    teacherId,
                     month: box.querySelector("#month").value,
-                    gross: Number(box.querySelector("#gross").value || 0),
                     paid: Number(box.querySelector("#paid").value || 0),
                     mode: box.querySelector("#mode").value,
                     date: box.querySelector("#date").value,

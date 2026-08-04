@@ -1,266 +1,293 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Student Profile - BrightPath Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/admin-style.css">
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Profile - BrightPath Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/admin-style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <script src="assets/js/admin-data.js"></script>
 <script src="assets/js/admin-app.js"></script>
 <script src="assets/js/api.js"></script>
 <script>
-if(App.guard()){
- 
-  (function hideTopSearchBar(){
-    const tryHide = () => {
-      const input = document.querySelector('input[placeholder*="Search"]');
-      if (!input) return false;
-      const wrap = input.closest('div') || input;
-      wrap.style.display = 'none';
-      return true;
+if (App.guard()) {
+    
+    // Hide Search Bar UI Helper
+    (function hideTopSearchBar() {
+        const tryHide = () => {
+            const input = document.querySelector('input[placeholder*="Search"]');
+            if (!input) return false;
+            const wrap = input.closest('div') || input;
+            wrap.style.display = 'none';
+            return true;
+        };
+        if (tryHide()) return;
+        const observer = new MutationObserver(() => { if (tryHide()) observer.disconnect(); });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        setTimeout(() => observer.disconnect(), 5000);
+    })();
+
+    // Helper Utilities
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const asNum = v => {
+        const n = Number(v);
+        return isNaN(n) ? 0 : n;
     };
-    if (tryHide()) return;
-    const observer = new MutationObserver(() => { if (tryHide()) observer.disconnect(); });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-    setTimeout(() => observer.disconnect(), 5000);
-  })();
-
-  const API_BASE = "/students";
-  const requestedId = new URLSearchParams(location.search).get('id') || DB.students[0].id;
-  let usingFallback = false;
-
-  const esc = v => String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const asNum = v => Number(v ?? 0) || 0;
-  const toDateStr = v => {
-    if (!v) return '';
-    if (typeof v === 'string') return v.slice(0,10);
-    try { return new Date(v).toISOString().slice(0,10); } catch { return ''; }
-  };
-
-  function mapStudent(item = {}){
-    const id = item.id ?? item.student_id ?? item.student_code ?? '';
-    const course = item.course ?? item.course_name ?? '';
-    const courseObj = (DB.courses || []).find(c => c.name === course || c.course_name === course);
-    return {
-      id: String(id),
-      name: item.name ?? item.student_name ?? 'Unnamed Student',
-      mobile: item.mobile ?? '',
-      parent: item.parent ?? item.parent_name ?? '',
-      parentMobile: item.parentMobile ?? item.parent_mobile ?? '',
-      cls: item.cls ?? item.class_name ?? item.standard ?? '',
-      course,
-      batch: item.batch ?? item.batch_name ?? '',
-      feeType: item.feeType ?? item.fee_type ?? 'Regular Fee',
-      feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
-      admission: toDateStr(item.admission ?? item.admission_date),
-      status: item.status ?? 'Active',
-      feeStatus: item.feeStatus ?? item.fee_status ?? 'Pending',
-
-      pendingDues: asNum(item.pendingDues ?? item.pending_dues ?? item.pending_fee ?? 0),
-      att: asNum(item.att ?? item.attendance),
-      gender: item.gender ?? 'M',
-      dob: toDateStr(item.dob),
-      address: item.address ?? '',
-      school: item.school ?? item.school_name ?? ''
-    };
-  }
-
-  function fallbackStudent(id){
-    return mapStudent((DB.students || []).find(x => String(x.id) === String(id)) || DB.students[0]);
-  }
-
-
-  async function loadStudent(id){
-    try {
-      const payload = await API.get(`${API_BASE}/${encodeURIComponent(id)}`);
-      usingFallback = false;
-      const data = payload?.data || {};
-      const rawStudent = data.student || data;
-      return {
-        student: mapStudent(rawStudent),
-        extras: {
-          fees: Array.isArray(data.fees) ? data.fees : [],
-          attendance: Array.isArray(data.attendance) ? data.attendance : [],
-          exams: Array.isArray(data.exams) ? data.exams : []
+    const toDateStr = v => {
+        if (!v) return '-';
+        if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+        try { 
+            const d = new Date(v);
+            return isNaN(d.getTime()) ? '-' : d.toISOString().slice(0, 10); 
+        } catch { 
+            return '-'; 
         }
-      };
-    } catch (err) {
-      console.warn('Student API unavailable, showing local profile:', err);
-      App.toast('Student API unavailable. Showing local profile.', 'info');
-      usingFallback = true;
-      return { student: fallbackStudent(id), extras: { fees: [], attendance: [], exams: [] } };
+    };
+
+    // State Variables
+    let usingFallback = false;
+    const requestedId = new URLSearchParams(location.search).get('id');
+
+    // Data Mapping Layer
+    function mapStudent(item = {}) {
+        const id = item.id ?? item.student_id ?? item.student_code ?? '';
+        const course = item.course ?? item.course_name ?? '';
+        const courseObj = (DB?.courses || []).find(c => c.name === course || c.course_name === course);
+        
+        return {
+            id: String(id),
+            name: item.name ?? item.student_name ?? 'Unnamed Student',
+            mobile: item.mobile ?? '',
+            parent: item.parent ?? item.parent_name ?? '',
+            parentMobile: item.parentMobile ?? item.parent_mobile ?? '',
+            cls: item.cls ?? item.class_name ?? item.standard ?? '',
+            course,
+            batch: item.batch ?? item.batch_name ?? '',
+            feeType: item.feeType ?? item.fee_type ?? 'Regular Fee',
+            feeAmt: asNum(item.feeAmt ?? item.fee_amount ?? courseObj?.monthly),
+            admission: toDateStr(item.admission ?? item.admission_date),
+            status: item.status ?? 'Active',
+            feeStatus: item.feeStatus ?? item.fee_status ?? 'Pending',
+            pendingDues: asNum(item.pendingDues ?? item.pending_dues ?? item.pending_fee ?? 0),
+            att: asNum(item.att ?? item.attendance),
+            gender: item.gender === 'F' || item.gender === 'Female' ? 'Female' : 'Male',
+            dob: toDateStr(item.dob),
+            address: item.address ?? '',
+            school: item.school ?? item.school_name ?? ''
+        };
     }
-  }
 
-  function emptyRow(colspan, text){
-    return `<tr><td colspan="${colspan}" class="t-sub" style="text-align:center;padding:16px">${esc(text)}</td></tr>`;
-  }
+    function fallbackStudent(id) {
+        const localList = DB?.students || [];
+        const found = localList.find(x => String(x.id) === String(id)) || localList[0];
+        if (!found) {
+            throw new Error('No student data available locally or remotely.');
+        }
+        return mapStudent(found);
+    }
 
-  function render(s, extras){
-    extras = extras || { fees: [], attendance: [], exams: [] };
+    // Data Fetching Service
+    async function loadStudent(id) {
+        if (!id) {
+            console.warn('No student ID supplied in URL parameters. Falling back to local default.');
+            usingFallback = true;
+            const fallback = fallbackStudent(null);
+            return { student: fallback, extras: { fees: [], attendance: [], exams: [] } };
+        }
 
-    window.downloadStudentStatement = () => {
-  const wb = XLSX.utils.book_new();
-
-  // Sheet 1: Personal & Parent Details
-  const personalRows = [
-    ['Gender', 'Date of Birth', 'Mobile', 'School', 'Parent Name', 'Parent Mobile', 'Address'],
-    [
-      s.gender === 'M' ? 'Male' : 'Female',
-      s.dob || '-',
-      s.mobile || '-',
-      s.school || '-',
-      s.parent || '-',
-      s.parentMobile || '-',
-      s.address || '-'
-    ]
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(personalRows), 'Personal & Parent Details');
-
-  // Sheet 2: Payment Ledger
-  const feeRows = [
-    ['Receipt', 'Period', 'Amount', 'Mode', 'Date'],
-    ...(extras.fees.length
-      ? extras.fees.map(f => [
-          f.receipt ?? f.id ?? '-',
-          f.period ?? '-',
-          asNum(f.amount ?? f.paid),
-          f.mode ?? '-',
-          toDateStr(f.date) || '-'
-        ])
-      : [['No payment records available yet.', '', '', '', '']])
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(feeRows), 'Payment Ledger');
-
-  // Sheet 3: Course & Batch
-  const courseRows = [
-    ['Course', 'Batch', 'Fee Type', 'Fee Amount'],
-    [s.course || '-', s.batch || '-', s.feeType || '-', s.feeAmt]
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(courseRows), 'Course & Batch');
-
-  // Sheet 4: Test Performance
-  const examRows = [
-    ['Test', 'Score', 'Grade', 'Remark'],
-    ...(extras.exams.length
-      ? extras.exams.map(e => [
-          e.name ?? e.exam ?? '-',
-          `${e.obtained ?? e.score ?? '-'}/${e.total ?? '-'}`,
-          e.grade ?? '-',
-          e.remarks ?? '-'
-        ])
-      : [['No performance records available yet.', '', '', '']])
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(examRows), 'Test Performance');
-
-  // Sheet 5: Attendance Records
-  const attendanceRows = [
-    ['Date', 'Status', 'Remarks'],
-    ...(extras.attendance.length
-      ? extras.attendance.map(a => [
-          toDateStr(a.date) || '-',
-          a.status ?? '-',
-          a.remarks ?? '-'
-        ])
-      : [['No attendance records available yet.', '', '']])
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(attendanceRows), 'Attendance Records');
-
-  XLSX.writeFile(wb, `student-profile-${s.id}.xlsx`);
-};
-
-    const head = `<button class="btn btn-light" onclick="downloadStudentStatement()">${App.svg('download')}Statement</button>
-      <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
-    const c = App.layout('students',s.name,[`<a href="students.html">Students</a>`,'Full Profile'],head);
-    const initials = s.name.split(' ').map(w=>w[0]).join('');
-
-    // Derive KPIs from real data where we have it; fall back to a dash rather than a fake number.
-    const examRows = extras.exams;
-    const avgScorePct = examRows.length
-      ? Math.round(examRows.reduce((sum,e)=>{
-          const obtained = asNum(e.obtained ?? e.score);
-          const total = asNum(e.total) || 100;
-          return sum + (obtained/total*100);
-        },0) / examRows.length)
-      : null;
-
-    const feesPaidYtd = extras.fees.length
-      ? extras.fees.reduce((sum,f)=> sum + asNum(f.amount ?? f.paid), 0)
-      : null;
-   
-    const pendingDues = usingFallback
-      ? Math.max(0, s.feeAmt - (feesPaidYtd || 0))
-      : s.pendingDues;
-    const ledgerRows = extras.fees.length
-      ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date) || '-')}</td></tr>`).join('')
-      : emptyRow(5, 'No payment records available yet.');
-
-    const examTableRows = examRows.length
-      ? examRows.map(e => `<tr><td>${esc(e.name ?? e.exam ?? '-')}</td><td class="num">${esc(e.obtained ?? e.score ?? '-')}/${esc(e.total ?? '-')}</td><td>${esc(e.grade ?? '-')}</td><td>${esc(e.remarks ?? '-')}</td></tr>`).join('')
-      : emptyRow(4, 'No performance records available yet.');
-
-    const attendanceRows = extras.attendance.length
-      ? extras.attendance.map(a => `<tr><td>${esc(toDateStr(a.date) || '-')}</td><td>${App.badge(esc(a.status ?? '-'))}</td><td>${esc(a.remarks ?? '-')}</td></tr>`).join('')
-      : emptyRow(3, 'No attendance records available yet.');
-
-    c.innerHTML = `
-      <div class="card mb16"><div class="card-body">
-        <div class="detail-hero" style="border:none;padding:0;margin:0">
-          <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
-          <div style="flex:1"><h3 style="font-size:22px">${esc(s.name)}</h3>
+        try {
+            const payload = await API.students.getById(id);
+            usingFallback = false;
+            const data = payload?.data || payload || {};
+            const rawStudent = data.student || data;
             
-            <div class="chips" style="margin-top:9px">${App.badge(esc(s.status))} ${App.badge(esc(s.feeStatus))} <span class="chip">${esc(s.batch || '-')}</span> <span class="chip">Admitted ${esc(s.admission || '-')}</span></div></div>
-          <div style="text-align:right"><div class="t-sub">Fee Amount</div><div class="num" style="font-size:24px;font-weight:600">${App.money(s.feeAmt)}</div><div class="t-sub">${esc(s.feeType)}</div></div>
-        </div></div></div>
+            return {
+                student: mapStudent(rawStudent),
+                extras: {
+                    fees: Array.isArray(data.fees) ? data.fees : [],
+                    attendance: Array.isArray(data.attendance) ? data.attendance : [],
+                    exams: Array.isArray(data.exams) ? data.exams : []
+                }
+            };
+        } catch (err) {
+            console.warn('Student API call failed:', err.message);
+            App.toast(`API Error: ${err.message}. Showing local data.`, 'info');
+            usingFallback = true;
+            return { 
+                student: fallbackStudent(id), 
+                extras: { fees: [], attendance: [], exams: [] } 
+            };
+        }
+    }
 
-      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div class="kpi"><div class="top"><span class="label">Attendance</span><span class="ic b-brand">${App.svg('attendance')}</span></div><div class="val">${s.att}%</div></div>
-        <div class="kpi"><div class="top"><span class="label">Avg Test Score</span><span class="ic b-blue">${App.svg('marks')}</span></div><div class="val">${avgScorePct===null?'-':avgScorePct+'%'}</div></div>
-        <div class="kpi"><div class="top"><span class="label">Fees Paid (YTD)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${feesPaidYtd===null?'-':App.money(feesPaidYtd)}</div></div>
-        <div class="kpi"><div class="top"><span class="label">Pending Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(pendingDues)}</div></div>
-      </div>
+    function emptyRow(colspan, text) {
+        return `<tr><td colspan="${colspan}" class="t-sub" style="text-align:center;padding:16px">${esc(text)}</td></tr>`;
+    }
 
-      <div class="grid-2 mb16">
-        <div class="card"><div class="card-head"><h3>Personal & Parent Details</h3></div><div class="card-body">
-          <div class="dl"><div class="it"><div class="k">Gender</div><div class="v">${esc(s.gender==='M'?'Male':'Female')}</div></div>
-          <div class="it"><div class="k">Date of Birth</div><div class="v">${esc(s.dob || '-')}</div></div>
-          <div class="it"><div class="k">Mobile</div><div class="v">${esc(s.mobile || '-')}</div></div>
-          <div class="it"><div class="k">School</div><div class="v">${esc(s.school || '-')}</div></div>
-          <div class="it"><div class="k">Parent Name</div><div class="v">${esc(s.parent || '-')}</div></div>
-          <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(s.parentMobile || '-')}</div></div>
-          <div class="it" style="grid-column:1/-1"><div class="k">Address</div><div class="v">${esc(s.address || '-')}</div></div></div>
-        </div></div>
-        <div class="card"><div class="card-head"><h3>Course & Batch</h3></div><div class="card-body">
-          <div class="dl"><div class="it"><div class="k">Course</div><div class="v">${esc(s.course)}</div></div>
-          <div class="it"><div class="k">Batch</div><div class="v">${esc(s.batch || '-')}</div></div>
-          <div class="it"><div class="k">Fee Type</div><div class="v">${esc(s.feeType)}</div></div>
-          <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(s.feeAmt)}</div></div></div>
-          <div class="sec-title">Documents</div>
-<div class="t-sub" style="padding:8px 0">No documents uploaded yet.</div>
-        </div></div>
-      </div>
+    // UI Rendering
+    function render(s, extras = { fees: [], attendance: [], exams: [] }) {
+        window.downloadStudentStatement = () => {
+            if (typeof XLSX === 'undefined') {
+                App.toast('Excel export library (XLSX) failed to load.', 'err');
+                return;
+            }
 
-      <div class="grid-2 mb16">
-        <div class="card"><div class="card-head"><h3>Payment Ledger</h3></div><div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Receipt</th><th>Period</th><th class="num">Amount</th><th>Mode</th><th>Date</th></tr></thead>
-          <tbody>${ledgerRows}</tbody></table></div></div>
-        <div class="card"><div class="card-head"><h3>Test Performance</h3></div><div class="tbl-wrap"><table class="tbl">
-          <thead><tr><th>Test</th><th class="num">Score</th><th>Grade</th><th>Remark</th></tr></thead>
-          <tbody>${examTableRows}</tbody></table></div></div>
-      </div>
+            const wb = XLSX.utils.book_new();
 
-      <div class="card mb16"><div class="card-head"><h3>Attendance Records</h3></div><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
-        <tbody>${attendanceRows}</tbody></table></div></div>`;
-  }
+            const personalRows = [
+                ['Gender', 'Date of Birth', 'Mobile', 'School', 'Parent Name', 'Parent Mobile', 'Address'],
+                [s.gender, s.dob, s.mobile || '-', s.school || '-', s.parent || '-', s.parentMobile || '-', s.address || '-']
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(personalRows), 'Personal Details');
 
-  loadStudent(requestedId)
-    .then(({ student, extras }) => render(student, extras))
-    .catch(err => App.toast(err.message || 'Failed to load student profile', 'err'));
+            const feeRows = [
+                ['Receipt', 'Period', 'Amount', 'Mode', 'Date'],
+                ...(extras.fees.length
+                    ? extras.fees.map(f => [f.receipt ?? f.id ?? '-', f.period ?? '-', asNum(f.amount ?? f.paid), f.mode ?? '-', toDateStr(f.date)])
+                    : [['No payment records available yet.', '', '', '', '']])
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(feeRows), 'Payment Ledger');
+
+            const courseRows = [
+                ['Course', 'Batch', 'Fee Type', 'Fee Amount'],
+                [s.course || '-', s.batch || '-', s.feeType || '-', s.feeAmt]
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(courseRows), 'Course Details');
+
+            const examRows = [
+                ['Test', 'Score', 'Grade', 'Remark'],
+                ...(extras.exams.length
+                    ? extras.exams.map(e => [e.name ?? e.exam ?? '-', `${e.obtained ?? e.score ?? '-'}/${e.total ?? '-'}`, e.grade ?? '-', e.remarks ?? '-'])
+                    : [['No performance records available yet.', '', '', '']])
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(examRows), 'Test Performance');
+
+            const attendanceRows = [
+                ['Date', 'Status', 'Remarks'],
+                ...(extras.attendance.length
+                    ? extras.attendance.map(a => [toDateStr(a.date), a.status ?? '-', a.remarks ?? '-'])
+                    : [['No attendance records available yet.', '', '']])
+            ];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(attendanceRows), 'Attendance Records');
+
+            XLSX.writeFile(wb, `student-profile-${s.id}.xlsx`);
+        };
+
+        const head = `<button class="btn btn-light" onclick="downloadStudentStatement()">${App.svg('download')} Statement</button>
+                      <button class="btn btn-primary" onclick="location.href='students.html'">Back to list</button>`;
+        
+        const c = App.layout('students', s.name, [`<a href="students.html">Students</a>`, 'Full Profile'], head);
+        const initials = s.name.split(' ').map(w => w[0]).filter(Boolean).join('').toUpperCase() || 'ST';
+
+        // Calculate KPIs safely
+        const examRows = extras.exams;
+        const avgScorePct = examRows.length
+            ? Math.round(examRows.reduce((sum, e) => {
+                const obtained = asNum(e.obtained ?? e.score);
+                const total = asNum(e.total) || 100;
+                return sum + (obtained / total * 100);
+            }, 0) / examRows.length)
+            : null;
+
+        const feesPaidYtd = extras.fees.length
+            ? extras.fees.reduce((sum, f) => sum + asNum(f.amount ?? f.paid), 0)
+            : null;
+
+        const pendingDues = usingFallback
+            ? Math.max(0, s.feeAmt - (feesPaidYtd || 0))
+            : s.pendingDues;
+
+        const ledgerRows = extras.fees.length
+            ? extras.fees.map(f => `<tr><td class="t-id">${esc(f.receipt ?? f.id ?? '-')}</td><td>${esc(f.period ?? '-')}</td><td class="num">${App.money(asNum(f.amount ?? f.paid))}</td><td>${esc(f.mode ?? '-')}</td><td>${esc(toDateStr(f.date))}</td></tr>`).join('')
+            : emptyRow(5, 'No payment records available yet.');
+
+        const examTableRows = examRows.length
+            ? examRows.map(e => `<tr><td>${esc(e.name ?? e.exam ?? '-')}</td><td class="num">${esc(e.obtained ?? e.score ?? '-')}/${esc(e.total ?? '-')}</td><td>${esc(e.grade ?? '-')}</td><td>${esc(e.remarks ?? '-')}</td></tr>`).join('')
+            : emptyRow(4, 'No performance records available yet.');
+
+        const attendanceTableRows = extras.attendance.length
+            ? extras.attendance.map(a => `<tr><td>${esc(toDateStr(a.date))}</td><td>${App.badge(esc(a.status ?? '-'))}</td><td>${esc(a.remarks ?? '-')}</td></tr>`).join('')
+            : emptyRow(3, 'No attendance records available yet.');
+
+        c.innerHTML = `
+            <div class="card mb16"><div class="card-body">
+                <div class="detail-hero" style="border:none;padding:0;margin:0">
+                    <div class="av" style="background:var(--brand);width:72px;height:72px;font-size:26px">${esc(initials)}</div>
+                    <div style="flex:1"><h3 style="font-size:22px">${esc(s.name)}</h3>
+                        <div class="chips" style="margin-top:9px">
+                            ${App.badge(esc(s.status))} 
+                            ${App.badge(esc(s.feeStatus))} 
+                            <span class="chip">${esc(s.batch || '-')}</span> 
+                            <span class="chip">Admitted ${esc(s.admission)}</span>
+                        </div>
+                    </div>
+                    <div style="text-align:right">
+                        <div class="t-sub">Fee Amount</div>
+                        <div class="num" style="font-size:24px;font-weight:600">${App.money(s.feeAmt)}</div>
+                        <div class="t-sub">${esc(s.feeType)}</div>
+                    </div>
+                </div>
+            </div></div>
+
+            <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+                <div class="kpi"><div class="top"><span class="label">Attendance</span><span class="ic b-brand">${App.svg('attendance')}</span></div><div class="val">${s.att}%</div></div>
+                <div class="kpi"><div class="top"><span class="label">Avg Test Score</span><span class="ic b-blue">${App.svg('marks')}</span></div><div class="val">${avgScorePct === null ? '-' : avgScorePct + '%'}</div></div>
+                <div class="kpi"><div class="top"><span class="label">Fees Paid (YTD)</span><span class="ic b-green">${App.svg('rupee')}</span></div><div class="val">${feesPaidYtd === null ? '-' : App.money(feesPaidYtd)}</div></div>
+                <div class="kpi"><div class="top"><span class="label">Pending Dues</span><span class="ic b-red">${App.svg('pending')}</span></div><div class="val">${App.money(pendingDues)}</div></div>
+            </div>
+
+            <div class="grid-2 mb16">
+                <div class="card"><div class="card-head"><h3>Personal & Parent Details</h3></div><div class="card-body">
+                    <div class="dl">
+                        <div class="it"><div class="k">Gender</div><div class="v">${esc(s.gender)}</div></div>
+                        <div class="it"><div class="k">Date of Birth</div><div class="v">${esc(s.dob)}</div></div>
+                        <div class="it"><div class="k">Mobile</div><div class="v">${esc(s.mobile || '-')}</div></div>
+                        <div class="it"><div class="k">School</div><div class="v">${esc(s.school || '-')}</div></div>
+                        <div class="it"><div class="k">Parent Name</div><div class="v">${esc(s.parent || '-')}</div></div>
+                        <div class="it"><div class="k">Parent Mobile</div><div class="v">${esc(s.parentMobile || '-')}</div></div>
+                        <div class="it" style="grid-column:1/-1"><div class="k">Address</div><div class="v">${esc(s.address || '-')}</div></div>
+                    </div>
+                </div></div>
+                <div class="card"><div class="card-head"><h3>Course & Batch</h3></div><div class="card-body">
+                    <div class="dl">
+                        <div class="it"><div class="k">Course</div><div class="v">${esc(s.course || '-')}</div></div>
+                        <div class="it"><div class="k">Batch</div><div class="v">${esc(s.batch || '-')}</div></div>
+                        <div class="it"><div class="k">Fee Type</div><div class="v">${esc(s.feeType)}</div></div>
+                        <div class="it"><div class="k">Fee Amount</div><div class="v num">${App.money(s.feeAmt)}</div></div>
+                    </div>
+                    <div class="sec-title">Documents</div>
+                    <div class="t-sub" style="padding:8px 0">No documents uploaded yet.</div>
+                </div></div>
+            </div>
+
+            <div class="grid-2 mb16">
+                <div class="card"><div class="card-head"><h3>Payment Ledger</h3></div><div class="tbl-wrap"><table class="tbl">
+                    <thead><tr><th>Receipt</th><th>Period</th><th class="num">Amount</th><th>Mode</th><th>Date</th></tr></thead>
+                    <tbody>${ledgerRows}</tbody>
+                </table></div></div>
+                <div class="card"><div class="card-head"><h3>Test Performance</h3></div><div class="tbl-wrap"><table class="tbl">
+                    <thead><tr><th>Test</th><th class="num">Score</th><th>Grade</th><th>Remark</th></tr></thead>
+                    <tbody>${examTableRows}</tbody>
+                </table></div></div>
+            </div>
+
+            <div class="card mb16"><div class="card-head"><h3>Attendance Records</h3></div><div class="tbl-wrap"><table class="tbl">
+                <thead><tr><th>Date</th><th>Status</th><th>Remarks</th></tr></thead>
+                <tbody>${attendanceTableRows}</tbody>
+            </table></div></div>`;
+    }
+
+    // App Initialization
+    loadStudent(requestedId)
+        .then(({ student, extras }) => render(student, extras))
+        .catch(err => {
+            console.error('Fatal Student Profile Load Error:', err);
+            App.toast(err.message || 'Failed to load student profile', 'err');
+        });
 }
 </script>
-</body></html>
+</body>
+</html>

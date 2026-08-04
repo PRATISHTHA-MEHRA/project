@@ -79,3 +79,32 @@ exports.getTeacherTimetable = async (req, res) => {
         return res.status(500).json({ success: false, message: err.message });
     }
 };
+
+// PATCH /api/teacher/timetable/:id/complete
+exports.markScheduleComplete = async (req, res) => {
+    try {
+        const teacherId = getTeacherId(req);
+        if (!teacherId) {
+            return res.status(401).json({ success: false, message: "Unauthorized: Teacher session missing" });
+        }
+
+        const batchId = req.params.id;
+        const updated = await Timetable.updateScheduleStatus(batchId, teacherId, 'Completed');
+
+        if (!updated) {
+            return res.status(404).json({
+                success: false,
+                message: "Schedule not found or not authorized to update"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Class marked as completed successfully",
+            data: updated
+        });
+    } catch (err) {
+        console.error("Error marking schedule as complete:", err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};

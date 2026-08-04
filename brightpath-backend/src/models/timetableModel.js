@@ -54,8 +54,19 @@ const getSchedulesByTeacherId = async (teacherId) => {
     return result.rows;
 };
 
+const updateScheduleStatus = async (batchId, teacherId, status = 'Completed') => {
+    const query = `
+        UPDATE batches
+        SET status = $1
+        WHERE id = $2 AND teacher_id = $3
+        RETURNING id::TEXT, batch_name AS "batch", status;
+    `;
+    const result = await db.query(query, [status, batchId, teacherId]);
+    return result.rows[0];
+};
 
 module.exports = {
     getMasterSchedules,
-    getSchedulesByTeacherId
+    getSchedulesByTeacherId,
+    updateScheduleStatus
 };
