@@ -41,7 +41,7 @@ const getFinanceKPIs = async (targetDate) => {
     const query = `
         SELECT 
             COALESCE(SUM(CASE WHEN payment_date = $1 THEN paid_amount ELSE 0 END), 0)::NUMERIC as today_total,
-            COALESCE(SUM(CASE WHEN DATE_TRUNC('month', payment_date) = DATE_TRUNC('month', $1::DATE) THEN paid_amount ELSE 0 END), 0)::NUMERIC as month_total,
+            COALESCE(SUM(CASE WHEN TRIM(period) = TO_CHAR($1::DATE, 'Mon YYYY') THEN paid_amount ELSE 0 END), 0)::NUMERIC as month_total,
             COUNT(id)::INT as receipt_count,
             COALESCE(SUM(discount), 0)::NUMERIC as discount_total
         FROM fee_receipts;
@@ -102,4 +102,4 @@ const getReceiptsByStudentId = async (studentId, studentCode) => {
 
 module.exports = { getFinanceKPIs, getAllReceipts, saveCollectionReceipt, getReceiptsByStudentId };
 
-module.exports = { getFinanceKPIs, getAllReceipts, saveCollectionReceipt, getReceiptsByStudentId };
+
