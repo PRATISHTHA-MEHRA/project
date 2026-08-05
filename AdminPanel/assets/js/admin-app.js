@@ -306,7 +306,8 @@ function validateDob(dobStr){
       </div>`;
     back.classList.add('open');
     document.getElementById('mClose').onclick=closeModal;
-    back.onclick=e=>{ if(e.target===back) closeModal(); };
+   
+
     back.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
     if(opts.onOpen) opts.onOpen(back);
   }
