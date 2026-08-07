@@ -4,18 +4,18 @@ class Auth {
 
     static async login(username) {
 
-        const query = `
-            SELECT admins.*, roles.name AS role
-            FROM admins
-            LEFT JOIN roles ON roles.id = admins.role_id
-            WHERE admins.username = $1
-        `;
+    const query = `
+        SELECT admins.*, roles.name AS role
+        FROM admins
+        LEFT JOIN roles ON roles.name = admins.role_id
+        WHERE admins.username = $1
+    `;
 
-        const result = await db.query(query, [username]);
+    const result = await db.query(query, [username]);
 
-        return result.rows[0];
+    return result.rows[0];
 
-    }
+}
 
     static async updateLogin(id) {
 
