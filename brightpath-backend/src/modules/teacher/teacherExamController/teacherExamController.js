@@ -32,13 +32,73 @@ exports.getAllTests = async (req, res) => {
             params.push(teacherName);
         }
 
-        query += ` ORDER BY created_at DESC;`;
+        query += ` ORDER BY id DESC;`;
 
         const result = await db.query(query, params);
         res.status(200).json({ success: true, data: result.rows });
     } catch (err) {
         console.error("Error fetching tests:", err);
         res.status(500).json({ success: false, message: "Error fetching tests", error: err.message });
+    }
+};
+
+/**
+ * @desc    Get single exam by ID (Fixes Route Not Found)
+ * @route   GET /api/admin/exams/:id
+ */
+exports.getExamById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const exam = await examModel.getExamById(id);
+
+        if (!exam) {
+            return res.status(404).json({ success: false, message: "Exam not found" });
+        }
+
+        res.status(200).json({ success: true, data: exam });
+    } catch (err) {
+        console.error("Error fetching exam:", err);
+        res.status(500).json({ success: false, message: "Error fetching exam", error: err.message });
+    }
+};
+
+/**
+ * @desc    Update exam details
+ * @route   PUT /api/admin/exams/:id
+ */
+exports.updateExam = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updatedExam = await examModel.updateExam(id, req.body);
+
+        if (!updatedExam) {
+            return res.status(404).json({ success: false, message: "Exam not found or failed to update" });
+        }
+
+        res.status(200).json({ success: true, message: "Exam updated successfully", data: updatedExam });
+    } catch (err) {
+        console.error("Error updating exam:", err);
+        res.status(500).json({ success: false, message: "Error updating exam", error: err.message });
+    }
+};
+
+/**
+ * @desc    Delete an exam
+ * @route   DELETE /api/admin/exams/:id
+ */
+exports.deleteExam = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const deleted = await examModel.deleteExam(id);
+
+        if (!deleted) {
+            return res.status(404).json({ success: false, message: "Exam not found" });
+        }
+
+        res.status(200).json({ success: true, message: "Exam deleted successfully" });
+    } catch (err) {
+        console.error("Error deleting exam:", err);
+        res.status(500).json({ success: false, message: "Error deleting exam", error: err.message });
     }
 };
 
@@ -87,10 +147,8 @@ exports.getTestBatchStudents = async (req, res) => {
             return res.status(404).json({ success: false, message: "Exam not found" });
         }
 
-        // Support both batch_id and batch/batch_name from exam object
         const batchIdentifier = exam.batch_id || exam.batch || exam.batch_name;
 
-        // FIXED: Using s.batch_id in the WHERE clause
         const query = `
             SELECT 
                 s.id::TEXT AS "studentId",
@@ -122,6 +180,7 @@ exports.getTestBatchStudents = async (req, res) => {
         });
     }
 };
+
 /**
  * @desc    Get ranked marks list for all students
  * @route   GET /api/teacher/marks
@@ -148,13 +207,12 @@ exports.submitBulkMarks = async (req, res) => {
             return res.status(400).json({ success: false, message: "Exam ID and records array are required." });
         }
 
-        // Delegate bulk insert/update transaction to marksModel
         const savedMarks = await marksModel.saveBulkMarks(records);
 
-        // If 'Save & Publish' was clicked, update the exam status
         if (publish) {
+            // Removed updated_at = CURRENT_TIMESTAMP to avoid database schema errors
             await db.query(
-                `UPDATE assessments_exams SET status = 'Result Published', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+                `UPDATE assessments_exams SET status = 'Result Published' WHERE id = $1`,
                 [examId]
             );
         }
